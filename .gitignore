@@ -1,0 +1,74 @@
+# Dependencies
+node_modules/
+.pnpm-store/
+
+# Build outputs
+dist/
+build/
+.next/
+out/
+coverage/
+.turbo/
+.nx/
+
+# Environment variables and secrets
+.env
+.env.*
+!.env.example
+!.env.*.example
+
+# Logs
+logs/
+*.log
+npm-debug.log*
+pnpm-debug.log*
+yarn-debug.log*
+
+# TypeScript
+*.tsbuildinfo
+
+# Test outputs
+.nyc_output/
+playwright-report/
+test-results/
+
+# Framework caches
+.next/
+.eslintcache/
+.cache/
+
+# IDEs and editors
+.idea/
+.vscode/*
+!.vscode/extensions.json
+!.vscode/settings.json
+!.vscode/launch.json
+!.vscode/tasks.json
+*.swp
+*.swo
+
+# Operating systems
+.DS_Store
+Thumbs.db
+
+# Local databases and data
+*.sqlite
+*.sqlite3
+*.db
+
+# Docker local overrides
+docker-compose.override.yaml
+docker-compose.override.yml
+
+# Kubernetes local configuration and secrets
+.kube/
+kubeconfig
+kubeconfig.*
+*.secret.yaml
+*.secret.yml
+
+# Temporary files
+tmp/
+temp/
+*.tmp
+*.bak
