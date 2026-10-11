@@ -21,19 +21,26 @@ import (
 	"k8s.io/apimachinery/pkg/runtime"
 )
 
-// EDIT THIS FILE!  THIS IS SCAFFOLDING FOR YOU TO OWN!
-// NOTE: json tags are required.  Any new fields you add must have json tags for the fields to be serialized.
-
 // FactorioServerSpec defines the desired state of FactorioServer
 type FactorioServerSpec struct {
-	// INSERT ADDITIONAL SPEC FIELDS - desired state of cluster
-	// Important: Run "make" to regenerate code after modifying this file
-	// The following markers will use OpenAPI v3 schema to validate the value
-	// More info: https://book.kubebuilder.io/reference/markers/crd-validation.html
 
-	// foo is an example field of FactorioServer. Edit factorioserver_types.go to remove/update
+	// this is the version of the Factorio server that will be used to run the game server.
 	// +optional
-	Foo *string `json:"foo,omitempty"`
+	// +kubebuilder:validation:Pattern=`^\d+\.\d+\.\d+$`
+	// +kubebuilder:default="2.1.0"
+	Version string `json:"version,omitempty"`
+
+	// this is the maximum number of players that can connect to the Factorio server at the same time.
+	// +optional
+	// +kubebuilder:validation:Minimum=1
+	// +kubebuilder:validation:Maximum=100
+	// +kubebuilder:default=10
+	MaxPlayers int32 `json:"maxPlayers,omitempty"`
+
+	// this is the name of the Factorio server that will be displayed to players in the server list.
+	// +optional
+	// +kubebuilder:validation:MaxLength=64
+	ServerName string `json:"serverName,omitempty"`
 }
 
 // FactorioServerStatus defines the observed state of FactorioServer.

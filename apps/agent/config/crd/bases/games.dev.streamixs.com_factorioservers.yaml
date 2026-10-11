@@ -39,9 +39,24 @@ spec:
           spec:
             description: spec defines the desired state of FactorioServer
             properties:
-              foo:
-                description: foo is an example field of FactorioServer. Edit factorioserver_types.go
-                  to remove/update
+              maxPlayers:
+                default: 10
+                description: this is the maximum number of players that can connect
+                  to the Factorio server at the same time.
+                format: int32
+                maximum: 100
+                minimum: 1
+                type: integer
+              serverName:
+                description: this is the name of the Factorio server that will be
+                  displayed to players in the server list.
+                maxLength: 64
+                type: string
+              version:
+                default: 2.1.0
+                description: this is the version of the Factorio server that will
+                  be used to run the game server.
+                pattern: ^\d+\.\d+\.\d+$
                 type: string
             type: object
           status:
