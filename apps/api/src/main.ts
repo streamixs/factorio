@@ -8,7 +8,6 @@ async function bootstrap() {
     origin: process.env.WEB_ORIGIN ?? 'http://localhost:3000',
   });
 
-
   await app.listen(process.env.PORT ?? 3001);
 }
 await bootstrap();

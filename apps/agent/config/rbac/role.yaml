@@ -1,0 +1,32 @@
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: manager-role
+rules:
+- apiGroups:
+  - games.dev.streamixs.com
+  resources:
+  - factorioservers
+  verbs:
+  - create
+  - delete
+  - get
+  - list
+  - patch
+  - update
+  - watch
+- apiGroups:
+  - games.dev.streamixs.com
+  resources:
+  - factorioservers/finalizers
+  verbs:
+  - update
+- apiGroups:
+  - games.dev.streamixs.com
+  resources:
+  - factorioservers/status
+  verbs:
+  - get
+  - patch
+  - update

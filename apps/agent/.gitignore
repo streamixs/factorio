@@ -1,0 +1,39 @@
+# Binaries and compiled plugins
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+bin/*
+Dockerfile.cross
+
+# Test binaries and coverage reports
+*.test
+*.out
+coverage.html
+coverage.out
+
+# Go workspace files
+go.work
+go.work.sum
+
+# Kubernetes generated code exceptions for vendored files
+!vendor/**/zz_generated.*
+
+# IDE and editor files
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# macOS
+.DS_Store
+
+# Kubeconfig files may contain credentials
+*.kubeconfig
+
+# Local environment files
+.env
+.env.local
+.env.*.local
