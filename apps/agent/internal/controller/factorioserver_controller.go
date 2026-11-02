@@ -20,8 +20,6 @@ import (
 	"context"
 
 	appsv1 "k8s.io/api/apps/v1"
-	corev1 "k8s.io/api/core/v1"
-	"k8s.io/apimachinery/pkg/api/equality"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
@@ -32,37 +30,8 @@ import (
 	logf "sigs.k8s.io/controller-runtime/pkg/log"
 
 	gamesv1alpha1 "github.com/streamixs/factorio/apps/agent/api/v1alpha1"
+	factorioresources "github.com/streamixs/factorio/apps/agent/internal/controller/resources"
 )
-
-func needsUpdate(existing, desired *appsv1.Deployment) bool {
-	if !equality.Semantic.DeepEqual(existing.Spec.Replicas, desired.Spec.Replicas) {
-		return true
-	}
-
-	existingContainers := existing.Spec.Template.Spec.Containers
-	desiredContainers := desired.Spec.Template.Spec.Containers
-
-	if len(existingContainers) != len(desiredContainers) {
-		return true
-	}
-
-	for i := range desiredContainers {
-		if existingContainers[i].Name != desiredContainers[i].Name {
-			return true
-		}
-
-		if existingContainers[i].Image != desiredContainers[i].Image {
-			return true
-		}
-	}
-
-	return false
-}
-
-func updateDeployment(existing, desired *appsv1.Deployment) {
-	existing.Spec.Replicas = desired.Spec.Replicas
-	existing.Spec.Template.Spec.Containers = desired.Spec.Template.Spec.Containers
-}
 
 // FactorioServerReconciler reconciles a FactorioServer object
 type FactorioServerReconciler struct {
@@ -92,48 +61,7 @@ func (r *FactorioServerReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 	}
 
 	logger.Info("Reconciling FactorioServer", "name", factorioServer.Name, "namespace", factorioServer.Namespace)
-
-	replicas := int32(1)
-
-	labels := map[string]string{
-		"app":                        factorioServer.Name,
-		"app.kubernetes.io/name":     "factorio",
-		"app.kubernetes.io/instance": factorioServer.Name,
-	}
-
-	deployment := appsv1.Deployment{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:      factorioServer.Name,
-			Namespace: factorioServer.Namespace,
-			Labels:    labels,
-		},
-		Spec: appsv1.DeploymentSpec{
-			Replicas: &replicas,
-			Selector: &metav1.LabelSelector{
-				MatchLabels: labels,
-			},
-			Template: corev1.PodTemplateSpec{
-				ObjectMeta: metav1.ObjectMeta{
-					Labels: labels,
-				},
-				Spec: corev1.PodSpec{
-					Containers: []corev1.Container{
-						{
-							Name:  "factorio",
-							Image: "factoriotools/factorio:" + factorioServer.Spec.Version,
-							Ports: []corev1.ContainerPort{
-								{
-									Name:          "game",
-									ContainerPort: 34197,
-									Protocol:      corev1.ProtocolUDP,
-								},
-							},
-						},
-					},
-				},
-			},
-		},
-	}
+	deployment := factorioresources.BuildDeployment(&factorioServer)
 
 	var existingDeployment appsv1.Deployment
 
@@ -171,12 +99,12 @@ func (r *FactorioServerReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 			return ctrl.Result{}, nil
 		}
 
-		if !needsUpdate(&existingDeployment, &deployment) {
+		if !factorioresources.NeedsUpdate(&existingDeployment, &deployment) {
 			logger.Info("Deployment is up-to-date", "name", existingDeployment.Name)
 			return ctrl.Result{}, nil
 		}
 
-		updateDeployment(&existingDeployment, &deployment)
+		factorioresources.UpdateDeployment(&existingDeployment, &deployment)
 
 		if err := r.Update(ctx, &existingDeployment); err != nil {
 			logger.Error(err, "Failed to update Deployment", "name", existingDeployment.Name)
