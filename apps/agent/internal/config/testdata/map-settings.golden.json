@@ -1,0 +1,6 @@
+{
+  "enemy_evolution": {
+    "enabled": true,
+    "time_factor": 0.000004
+  }
+}

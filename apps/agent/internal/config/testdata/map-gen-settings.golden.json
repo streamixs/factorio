@@ -1,0 +1,12 @@
+{
+  "autoplace_controls": {
+    "coal": {
+      "frequency": "high",
+      "richness": "normal",
+      "size": "normal"
+    }
+  },
+  "seed": 123456,
+  "terrain_segmentation": "normal",
+  "water": "normal"
+}

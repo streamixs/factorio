@@ -7,5 +7,21 @@ metadata:
   name: factorioserver-sample
 spec:
   version: 2.1.0
-  serverName: "My Factorio Server"
-  maxPlayers: 10
+  server:
+    identity:
+      name: "My Factorio Server"
+    access:
+      maxPlayers: 10
+  mapGenSettings:
+    terrainSegmentation: normal
+    water: normal
+    seed: 123456
+    autoplaceControls:
+      coal:
+        frequency: high
+        size: normal
+        richness: normal
+  mapSettings:
+    enemyEvolution:
+      enabled: true
+      timeFactor: 0.000004

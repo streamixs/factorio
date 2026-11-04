@@ -30,17 +30,20 @@ type FactorioServerSpec struct {
 	// +kubebuilder:default="2.1.0"
 	Version string `json:"version,omitempty"`
 
-	// this is the maximum number of players that can connect to the Factorio server at the same time.
+	// server defines the Factorio server settings rendered into
+	// server-settings.json. When omitted, Factorio defaults apply.
 	// +optional
-	// +kubebuilder:validation:Minimum=1
-	// +kubebuilder:validation:Maximum=100
-	// +kubebuilder:default=10
-	MaxPlayers int32 `json:"maxPlayers,omitempty"`
+	Server *ServerSettingsSpec `json:"server,omitempty"`
 
-	// this is the name of the Factorio server that will be displayed to players in the server list.
+	// mapGenSettings defines the settings rendered into
+	// map-gen-settings.json. These settings only apply when a new map is
+	// generated.
 	// +optional
-	// +kubebuilder:validation:MaxLength=64
-	ServerName string `json:"serverName,omitempty"`
+	MapGenSettings *MapGenSettingsSpec `json:"mapGenSettings,omitempty"`
+
+	// mapSettings defines the settings rendered into map-settings.json.
+	// +optional
+	MapSettings *MapSettingsSpec `json:"mapSettings,omitempty"`
 }
 
 // FactorioServerStatus defines the observed state of FactorioServer.

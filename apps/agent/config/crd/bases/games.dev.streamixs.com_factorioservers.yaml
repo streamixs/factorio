@@ -39,19 +39,640 @@ spec:
           spec:
             description: spec defines the desired state of FactorioServer
             properties:
-              maxPlayers:
-                default: 10
-                description: this is the maximum number of players that can connect
-                  to the Factorio server at the same time.
-                format: int32
-                maximum: 100
-                minimum: 1
-                type: integer
-              serverName:
-                description: this is the name of the Factorio server that will be
-                  displayed to players in the server list.
-                maxLength: 64
-                type: string
+              mapGenSettings:
+                description: |-
+                  mapGenSettings defines the settings rendered into
+                  map-gen-settings.json. These settings only apply when a new map is
+                  generated.
+                properties:
+                  autoplaceControls:
+                    additionalProperties:
+                      description: |-
+                        AutoplaceControlSpec controls the generation of one resource or enemy base
+                        type.
+                      properties:
+                        frequency:
+                          description: frequency controls how often the entity appears.
+                            Maps to frequency.
+                          enum:
+                          - none
+                          - very-low
+                          - low
+                          - normal
+                          - high
+                          - very-high
+                          type: string
+                        richness:
+                          description: |-
+                            richness controls how much resource each patch contains.
+                            Maps to richness.
+                          enum:
+                          - none
+                          - very-low
+                          - low
+                          - normal
+                          - high
+                          - very-high
+                          type: string
+                        size:
+                          description: size controls the size of the generated patches.
+                            Maps to size.
+                          enum:
+                          - none
+                          - very-low
+                          - low
+                          - normal
+                          - high
+                          - very-high
+                          type: string
+                      type: object
+                    description: |-
+                      autoplaceControls controls the frequency, size and richness of
+                      resources and enemy bases. Keys are resource names such as "coal",
+                      "iron-ore" or "enemy-base". Maps to autoplace_controls.
+                    type: object
+                  cliffSettings:
+                    description: cliffSettings controls cliff generation. Maps to
+                      cliff_settings.
+                    properties:
+                      cliffElevation0:
+                        description: |-
+                          cliffElevation0 is the elevation of the first cliff line.
+                          Maps to cliff_elevation_0.
+                        type: number
+                      cliffElevationInterval:
+                        description: |-
+                          cliffElevationInterval is the elevation interval between cliff lines.
+                          Maps to cliff_elevation_interval.
+                        type: number
+                      name:
+                        description: name is the cliff entity name. Maps to name.
+                        type: string
+                      richness:
+                        description: richness controls how many cliffs are generated.
+                          Maps to richness.
+                        type: number
+                    type: object
+                  height:
+                    description: |-
+                      height is the map height in tiles. A value of 0 means an infinite map.
+                      Maps to height.
+                    format: int32
+                    minimum: 0
+                    type: integer
+                  peacefulMode:
+                    description: |-
+                      peacefulMode prevents enemies from attacking unless provoked.
+                      Maps to peaceful_mode.
+                    type: boolean
+                  raw:
+                    description: |-
+                      raw contains additional map-gen-settings.json keys that are not exposed
+                      as typed fields, such as property_expression_names. A key set both here
+                      and through a typed field is rejected to avoid ambiguity.
+                    x-kubernetes-preserve-unknown-fields: true
+                  seed:
+                    description: |-
+                      seed is the map generation seed. When omitted, a random seed is used.
+                      Maps to seed.
+                    format: int64
+                    maximum: 4294967295
+                    minimum: 0
+                    type: integer
+                  startingArea:
+                    description: |-
+                      startingArea controls the size of the area cleared around the starting
+                      positions. Maps to starting_area.
+                    enum:
+                    - none
+                    - very-low
+                    - low
+                    - normal
+                    - high
+                    - very-high
+                    type: string
+                  startingPoints:
+                    description: |-
+                      startingPoints are the positions where players start.
+                      Maps to starting_points.
+                    items:
+                      description: MapPosition is a position on the map.
+                      properties:
+                        x:
+                          description: x is the horizontal coordinate.
+                          type: number
+                        "y":
+                          description: y is the vertical coordinate.
+                          type: number
+                      type: object
+                    type: array
+                  terrainSegmentation:
+                    description: |-
+                      terrainSegmentation controls how fragmented the terrain is.
+                      Maps to terrain_segmentation.
+                    enum:
+                    - none
+                    - very-low
+                    - low
+                    - normal
+                    - high
+                    - very-high
+                    type: string
+                  water:
+                    description: water controls the amount of water on the map. Maps
+                      to water.
+                    enum:
+                    - none
+                    - very-low
+                    - low
+                    - normal
+                    - high
+                    - very-high
+                    type: string
+                  width:
+                    description: |-
+                      width is the map width in tiles. A value of 0 means an infinite map.
+                      Maps to width.
+                    format: int32
+                    minimum: 0
+                    type: integer
+                type: object
+              mapSettings:
+                description: mapSettings defines the settings rendered into map-settings.json.
+                properties:
+                  difficultySettings:
+                    description: |-
+                      difficultySettings defines recipe and technology costs.
+                      Maps to difficulty_settings.
+                    properties:
+                      recipeDifficulty:
+                        description: |-
+                          recipeDifficulty selects the recipe difficulty: 0 for normal, 1 for
+                          expensive. Maps to recipe_difficulty.
+                        enum:
+                        - 0
+                        - 1
+                        format: int32
+                        type: integer
+                      spoilTimeModifier:
+                        description: spoilTimeModifier scales spoilage times. Maps
+                          to spoil_time_modifier.
+                        type: number
+                      technologyDifficulty:
+                        description: |-
+                          technologyDifficulty selects the technology difficulty: 0 for normal,
+                          1 for expensive. Maps to technology_difficulty.
+                        enum:
+                        - 0
+                        - 1
+                        format: int32
+                        type: integer
+                      technologyPriceMultiplier:
+                        description: |-
+                          technologyPriceMultiplier scales technology costs.
+                          Maps to technology_price_multiplier.
+                        type: number
+                    type: object
+                  enemyEvolution:
+                    description: |-
+                      enemyEvolution defines how enemies evolve over time.
+                      Maps to enemy_evolution.
+                    properties:
+                      destroyFactor:
+                        description: |-
+                          destroyFactor is the evolution gained per destroyed entity.
+                          Maps to destroy_factor.
+                        type: number
+                      enabled:
+                        description: enabled enables enemy evolution. Maps to enabled.
+                        type: boolean
+                      pollutionFactor:
+                        description: |-
+                          pollutionFactor is the evolution gained per unit of pollution.
+                          Maps to pollution_factor.
+                        type: number
+                      timeFactor:
+                        description: timeFactor is the evolution gained per tick.
+                          Maps to time_factor.
+                        type: number
+                    type: object
+                  enemyExpansion:
+                    description: |-
+                      enemyExpansion defines how enemies expand their bases.
+                      Maps to enemy_expansion.
+                    properties:
+                      buildingCoefficient:
+                        description: |-
+                          buildingCoefficient weights enemy buildings when choosing an expansion
+                          target. Maps to building_coefficient.
+                        type: number
+                      enabled:
+                        description: enabled enables enemy expansion. Maps to enabled.
+                        type: boolean
+                      enemyBuildingInfluenceRadius:
+                        description: |-
+                          enemyBuildingInfluenceRadius is the radius in chunks around enemy
+                          buildings that counts as a base. Maps to
+                          enemy_building_influence_radius.
+                        format: int32
+                        minimum: 0
+                        type: integer
+                      friendlyBaseInfluenceRadius:
+                        description: |-
+                          friendlyBaseInfluenceRadius is the radius in chunks around friendly
+                          bases where enemies do not expand. Maps to
+                          friendly_base_influence_radius.
+                        format: int32
+                        minimum: 0
+                        type: integer
+                      maxCollidingTilesCoefficient:
+                        description: |-
+                          maxCollidingTilesCoefficient is the maximum fraction of colliding tiles
+                          an expansion group tolerates. Maps to
+                          max_colliding_tiles_coefficient.
+                        type: number
+                      maxExpansionCooldown:
+                        description: |-
+                          maxExpansionCooldown is the maximum delay in ticks between expansions.
+                          Maps to max_expansion_cooldown.
+                        format: int32
+                        minimum: 0
+                        type: integer
+                      maxExpansionDistance:
+                        description: |-
+                          maxExpansionDistance is the maximum distance in chunks a group can
+                          travel. Maps to max_expansion_distance.
+                        format: int32
+                        minimum: 0
+                        type: integer
+                      minExpansionCooldown:
+                        description: |-
+                          minExpansionCooldown is the minimum delay in ticks between expansions.
+                          Maps to min_expansion_cooldown.
+                        format: int32
+                        minimum: 0
+                        type: integer
+                      neighbouringBaseChunkCoefficient:
+                        description: |-
+                          neighbouringBaseChunkCoefficient weights neighbouring base chunks when
+                          choosing an expansion target. Maps to
+                          neighbouring_base_chunk_coefficient.
+                        type: number
+                      neighbouringChunkCoefficient:
+                        description: |-
+                          neighbouringChunkCoefficient weights neighbouring chunks when choosing
+                          an expansion target. Maps to neighbouring_chunk_coefficient.
+                        type: number
+                      otherBaseCoefficient:
+                        description: |-
+                          otherBaseCoefficient weights other bases when choosing an expansion
+                          target. Maps to other_base_coefficient.
+                        type: number
+                      settlerGroupMaxSize:
+                        description: |-
+                          settlerGroupMaxSize is the maximum size of an expansion group.
+                          Maps to settler_group_max_size.
+                        format: int32
+                        minimum: 0
+                        type: integer
+                      settlerGroupMinSize:
+                        description: |-
+                          settlerGroupMinSize is the minimum size of an expansion group.
+                          Maps to settler_group_min_size.
+                        format: int32
+                        minimum: 0
+                        type: integer
+                    type: object
+                  maxFailedBehaviorCount:
+                    description: |-
+                      maxFailedBehaviorCount is the number of consecutive failed behaviors
+                      before a unit is removed. Maps to max_failed_behavior_count.
+                    format: int32
+                    minimum: 0
+                    type: integer
+                  pollution:
+                    description: |-
+                      pollution defines how pollution spreads and affects the map.
+                      Maps to pollution.
+                    properties:
+                      ageing:
+                        description: |-
+                          ageing is the fraction of pollution removed every tick.
+                          Maps to ageing.
+                        type: number
+                      diffusionRatio:
+                        description: |-
+                          diffusionRatio is the fraction of pollution that diffuses to
+                          neighbouring chunks every tick. Maps to diffusion_ratio.
+                        type: number
+                      enabled:
+                        description: enabled enables pollution. Maps to enabled.
+                        type: boolean
+                      enemyAttackPollutionConsumptionModifier:
+                        description: |-
+                          enemyAttackPollutionConsumptionModifier scales the pollution consumed
+                          by enemy attacks. Maps to
+                          enemy_attack_pollution_consumption_modifier.
+                        type: number
+                      expectedMaxPerChunk:
+                        description: |-
+                          expectedMaxPerChunk is the pollution amount used to normalise the
+                          pollution overlay. Maps to expected_max_per_chunk.
+                        type: number
+                      maxPollutionToRestoreTrees:
+                        description: |-
+                          maxPollutionToRestoreTrees is the maximum pollution that can be
+                          restored by trees. Maps to max_pollution_to_restore_trees.
+                        type: number
+                      minPollutionToDamageTrees:
+                        description: |-
+                          minPollutionToDamageTrees is the pollution amount that starts damaging
+                          trees. Maps to min_pollution_to_damage_trees.
+                        type: number
+                      minToDiffuse:
+                        description: |-
+                          minToDiffuse is the pollution amount below which no diffusion happens.
+                          Maps to min_to_diffuse.
+                        type: number
+                      minToShowPerChunk:
+                        description: |-
+                          minToShowPerChunk is the pollution amount below which the overlay is
+                          hidden. Maps to min_to_show_per_chunk.
+                        type: number
+                      pollutionPerTreeDamage:
+                        description: |-
+                          pollutionPerTreeDamage is the pollution absorbed per tree damage.
+                          Maps to pollution_per_tree_damage.
+                        type: number
+                      pollutionRestoredPerTreeDamage:
+                        description: |-
+                          pollutionRestoredPerTreeDamage is the pollution restored per tree
+                          damage. Maps to pollution_restored_per_tree_damage.
+                        type: number
+                      pollutionWithMaxForestDamage:
+                        description: |-
+                          pollutionWithMaxForestDamage is the pollution amount that deals maximum
+                          forest damage. Maps to pollution_with_max_forest_damage.
+                        type: number
+                    type: object
+                  raw:
+                    description: |-
+                      raw contains additional map-settings.json keys that are not exposed as
+                      typed fields, such as unit_group, steering, path_finder or asteroids.
+                      A key set both here and through a typed field is rejected to avoid
+                      ambiguity.
+                    x-kubernetes-preserve-unknown-fields: true
+                type: object
+              server:
+                description: |-
+                  server defines the Factorio server settings rendered into
+                  server-settings.json. When omitted, Factorio defaults apply.
+                properties:
+                  access:
+                    description: access defines who may connect and what they may
+                      do.
+                    properties:
+                      allowCommands:
+                        description: |-
+                          allowCommands controls whether players may run console commands.
+                          Maps to allow_commands.
+                        enum:
+                        - "true"
+                        - "false"
+                        - admins-only
+                        type: string
+                      gamePasswordRef:
+                        description: |-
+                          gamePasswordRef references the Secret key holding the password players
+                          must enter to join. Maps to game_password.
+                        properties:
+                          key:
+                            description: The key of the secret to select from.  Must
+                              be a valid secret key.
+                            type: string
+                          name:
+                            default: ""
+                            description: |-
+                              Name of the referent.
+                              This field is effectively required, but due to backwards compatibility is
+                              allowed to be empty. Instances of this type with an empty value here are
+                              almost certainly wrong.
+                              More info: https://kubernetes.io/docs/concepts/overview/working-with-objects/names/#names
+                            type: string
+                          optional:
+                            description: Specify whether the Secret or its key must
+                              be defined
+                            type: boolean
+                        required:
+                        - key
+                        type: object
+                        x-kubernetes-map-type: atomic
+                      maxPlayers:
+                        description: |-
+                          maxPlayers is the maximum number of players allowed to connect at the
+                          same time. A value of 0 means no limit. Maps to max_players.
+                        format: int32
+                        minimum: 0
+                        type: integer
+                      requireUserVerification:
+                        description: |-
+                          requireUserVerification requires players to have a verified factorio.com
+                          account. Maps to require_user_verification.
+                        type: boolean
+                      visibility:
+                        description: |-
+                          visibility controls how the server is advertised.
+                          Maps to visibility.
+                        properties:
+                          lan:
+                            description: |-
+                              lan advertises the server on the local network.
+                              Maps to visibility.lan.
+                            type: boolean
+                          public:
+                            description: |-
+                              public advertises the server in the public server list.
+                              Maps to visibility.public.
+                            type: boolean
+                        type: object
+                    type: object
+                  authentication:
+                    description: authentication defines the factorio.com account used
+                      by the server.
+                    properties:
+                      passwordRef:
+                        description: |-
+                          passwordRef references the Secret key holding the factorio.com account
+                          password. Prefer tokenRef when possible. Maps to password.
+                        properties:
+                          key:
+                            description: The key of the secret to select from.  Must
+                              be a valid secret key.
+                            type: string
+                          name:
+                            default: ""
+                            description: |-
+                              Name of the referent.
+                              This field is effectively required, but due to backwards compatibility is
+                              allowed to be empty. Instances of this type with an empty value here are
+                              almost certainly wrong.
+                              More info: https://kubernetes.io/docs/concepts/overview/working-with-objects/names/#names
+                            type: string
+                          optional:
+                            description: Specify whether the Secret or its key must
+                              be defined
+                            type: boolean
+                        required:
+                        - key
+                        type: object
+                        x-kubernetes-map-type: atomic
+                      tokenRef:
+                        description: |-
+                          tokenRef references the Secret key holding the factorio.com API token.
+                          Maps to token.
+                        properties:
+                          key:
+                            description: The key of the secret to select from.  Must
+                              be a valid secret key.
+                            type: string
+                          name:
+                            default: ""
+                            description: |-
+                              Name of the referent.
+                              This field is effectively required, but due to backwards compatibility is
+                              allowed to be empty. Instances of this type with an empty value here are
+                              almost certainly wrong.
+                              More info: https://kubernetes.io/docs/concepts/overview/working-with-objects/names/#names
+                            type: string
+                          optional:
+                            description: Specify whether the Secret or its key must
+                              be defined
+                            type: boolean
+                        required:
+                        - key
+                        type: object
+                        x-kubernetes-map-type: atomic
+                      username:
+                        description: |-
+                          username is the factorio.com account name used by the server.
+                          Maps to username.
+                        type: string
+                    type: object
+                  autoSave:
+                    description: autoSave defines how the server saves the game.
+                    properties:
+                      interval:
+                        description: |-
+                          interval is the time between autosaves, in minutes. A value of 0
+                          disables autosaving. Maps to autosave_interval.
+                        format: int32
+                        minimum: 0
+                        type: integer
+                      nonBlockingSaving:
+                        description: |-
+                          nonBlockingSaving saves without blocking the game loop. Linux only.
+                          Maps to non_blocking_saving.
+                        type: boolean
+                      onlyOnServer:
+                        description: |-
+                          onlyOnServer keeps autosaves on the server instead of sending them to
+                          clients. Maps to autosave_only_on_server.
+                        type: boolean
+                      slots:
+                        description: |-
+                          slots is the number of autosave slots to rotate through.
+                          Maps to autosave_slots.
+                        format: int32
+                        minimum: 1
+                        type: integer
+                    type: object
+                  identity:
+                    description: identity defines how the server is presented in the
+                      server list.
+                    properties:
+                      description:
+                        description: |-
+                          description is the description displayed in the server list.
+                          Maps to description.
+                        type: string
+                      name:
+                        description: name is the name displayed in the server list.
+                          Maps to name.
+                        maxLength: 64
+                        minLength: 1
+                        type: string
+                      tags:
+                        description: tags are the tags displayed in the server list.
+                          Maps to tags.
+                        items:
+                          type: string
+                        type: array
+                        x-kubernetes-list-type: set
+                    type: object
+                  playerManagement:
+                    description: playerManagement defines how players are managed
+                      while connected.
+                    properties:
+                      afkAutokickInterval:
+                        description: |-
+                          afkAutokickInterval is the time in minutes after which an AFK player is
+                          kicked. A value of 0 disables AFK kicks. Maps to afk_autokick_interval.
+                        format: int32
+                        minimum: 0
+                        type: integer
+                      autoPauseWhenNoPlayers:
+                        description: |-
+                          autoPauseWhenNoPlayers pauses the game when no players are connected.
+                          Maps to auto_pause.
+                        type: boolean
+                      ignorePlayerLimitForReturningPlayers:
+                        description: |-
+                          ignorePlayerLimitForReturningPlayers lets returning players join even
+                          when the server is full.
+                          Maps to ignore_player_limit_for_returning_players.
+                        type: boolean
+                      maxHeartbeatsPerSecond:
+                        description: |-
+                          maxHeartbeatsPerSecond is the maximum number of heartbeats per second.
+                          Maps to max_heartbeats_per_second.
+                        format: int32
+                        minimum: 0
+                        type: integer
+                      maxUploadKilobytesPerSecond:
+                        description: |-
+                          maxUploadKilobytesPerSecond is the upload rate limit in kilobytes per
+                          second. A value of 0 means no limit.
+                          Maps to max_upload_in_kilobytes_per_second.
+                        format: int32
+                        minimum: 0
+                        type: integer
+                      maxUploadSlots:
+                        description: |-
+                          maxUploadSlots is the maximum number of concurrent upload slots.
+                          Maps to max_upload_slots.
+                        format: int32
+                        minimum: 0
+                        type: integer
+                      minimumLatencyInTicks:
+                        description: |-
+                          minimumLatencyInTicks is the minimum latency in ticks applied to all
+                          players. Maps to minimum_latency_in_ticks.
+                        format: int32
+                        minimum: 0
+                        type: integer
+                      onlyAdminsCanPause:
+                        description: |-
+                          onlyAdminsCanPause restricts pausing to administrators.
+                          Maps to only_admins_can_pause_the_game.
+                        type: boolean
+                    type: object
+                  raw:
+                    description: |-
+                      raw contains additional server-settings.json keys that are not exposed
+                      as typed fields. A key set both here and through a typed field is
+                      rejected to avoid ambiguity.
+                    x-kubernetes-preserve-unknown-fields: true
+                type: object
               version:
                 default: 2.1.0
                 description: this is the version of the Factorio server that will

@@ -39,6 +39,7 @@ type FactorioServerReconciler struct {
 	Scheme *runtime.Scheme
 }
 
+// +kubebuilder:rbac:groups=apps,resources=deployments,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups=games.dev.streamixs.com,resources=factorioservers,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups=games.dev.streamixs.com,resources=factorioservers/status,verbs=get;update;patch
 // +kubebuilder:rbac:groups=games.dev.streamixs.com,resources=factorioservers/finalizers,verbs=update
