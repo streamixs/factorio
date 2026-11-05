@@ -1,0 +1,83 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: factorio-api
+  namespace: factorio-system
+  labels:
+    app: factorio-api
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: factorio-api
+  template:
+    metadata:
+      labels:
+        app: factorio-api
+    spec:
+      serviceAccountName: factorio-api
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        runAsGroup: 1000
+        fsGroup: 1000
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: api
+          image: factorio-api:dev
+          imagePullPolicy: IfNotPresent
+          env:
+            - name: FACTORIO_NAMESPACE
+              value: default
+            - name: PORT
+              value: "3001"
+          ports:
+            - name: http
+              containerPort: 3001
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: http
+            initialDelaySeconds: 3
+            periodSeconds: 10
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: http
+            initialDelaySeconds: 10
+            periodSeconds: 20
+          resources:
+            requests:
+              cpu: 50m
+              memory: 128Mi
+            limits:
+              cpu: 500m
+              memory: 512Mi
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop:
+                - ALL
+          volumeMounts:
+            - name: tmp
+              mountPath: /tmp
+      volumes:
+        - name: tmp
+          emptyDir: {}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: factorio-api
+  namespace: factorio-system
+  labels:
+    app: factorio-api
+spec:
+  selector:
+    app: factorio-api
+  ports:
+    - name: http
+      port: 3001
+      targetPort: http
