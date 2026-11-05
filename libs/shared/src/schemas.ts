@@ -26,7 +26,7 @@ export const visibilitySchema = z.strictObject({
 });
 
 export const accessControlSchema = z.strictObject({
-  maxPlayers: z.number().int().min(0).optional(),
+  maxPlayers: z.number().int().min(0).max(65535).optional(),
   gamePasswordRef: secretKeySelectorSchema.optional(),
   requireUserVerification: optionalBoolean,
   visibility: visibilitySchema.optional(),
@@ -48,7 +48,7 @@ export const playerManagementSchema = z.strictObject({
   maxUploadSlots: z.number().int().min(0).optional(),
   maxUploadKilobytesPerSecond: z.number().int().min(0).optional(),
   minimumLatencyInTicks: z.number().int().min(0).optional(),
-  maxHeartbeatsPerSecond: z.number().int().min(0).optional(),
+  maxHeartbeatsPerSecond: z.number().int().min(6).max(240).optional(),
 });
 
 export const authenticationSchema = z.strictObject({
@@ -67,9 +67,9 @@ export const serverSettingsSchema = z.strictObject({
 });
 
 export const autoplaceControlSchema = z.strictObject({
-  frequency: optionalNumber,
-  size: optionalNumber,
-  richness: optionalNumber,
+  frequency: z.number().min(0).max(6).optional(),
+  size: z.number().min(0).max(6).optional(),
+  richness: z.number().min(0).max(6).optional(),
 });
 
 export const mapPositionSchema = z.strictObject({
@@ -81,15 +81,15 @@ export const cliffSettingsSchema = z.strictObject({
   name: z.string().optional(),
   cliffElevation0: optionalNumber,
   cliffElevationInterval: optionalNumber,
-  richness: optionalNumber,
+  richness: z.number().min(0).max(10).optional(),
 });
 
 export const mapGenSettingsSchema = z.strictObject({
-  terrainSegmentation: optionalNumber,
-  water: optionalNumber,
+  terrainSegmentation: z.number().min(0).max(6).optional(),
+  water: z.number().min(0).max(6).optional(),
   width: z.number().int().min(0).optional(),
   height: z.number().int().min(0).optional(),
-  startingArea: optionalNumber,
+  startingArea: z.number().min(0).max(6).optional(),
   peacefulMode: optionalBoolean,
   seed: z.number().int().min(0).max(4294967295).optional(),
   startingPoints: z.array(mapPositionSchema).optional(),
