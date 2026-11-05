@@ -8,10 +8,13 @@ import {
   Param,
   Patch,
   Post,
+  Query,
 } from '@nestjs/common';
 import type {
   CreateFactorioServerInput,
   FactorioServer,
+  ServerEvent,
+  ServerLogs,
   UpdateFactorioServerInput,
 } from '@factorio/shared';
 
@@ -29,6 +32,24 @@ export class ServersController {
   @Get(':name')
   get(@Param('name') name: string): Promise<FactorioServer> {
     return this.servers.get(name);
+  }
+
+  @Get(':name/logs')
+  logs(
+    @Param('name') name: string,
+    @Query('tailLines') tailLines?: string,
+    @Query('previous') previous?: string,
+  ): Promise<ServerLogs> {
+    return this.servers.logs(name, {
+      tailLines:
+        tailLines === undefined ? undefined : Number.parseInt(tailLines, 10),
+      previous: previous === 'true',
+    });
+  }
+
+  @Get(':name/events')
+  events(@Param('name') name: string): Promise<ServerEvent[]> {
+    return this.servers.events(name);
   }
 
   @Post()

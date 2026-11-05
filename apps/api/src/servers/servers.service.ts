@@ -5,7 +5,7 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { ApiException } from '@kubernetes/client-node';
-import type { V1Secret } from '@kubernetes/client-node';
+import type { CoreV1Event, V1Pod, V1Secret } from '@kubernetes/client-node';
 import {
   createFactorioServerSchema,
   updateFactorioServerSchema,
@@ -17,6 +17,8 @@ import type {
   FactorioServer,
   FactorioServerList,
   FactorioServerSpec,
+  ServerEvent,
+  ServerLogs,
   UpdateFactorioServerInput,
 } from '@factorio/shared';
 
@@ -162,6 +164,65 @@ export class ServersService {
     const server = await this.get(name);
     server.spec.suspended = suspended;
     return this.replace(server, server.spec);
+  }
+
+  async logs(
+    name: string,
+    options: { tailLines?: number; previous?: boolean } = {},
+  ): Promise<ServerLogs> {
+    this.assertName(name);
+
+    const namespace = this.kubernetes.namespace;
+    const pods = await this.kubernetes.core.listNamespacedPod({
+      namespace,
+      labelSelector: `app.kubernetes.io/instance=${name}`,
+    });
+
+    const pod = selectPod(pods.items ?? []);
+    if (pod?.metadata?.name === undefined) {
+      return { pod: null, container: 'factorio', logs: '' };
+    }
+
+    try {
+      const logs = await this.kubernetes.core.readNamespacedPodLog({
+        name: pod.metadata.name,
+        namespace,
+        container: 'factorio',
+        tailLines: clampTailLines(options.tailLines),
+        previous: options.previous === true,
+      });
+
+      return { pod: pod.metadata.name, container: 'factorio', logs };
+    } catch (error) {
+      if (error instanceof ApiException && error.code === 400) {
+        throw new BadRequestException(
+          'Logs are not available for this container yet',
+        );
+      }
+      throw error;
+    }
+  }
+
+  async events(name: string): Promise<ServerEvent[]> {
+    this.assertName(name);
+
+    const result = await this.kubernetes.core.listNamespacedEvent({
+      namespace: this.kubernetes.namespace,
+    });
+
+    const prefix = `${name}-`;
+
+    return (result.items ?? [])
+      .filter((event) => {
+        const objectName = event.involvedObject?.name ?? '';
+        return objectName === name || objectName.startsWith(prefix);
+      })
+      .map(toServerEvent)
+      .sort(
+        (left, right) =>
+          Date.parse(right.lastTimestamp) - Date.parse(left.lastTimestamp),
+      )
+      .slice(0, 100);
   }
 
   private async replace(
@@ -391,6 +452,68 @@ export class ServersService {
 
 function credentialsSecretName(serverName: string): string {
   return `${serverName}${CREDENTIALS_SUFFIX}`;
+}
+
+function clampTailLines(value?: number): number {
+  if (value === undefined || !Number.isFinite(value)) {
+    return 200;
+  }
+
+  return Math.min(Math.max(Math.trunc(value), 1), 2000);
+}
+
+function selectPod(pods: V1Pod[]): V1Pod | undefined {
+  return [...pods].sort((left, right) => {
+    const leftReady = isPodReady(left);
+    const rightReady = isPodReady(right);
+
+    if (leftReady !== rightReady) {
+      return leftReady ? -1 : 1;
+    }
+
+    return podTimestamp(right) - podTimestamp(left);
+  })[0];
+}
+
+function isPodReady(pod: V1Pod): boolean {
+  return (
+    pod.status?.containerStatuses?.some((status) => status.ready) ?? false
+  );
+}
+
+function podTimestamp(pod: V1Pod): number {
+  const created = pod.metadata?.creationTimestamp;
+  return created === undefined ? 0 : new Date(created).getTime();
+}
+
+function toServerEvent(event: CoreV1Event): ServerEvent {
+  const timestamp =
+    event.lastTimestamp ??
+    event.eventTime ??
+    event.metadata?.creationTimestamp;
+
+  return {
+    type: event.type ?? 'Normal',
+    reason: event.reason ?? '',
+    message: event.message ?? '',
+    objectKind: event.involvedObject?.kind ?? '',
+    objectName: event.involvedObject?.name ?? '',
+    count: event.count ?? 1,
+    lastTimestamp: toISOString(timestamp),
+  };
+}
+
+function toISOString(value: Date | string | undefined): string {
+  if (value === undefined) {
+    return '';
+  }
+
+  if (value instanceof Date) {
+    return value.toISOString();
+  }
+
+  const parsed = new Date(value);
+  return Number.isNaN(parsed.getTime()) ? String(value) : parsed.toISOString();
 }
 
 function hasCredentialChanges(

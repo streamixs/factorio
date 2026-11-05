@@ -16,6 +16,9 @@ describe('ServersService', () => {
   const createNamespacedSecret = vi.fn();
   const replaceNamespacedSecret = vi.fn();
   const deleteNamespacedSecret = vi.fn();
+  const listNamespacedPod = vi.fn();
+  const readNamespacedPodLog = vi.fn();
+  const listNamespacedEvent = vi.fn();
 
   let service: ServersService;
 
@@ -41,6 +44,9 @@ describe('ServersService', () => {
               createNamespacedSecret,
               replaceNamespacedSecret,
               deleteNamespacedSecret,
+              listNamespacedPod,
+              readNamespacedPodLog,
+              listNamespacedEvent,
             },
           },
         },
@@ -266,6 +272,92 @@ describe('ServersService', () => {
       }),
     );
     expect(server.spec.server?.access?.gamePasswordRef).toBeUndefined();
+  });
+
+  it('returns logs from the ready pod', async () => {
+    listNamespacedPod.mockResolvedValue({
+      items: [
+        {
+          metadata: {
+            name: 'pod-old',
+            creationTimestamp: new Date('2026-01-01T00:00:00Z'),
+          },
+          status: {},
+        },
+        {
+          metadata: {
+            name: 'pod-new',
+            creationTimestamp: new Date('2026-01-02T00:00:00Z'),
+          },
+          status: { containerStatuses: [{ ready: true }] },
+        },
+      ],
+    });
+    readNamespacedPodLog.mockResolvedValue('factorio log');
+
+    const logs = await service.logs('my-server', { tailLines: 50 });
+
+    expect(logs).toEqual({
+      pod: 'pod-new',
+      container: 'factorio',
+      logs: 'factorio log',
+    });
+    expect(readNamespacedPodLog).toHaveBeenCalledWith(
+      expect.objectContaining({
+        name: 'pod-new',
+        container: 'factorio',
+        tailLines: 50,
+        previous: false,
+      }),
+    );
+  });
+
+  it('returns an empty log document when no pod exists', async () => {
+    listNamespacedPod.mockResolvedValue({ items: [] });
+
+    const logs = await service.logs('my-server');
+
+    expect(logs).toEqual({ pod: null, container: 'factorio', logs: '' });
+    expect(readNamespacedPodLog).not.toHaveBeenCalled();
+  });
+
+  it('returns related events newest first', async () => {
+    listNamespacedEvent.mockResolvedValue({
+      items: [
+        {
+          type: 'Normal',
+          reason: 'Created',
+          message: 'pod created',
+          involvedObject: { kind: 'Pod', name: 'my-server-abc' },
+          lastTimestamp: new Date('2026-01-01T00:00:00Z'),
+          count: 1,
+        },
+        {
+          type: 'Warning',
+          reason: 'Ignored',
+          message: 'other server',
+          involvedObject: { kind: 'Pod', name: 'other-server' },
+          lastTimestamp: new Date('2026-01-04T00:00:00Z'),
+          count: 2,
+        },
+        {
+          type: 'Normal',
+          reason: 'Updated',
+          message: 'deployment updated',
+          involvedObject: { kind: 'Deployment', name: 'my-server' },
+          eventTime: '2026-01-03T00:00:00Z',
+          count: 1,
+        },
+      ],
+    });
+
+    const events = await service.events('my-server');
+
+    expect(events).toHaveLength(2);
+    expect(events[0].reason).toBe('Updated');
+    expect(events[0].lastTimestamp).toBe('2026-01-03T00:00:00.000Z');
+    expect(events[1].reason).toBe('Created');
+    expect(events[1].objectName).toBe('my-server-abc');
   });
 
   it('maps a 404 to NotFoundException', async () => {
