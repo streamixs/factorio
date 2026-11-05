@@ -228,6 +228,22 @@ export interface UpdateFactorioServerInput {
   credentials?: CredentialsInput;
 }
 
+export interface ServerLogs {
+  pod: string | null;
+  container: string;
+  logs: string;
+}
+
+export interface ServerEvent {
+  type: string;
+  reason: string;
+  message: string;
+  objectKind: string;
+  objectName: string;
+  count: number;
+  lastTimestamp: string;
+}
+
 export function findCondition(
   server: FactorioServer,
   type: string,
