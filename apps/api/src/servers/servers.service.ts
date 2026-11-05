@@ -55,6 +55,8 @@ const GROUP = 'games.dev.streamixs.com';
 const VERSION = 'v1alpha1';
 const PLURAL = 'factorioservers';
 const OPERATIONS_PLURAL = 'factoriooperations';
+const CRD_NAME = 'factorioservers.games.dev.streamixs.com';
+const SCHEMA_TTL_MS = 5 * 60 * 1000;
 const DEFAULT_VERSION = '2.1.24';
 
 const NAME_PATTERN = /^[a-z0-9]([-a-z0-9]*[a-z0-9])?$/;
@@ -111,6 +113,10 @@ interface FactorioOperationResource {
 export class ServersService {
   private readonly logger = new Logger(ServersService.name);
   private readonly imports = new Map<string, PendingImport>();
+  private schemaCache: {
+    value: Record<string, unknown>;
+    expiresAt: number;
+  } | null = null;
 
   constructor(private readonly kubernetes: KubernetesService) {
     // Uploaded saves are kept only until the operation Job fetches them.
@@ -596,8 +602,42 @@ export class ServersService {
     return { operation };
   }
 
-  async operations(name: string): Promise<ServerOperation[]> {
-    this.assertName(name);
+  /**
+   * Returns the FactorioServer spec OpenAPI schema. The UI generates bounds,
+   * enums and defaults from it, so adding a field to the CRD also adds it to
+   * the form.
+   */
+  async schema(): Promise<Record<string, unknown>> {
+    if (
+      this.schemaCache !== null &&
+      this.schemaCache.expiresAt > Date.now()
+    ) {
+      return this.schemaCache.value;
+    }
+
+    const crd = await this.kubernetes.apiextensions.readCustomResourceDefinition(
+      { name: CRD_NAME },
+    );
+    const versions = crd.spec?.versions ?? [];
+    const version =
+      versions.find((item) => item.name === VERSION) ?? versions[0];
+    const schema = version?.schema?.openAPIV3Schema?.properties?.spec;
+
+    if (schema === undefined) {
+      throw new InternalServerErrorException(
+        'FactorioServer schema is not available',
+      );
+    }
+
+    const value = schema as unknown as Record<string, unknown>;
+    this.schemaCache = {
+      value,
+      expiresAt: Date.now() + SCHEMA_TTL_MS,
+    };
+    return value;
+  }
+
+  async operations(name: string): Promise<ServerOperation[]> {    this.assertName(name);
 
     const result = await this.call(() =>
       this.kubernetes.customObjects.listNamespacedCustomObject({

@@ -40,6 +40,11 @@ export class ServersController {
     return this.servers.list();
   }
 
+  @Get('schema')
+  schema(): Promise<Record<string, unknown>> {
+    return this.servers.schema();
+  }
+
   @Get(':name')
   get(@Param('name') name: string): Promise<FactorioServer> {
     return this.servers.get(name);

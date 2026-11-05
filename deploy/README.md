@@ -43,6 +43,7 @@ The Role in the target namespace allows:
 - `factoriooperations` create/list/watch (durable restore/import)
 - `secrets` get/create/update/delete (managed credentials and RCON)
 - `configmaps` get (effective settings)
+- `customresourcedefinitions` get cluster-wide (settings form schema)
 - `pods` list and `pods/log` get (logs)
 - `events` list (diagnostics)
 - `services` get (connection details)

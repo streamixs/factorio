@@ -31,6 +31,7 @@ describe('ServersService', () => {
   const createNamespacedJob = vi.fn();
   const readNamespacedJob = vi.fn();
   const deleteNamespacedJob = vi.fn();
+  const readCustomResourceDefinition = vi.fn();
 
   let service: ServersService;
 
@@ -67,6 +68,9 @@ describe('ServersService', () => {
               createNamespacedJob,
               readNamespacedJob,
               deleteNamespacedJob,
+            },
+            apiextensions: {
+              readCustomResourceDefinition,
             },
           },
         },
@@ -574,6 +578,42 @@ describe('ServersService', () => {
         }),
       }),
     );
+  });
+
+  it('returns the FactorioServer spec schema', async () => {
+    readCustomResourceDefinition.mockResolvedValue({
+      spec: {
+        versions: [
+          {
+            name: 'v1alpha1',
+            schema: {
+              openAPIV3Schema: {
+                properties: {
+                  spec: {
+                    type: 'object',
+                    properties: {
+                      version: { type: 'string' },
+                    },
+                  },
+                },
+              },
+            },
+          },
+        ],
+      },
+    });
+
+    const schema = await service.schema();
+
+    expect(schema).toEqual({
+      type: 'object',
+      properties: {
+        version: { type: 'string' },
+      },
+    });
+    expect(readCustomResourceDefinition).toHaveBeenCalledWith({
+      name: 'factorioservers.games.dev.streamixs.com',
+    });
   });
 
   it('lists operations for one server, newest first', async () => {

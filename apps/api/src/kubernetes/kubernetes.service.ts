@@ -1,5 +1,6 @@
 import { Injectable, Logger, ServiceUnavailableException } from '@nestjs/common';
 import {
+  ApiextensionsV1Api,
   BatchV1Api,
   CoreV1Api,
   CustomObjectsApi,
@@ -10,6 +11,7 @@ interface KubernetesClients {
   custom: CustomObjectsApi;
   core: CoreV1Api;
   batch: BatchV1Api;
+  apiextensions: ApiextensionsV1Api;
 }
 
 /**
@@ -40,6 +42,10 @@ export class KubernetesService {
     return this.requireClients().batch;
   }
 
+  get apiextensions(): ApiextensionsV1Api {
+    return this.requireClients().apiextensions;
+  }
+
   private requireClients(): KubernetesClients {
     if (this.clients === null) {
       throw new ServiceUnavailableException(
@@ -64,6 +70,7 @@ export class KubernetesService {
         custom: kubeConfig.makeApiClient(CustomObjectsApi),
         core: kubeConfig.makeApiClient(CoreV1Api),
         batch: kubeConfig.makeApiClient(BatchV1Api),
+        apiextensions: kubeConfig.makeApiClient(ApiextensionsV1Api),
       };
     } catch (error) {
       this.logger.warn(
