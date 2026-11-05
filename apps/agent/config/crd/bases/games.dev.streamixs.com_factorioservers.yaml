@@ -49,37 +49,6 @@ spec:
           spec:
             description: spec defines the desired state of FactorioServer
             properties:
-              backup:
-                description: |-
-                  backup defines scheduled save backups. When omitted, backups are enabled
-                  with a 10Gi volume, one copy per hour and ten copies retained.
-                properties:
-                  enabled:
-                    default: true
-                    description: enabled enables the backup sidecar and volume. Defaults
-                      to true.
-                    type: boolean
-                  intervalMinutes:
-                    default: 60
-                    description: intervalMinutes is the time between two backups.
-                      Defaults to 60.
-                    format: int32
-                    minimum: 1
-                    type: integer
-                  retention:
-                    default: 10
-                    description: retention is the number of backup files to keep.
-                      Defaults to 10.
-                    format: int32
-                    minimum: 1
-                    type: integer
-                  size:
-                    default: 10Gi
-                    description: size is the requested size of the backup volume,
-                      for example "10Gi".
-                    pattern: ^(\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))(([KMGTPE]i)|[numkMGTPE]|([eE](\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))))?$
-                    type: string
-                type: object
               mapGenSettings:
                 description: |-
                   mapGenSettings defines the settings rendered into

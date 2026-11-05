@@ -91,11 +91,6 @@ var _ = Describe("FactorioServer Controller", func() {
 		Namespace: resourceNamespace,
 	}
 
-	backupClaimKey := types.NamespacedName{
-		Name:      resourceName + "-backups",
-		Namespace: resourceNamespace,
-	}
-
 	var reconciler *FactorioServerReconciler
 	var recorder *record.FakeRecorder
 
@@ -160,7 +155,7 @@ var _ = Describe("FactorioServer Controller", func() {
 		// envtest does not run the PVC protection controller, so the
 		// kubernetes.io/pvc-protection finalizer is never removed and the
 		// claim would stay behind. Strip it before deleting.
-		for _, pvcKey := range []types.NamespacedName{claimKey, backupClaimKey} {
+		for _, pvcKey := range []types.NamespacedName{claimKey} {
 			var pvc corev1.PersistentVolumeClaim
 			err := k8sClient.Get(ctx, pvcKey, &pvc)
 			if err == nil {
@@ -244,9 +239,10 @@ var _ = Describe("FactorioServer Controller", func() {
 		Expect(deployment.Spec.Strategy.Type).To(
 			Equal(appsv1.RecreateDeploymentStrategyType))
 		Expect(deployment.Spec.Template.Spec.InitContainers).To(HaveLen(1))
-		Expect(deployment.Spec.Template.Spec.Volumes).To(HaveLen(4))
+		Expect(deployment.Spec.Template.Spec.Volumes).To(HaveLen(3))
 		Expect(deployment.Spec.Template.Spec.Containers).To(HaveLen(2))
 		Expect(deployment.Spec.Template.Spec.Containers[0].VolumeMounts).To(HaveLen(3))
+		Expect(deployment.Spec.Template.Spec.Containers[1].Name).To(Equal("saves"))
 
 		server := &gamesv1alpha1.FactorioServer{}
 		Expect(k8sClient.Get(ctx, key, server)).To(Succeed())
@@ -300,20 +296,12 @@ var _ = Describe("FactorioServer Controller", func() {
 		)).To(Succeed())
 		storage := effectiveSpec["storage"].(map[string]any)
 		Expect(storage["size"]).To(Equal("10Gi"))
-		backup := effectiveSpec["backup"].(map[string]any)
-		Expect(backup["intervalMinutes"]).To(BeEquivalentTo(60))
-		Expect(backup["retention"]).To(BeEquivalentTo(10))
+		Expect(effectiveSpec).NotTo(HaveKey("backup"))
 
 		var claim corev1.PersistentVolumeClaim
 		Expect(k8sClient.Get(ctx, claimKey, &claim)).To(Succeed())
 		Expect(metav1.IsControlledBy(&claim, server)).To(BeTrue())
 		Expect(claim.Spec.AccessModes).To(ContainElement(corev1.ReadWriteOnce))
-
-		var backupClaim corev1.PersistentVolumeClaim
-		Expect(k8sClient.Get(ctx, backupClaimKey, &backupClaim)).To(Succeed())
-		Expect(metav1.IsControlledBy(&backupClaim, server)).To(BeTrue())
-		Expect(backupClaim.Spec.AccessModes).To(
-			ContainElement(corev1.ReadWriteOnce))
 
 		var service corev1.Service
 		Expect(k8sClient.Get(ctx, key, &service)).To(Succeed())

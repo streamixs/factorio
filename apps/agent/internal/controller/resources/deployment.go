@@ -32,8 +32,6 @@ const (
 
 	prepareDataCommand = "mkdir -p /factorio/config /factorio/saves /factorio/mods && " +
 		"chown -R 845:845 /factorio"
-	prepareDataWithBackupCommand = prepareDataCommand +
-		" && mkdir -p " + backupDir + " && chown -R 845:845 " + backupDir
 	healthcheckPath = "/docker-healthcheck.sh"
 )
 
@@ -64,19 +62,8 @@ func BuildDeployment(
 		MountPath: dataDir,
 	})
 
-	backupEnabled := BackupEnabled(server)
 	initMounts := []corev1.VolumeMount{
 		{Name: dataVolume, MountPath: dataDir},
-	}
-	initCommand := prepareDataCommand
-
-	if backupEnabled {
-		volumes = append(volumes, backupVolumeFor(server))
-		initMounts = append(initMounts, corev1.VolumeMount{
-			Name:      backupVolumeName,
-			MountPath: backupDir,
-		})
-		initCommand = prepareDataWithBackupCommand
 	}
 
 	version := server.Spec.Version
@@ -118,10 +105,7 @@ func BuildDeployment(
 			LivenessProbe:  healthProbe(60, 3),
 			VolumeMounts:   mounts,
 		},
-	}
-
-	if backupEnabled {
-		containers = append(containers, backupContainerFor(server))
+		savesContainerFileServer(),
 	}
 
 	template := corev1.PodTemplateSpec{
@@ -134,7 +118,7 @@ func BuildDeployment(
 				{
 					Name:         "prepare-data",
 					Image:        prepareImage,
-					Command:      []string{"sh", "-c", initCommand},
+					Command:      []string{"sh", "-c", prepareDataCommand},
 					VolumeMounts: initMounts,
 				},
 			},

@@ -108,17 +108,6 @@ func TestEffectiveSpecFillsDefaults(t *testing.T) {
 	if got := effective.Storage.Size; got != "10Gi" {
 		t.Errorf("storage size is %q", got)
 	}
-	if effective.Backup == nil ||
-		effective.Backup.Enabled == nil ||
-		!*effective.Backup.Enabled {
-		t.Error("default backup enabled was not filled")
-	}
-	if got := effective.Backup.Size; got != "10Gi" {
-		t.Errorf("backup size is %q", got)
-	}
-	if got := *effective.Backup.IntervalMinutes; got != 60 {
-		t.Errorf("backup interval is %d", got)
-	}
 	if got := effective.Service.Type; got != "ClusterIP" {
 		t.Errorf("service type is %q", got)
 	}
