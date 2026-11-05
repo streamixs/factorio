@@ -469,6 +469,11 @@ func (r *FactorioServerReconciler) reconcileDeployment(
 		return nil
 	}
 
+	previousReplicas := int32(1)
+	if existing.Spec.Replicas != nil {
+		previousReplicas = *existing.Spec.Replicas
+	}
+
 	factorioresources.UpdateDeployment(&existing, &desired)
 
 	if err := r.Update(ctx, &existing); err != nil {
@@ -478,6 +483,7 @@ func (r *FactorioServerReconciler) reconcileDeployment(
 	logger.Info("Updated Deployment", "name", existing.Name)
 	r.recordEvent(server, corev1.EventTypeNormal, "Updated",
 		fmt.Sprintf("Updated Deployment %q", existing.Name))
+	r.recordSuspensionEvent(server, previousReplicas, desired.Spec.Replicas)
 	return nil
 }
 
@@ -586,6 +592,17 @@ func (r *FactorioServerReconciler) updateStatus(
 	replicas := int32(1)
 	if deployment.Spec.Replicas != nil {
 		replicas = *deployment.Spec.Replicas
+	}
+
+	if server.Spec.Suspended {
+		changed := setSuspendedCondition(server, ConditionAvailable)
+		changed = setSuspendedCondition(server, ConditionProgressing) || changed
+		changed = setSuspendedCondition(server, ConditionDegraded) || changed
+
+		if !changed {
+			return nil
+		}
+		return r.Status().Update(ctx, server)
 	}
 
 	available := deployment.Status.AvailableReplicas >= replicas
@@ -707,6 +724,38 @@ func setDegradedCondition(
 	}
 
 	return meta.SetStatusCondition(&server.Status.Conditions, condition)
+}
+
+func setSuspendedCondition(
+	server *gamesv1alpha1.FactorioServer,
+	conditionType string,
+) bool {
+	return meta.SetStatusCondition(&server.Status.Conditions, metav1.Condition{
+		Type:               conditionType,
+		Status:             metav1.ConditionFalse,
+		Reason:             "Suspended",
+		Message:            "The server is stopped.",
+		ObservedGeneration: server.Generation,
+	})
+}
+
+func (r *FactorioServerReconciler) recordSuspensionEvent(
+	server *gamesv1alpha1.FactorioServer,
+	previousReplicas int32,
+	desiredReplicas *int32,
+) {
+	if desiredReplicas == nil {
+		return
+	}
+
+	switch {
+	case previousReplicas > 0 && *desiredReplicas == 0:
+		r.recordEvent(server, corev1.EventTypeNormal, "Suspended",
+			fmt.Sprintf("Stopped FactorioServer %q", server.Name))
+	case previousReplicas == 0 && *desiredReplicas > 0:
+		r.recordEvent(server, corev1.EventTypeNormal, "Resumed",
+			fmt.Sprintf("Started FactorioServer %q", server.Name))
+	}
 }
 
 func (r *FactorioServerReconciler) recordEvent(

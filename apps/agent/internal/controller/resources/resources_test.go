@@ -142,6 +142,24 @@ func TestBuildDeploymentConfiguresHealthProbes(t *testing.T) {
 	}
 }
 
+func TestBuildDeploymentScalesToZeroWhenSuspended(t *testing.T) {
+	server := testServer()
+	server.Spec.Suspended = true
+
+	deployment := BuildDeployment(server, ConfigFiles{})
+
+	if deployment.Spec.Replicas == nil || *deployment.Spec.Replicas != 0 {
+		t.Errorf("replicas are %v, want 0", deployment.Spec.Replicas)
+	}
+
+	server.Spec.Suspended = false
+	deployment = BuildDeployment(server, ConfigFiles{})
+
+	if deployment.Spec.Replicas == nil || *deployment.Spec.Replicas != 1 {
+		t.Errorf("replicas are %v, want 1", deployment.Spec.Replicas)
+	}
+}
+
 func TestBuildDeploymentWithoutSettings(t *testing.T) {
 	server := testServer()
 	server.Spec.Version = ""

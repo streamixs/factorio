@@ -46,6 +46,9 @@ func BuildDeployment(
 	files ConfigFiles,
 ) appsv1.Deployment {
 	replicas := int32(1)
+	if server.Spec.Suspended {
+		replicas = 0
+	}
 	labels := labelsFor(server)
 	volumes, mounts := configVolumes(server, files)
 	volumes = append(volumes, dataVolumeFor(server))

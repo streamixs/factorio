@@ -31,6 +31,13 @@ type FactorioServerSpec struct {
 	// +kubebuilder:default="2.1.0"
 	Version string `json:"version,omitempty"`
 
+	// suspended stops the server without deleting it or its data. The
+	// Deployment is scaled to zero, and setting the field back to false starts
+	// the server again.
+	// +optional
+	// +kubebuilder:default=false
+	Suspended bool `json:"suspended,omitempty"`
+
 	// server defines the Factorio server settings rendered into
 	// server-settings.json. When omitted, Factorio defaults apply.
 	// +optional

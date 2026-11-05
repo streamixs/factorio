@@ -712,6 +712,13 @@ spec:
                       omitted, the cluster default StorageClass is used.
                     type: string
                 type: object
+              suspended:
+                default: false
+                description: |-
+                  suspended stops the server without deleting it or its data. The
+                  Deployment is scaled to zero, and setting the field back to false starts
+                  the server again.
+                type: boolean
               version:
                 default: 2.1.0
                 description: this is the version of the Factorio server that will

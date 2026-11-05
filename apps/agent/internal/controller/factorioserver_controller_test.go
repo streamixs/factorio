@@ -371,6 +371,56 @@ var _ = Describe("FactorioServer Controller", func() {
 		Expect(degraded.Status).To(Equal(metav1.ConditionFalse))
 	})
 
+	It("scales the Deployment down when the server is suspended", func() {
+		_, err := reconciler.Reconcile(ctx, reconcile.Request{
+			NamespacedName: key,
+		})
+		Expect(err).NotTo(HaveOccurred())
+
+		var deployment appsv1.Deployment
+		Expect(k8sClient.Get(ctx, key, &deployment)).To(Succeed())
+		Expect(*deployment.Spec.Replicas).To(BeEquivalentTo(1))
+
+		var stored gamesv1alpha1.FactorioServer
+		Expect(k8sClient.Get(ctx, key, &stored)).To(Succeed())
+		stored.Spec.Suspended = true
+		Expect(k8sClient.Update(ctx, &stored)).To(Succeed())
+
+		_, err = reconciler.Reconcile(ctx, reconcile.Request{
+			NamespacedName: key,
+		})
+		Expect(err).NotTo(HaveOccurred())
+
+		Expect(k8sClient.Get(ctx, key, &deployment)).To(Succeed())
+		Expect(*deployment.Spec.Replicas).To(BeEquivalentTo(0))
+
+		var suspended gamesv1alpha1.FactorioServer
+		Expect(k8sClient.Get(ctx, key, &suspended)).To(Succeed())
+
+		available := meta.FindStatusCondition(suspended.Status.Conditions,
+			ConditionAvailable)
+		Expect(available).NotTo(BeNil())
+		Expect(available.Status).To(Equal(metav1.ConditionFalse))
+		Expect(available.Reason).To(Equal("Suspended"))
+
+		Expect(drainEvents(recorder)).To(ContainElement(
+			ContainSubstring("Suspended")))
+
+		suspended.Spec.Suspended = false
+		Expect(k8sClient.Update(ctx, &suspended)).To(Succeed())
+
+		_, err = reconciler.Reconcile(ctx, reconcile.Request{
+			NamespacedName: key,
+		})
+		Expect(err).NotTo(HaveOccurred())
+
+		Expect(k8sClient.Get(ctx, key, &deployment)).To(Succeed())
+		Expect(*deployment.Spec.Replicas).To(BeEquivalentTo(1))
+
+		Expect(drainEvents(recorder)).To(ContainElement(
+			ContainSubstring("Resumed")))
+	})
+
 	It("fails when the referenced Secret is missing", func() {
 		credentials := &corev1.Secret{
 			ObjectMeta: metav1.ObjectMeta{
