@@ -7,7 +7,9 @@ import type {
   UpdateFactorioServerInput,
 } from "@factorio/shared";
 
-const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:3001";
+// Empty by default: in the cluster the Next server proxies /api to the API
+// Service. In local development .env.local points at http://localhost:3001.
+const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "";
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
   const response = await fetch(`${API_URL}/api/servers${path}`, {
