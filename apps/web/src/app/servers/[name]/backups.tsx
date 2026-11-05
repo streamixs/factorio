@@ -1,7 +1,13 @@
 "use client";
 
 import type { ServerBackup, ServerBackups } from "@factorio/shared";
-import { useCallback, useEffect, useState } from "react";
+import {
+  type ChangeEvent,
+  useCallback,
+  useEffect,
+  useRef,
+  useState,
+} from "react";
 import { toast } from "sonner";
 
 import { Alert, AlertDescription } from "@/components/ui/alert";
@@ -18,6 +24,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import {
   backupDownloadUrl,
   getServerBackups,
+  importSave,
   restoreBackup,
 } from "@/lib/api";
 
@@ -32,6 +39,8 @@ export function BackupsPanel({
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [restoring, setRestoring] = useState<string | null>(null);
+  const [importing, setImporting] = useState(false);
+  const fileInput = useRef<HTMLInputElement>(null);
 
   const load = useCallback(async () => {
     try {
@@ -88,6 +97,50 @@ export function BackupsPanel({
     }
   }
 
+  async function handleImport(event: ChangeEvent<HTMLInputElement>) {
+    const file = event.target.files?.[0];
+    event.target.value = "";
+
+    if (file === undefined) {
+      return;
+    }
+
+    if (!file.name.toLowerCase().endsWith(".zip")) {
+      const message = "Choisis un fichier .zip";
+      setError(message);
+      toast.error(message);
+      return;
+    }
+
+    if (file.size > 1024 * 1024 * 1024) {
+      const message = "La save dépasse la limite de 1 Go";
+      setError(message);
+      toast.error(message);
+      return;
+    }
+
+    setImporting(true);
+    setError(null);
+
+    try {
+      await importSave(name, file);
+      toast.success(
+        "Importation lancée. Le serveur redémarre s'il était démarré.",
+      );
+      onRestoreStarted?.();
+      window.setTimeout(() => {
+        setImporting(false);
+        void load();
+      }, 15000);
+    } catch (err) {
+      const message =
+        err instanceof Error ? err.message : "Impossible d'importer la save";
+      setError(message);
+      toast.error(message);
+      setImporting(false);
+    }
+  }
+
   return (
     <Card>
       <CardHeader>
@@ -109,10 +162,27 @@ export function BackupsPanel({
           >
             Rafraîchir
           </Button>
+          <input
+            ref={fileInput}
+            type="file"
+            accept=".zip,application/zip"
+            className="hidden"
+            onChange={(event) => void handleImport(event)}
+          />
+          <Button
+            type="button"
+            variant="secondary"
+            size="sm"
+            onClick={() => fileInput.current?.click()}
+            disabled={importing || restoring !== null}
+          >
+            {importing ? "Importation…" : "Importer une save"}
+          </Button>
           <p className="text-sm text-muted-foreground">
-            Autosaves écrites par Factorio dans /factorio/saves.
-            L&apos;intervalle et le nombre de slots se règlent dans l&apos;onglet
-            Sauvegarde automatique.
+            Autosaves écrites par Factorio dans /factorio/saves, ou import
+            d&apos;un fichier .zip (1 Go maximum). L&apos;intervalle et le
+            nombre de slots se règlent dans l&apos;onglet Sauvegarde
+            automatique.
           </p>
         </div>
 
@@ -169,7 +239,7 @@ export function BackupsPanel({
                     variant="secondary"
                     size="sm"
                     onClick={() => void handleRestore(backup)}
-                    disabled={restoring !== null}
+                    disabled={restoring !== null || importing}
                   >
                     {restoring === backup.name ? "Restauration…" : "Restaurer"}
                   </Button>

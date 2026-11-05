@@ -140,3 +140,14 @@ export function restoreBackup(
     { method: "POST" },
   );
 }
+
+export function importSave(
+  name: string,
+  file: File,
+): Promise<{ job: string }> {
+  return request<{ job: string }>(`/${encodeURIComponent(name)}/import`, {
+    method: "POST",
+    headers: { "Content-Type": "application/zip" },
+    body: file,
+  });
+}
