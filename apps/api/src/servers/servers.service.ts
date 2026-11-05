@@ -53,14 +53,18 @@ const CREDENTIAL_KEYS = {
   token: 'token',
 } as const;
 
-const BACKUP_HTTP_PORT = 8080;
+const SAVES_HTTP_PORT = 8080;
 const BACKUP_FILE_PATTERN = /^[A-Za-z0-9_][A-Za-z0-9._-]*\.zip$/;
+const PRIMARY_SAVE_NAME = '_autosave1.zip';
 const RESTORE_SCRIPT = `set -eu
-if [ -f "/factorio/saves/$TARGET_SAVE" ]; then
-  cp "/factorio/saves/$TARGET_SAVE" "/backups/pre-restore-$(date -u +%Y%m%dT%H%M%SZ)-$TARGET_SAVE"
-fi
 mkdir -p /factorio/saves
-cp "/backups/$BACKUP_FILE" "/factorio/saves/$TARGET_SAVE"
+if [ -f "/factorio/saves/$TARGET_SAVE" ]; then
+  cp -p "/factorio/saves/$TARGET_SAVE" "/factorio/saves/pre-restore-$(date -u +%Y%m%dT%H%M%SZ)-$TARGET_SAVE"
+fi
+if [ "$SAVE_FILE" != "$TARGET_SAVE" ]; then
+  cp "/factorio/saves/$SAVE_FILE" "/factorio/saves/$TARGET_SAVE"
+fi
+touch "/factorio/saves/$TARGET_SAVE"
 `;
 
 @Injectable()
@@ -408,7 +412,8 @@ export class ServersService {
     }
   }
 
-  async backups(name: string): Promise<ServerBackups> {    this.assertName(name);
+  async backups(name: string): Promise<ServerBackups> {
+    this.assertName(name);
 
     const pod = await this.findServerPod(name);
     const podIP = pod?.status?.podIP;
@@ -458,7 +463,7 @@ export class ServersService {
     );
 
     if (!response.ok) {
-      throw new NotFoundException('Backup not found');
+      throw new NotFoundException('Save not found');
     }
 
     return {
@@ -475,12 +480,8 @@ export class ServersService {
     assertBackupFile(file);
 
     const server = await this.get(name);
-    if (server.spec.backup?.enabled === false) {
-      throw new BadRequestException('Backups are disabled for this server');
-    }
-
     const wasSuspended = server.spec.suspended === true;
-    const save = restoredSaveName(file);
+    const save = PRIMARY_SAVE_NAME;
     const jobName = restoreJobName(name);
 
     void this.runRestore(server, name, file, save, jobName, wasSuspended);
@@ -547,7 +548,7 @@ export class ServersService {
 
   private async fetchFromPod(podIP: string, path: string): Promise<Response> {
     const host = podIP.includes(':') ? `[${podIP}]` : podIP;
-    return fetch(`http://${host}:${BACKUP_HTTP_PORT}${path}`, {
+    return fetch(`http://${host}:${SAVES_HTTP_PORT}${path}`, {
       signal: AbortSignal.timeout(5000),
     });
   }
@@ -833,12 +834,8 @@ function credentialsSecretName(serverName: string): string {
 
 function assertBackupFile(file: string): void {
   if (!BACKUP_FILE_PATTERN.test(file) || file.includes('..')) {
-    throw new BadRequestException('Invalid backup file name');
+    throw new BadRequestException('Invalid save file name');
   }
-}
-
-function restoredSaveName(file: string): string {
-  return file.replace(/-\d{8}T\d{6}Z\.zip$/, '.zip');
 }
 
 function restoreJobName(serverName: string): string {
@@ -954,12 +951,11 @@ function buildRestoreJob(
               image: 'busybox:1.36',
               command: ['sh', '-c', RESTORE_SCRIPT],
               env: [
-                { name: 'BACKUP_FILE', value: file },
+                { name: 'SAVE_FILE', value: file },
                 { name: 'TARGET_SAVE', value: save },
               ],
               volumeMounts: [
                 { name: 'data', mountPath: '/factorio' },
-                { name: 'backups', mountPath: '/backups' },
               ],
               securityContext: {
                 allowPrivilegeEscalation: false,
@@ -973,12 +969,6 @@ function buildRestoreJob(
               name: 'data',
               persistentVolumeClaim: {
                 claimName: `${server.metadata.name}-data`,
-              },
-            },
-            {
-              name: 'backups',
-              persistentVolumeClaim: {
-                claimName: `${server.metadata.name}-backups`,
               },
             },
           ],

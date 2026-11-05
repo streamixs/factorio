@@ -45,7 +45,7 @@ The Role in the target namespace allows:
 - `pods` list and `pods/log` get (logs)
 - `events` list (diagnostics)
 - `services` get (connection details)
-- `jobs` create/get/delete (backup restore)
+- `jobs` create/get/delete (save restore)
 - `metrics.k8s.io/pods` get/list (CPU and memory)
 - `nodes` get/list cluster-wide (NodePort addresses)
 

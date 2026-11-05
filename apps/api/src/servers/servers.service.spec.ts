@@ -406,7 +406,7 @@ describe('ServersService', () => {
     );
   });
 
-  it('lists backups from the backup sidecar', async () => {
+  it('lists the Factorio saves from the saves sidecar', async () => {
     listNamespacedPod.mockResolvedValue({
       items: [
         {
@@ -420,7 +420,7 @@ describe('ServersService', () => {
       vi.fn().mockResolvedValue({
         ok: true,
         text: async () =>
-          'world-20260101T000000Z.zip 123 1767225600\n_broken.txt 1 1\n',
+          '_autosave2.zip 123 1767225600\n_broken.txt 1 1\n',
       }),
     );
 
@@ -429,7 +429,7 @@ describe('ServersService', () => {
     expect(backups.available).toBe(true);
     expect(backups.backups).toEqual([
       {
-        name: 'world-20260101T000000Z.zip',
+        name: '_autosave2.zip',
         size: 123,
         createdAt: '2026-01-01T00:00:00.000Z',
       },
@@ -445,7 +445,7 @@ describe('ServersService', () => {
     });
   });
 
-  it('downloads a backup from the sidecar', async () => {
+  it('downloads a save from the sidecar', async () => {
     listNamespacedPod.mockResolvedValue({
       items: [
         {
@@ -464,14 +464,14 @@ describe('ServersService', () => {
 
     const backup = await service.downloadBackup(
       'my-server',
-      '_autosave1-20260101T000000Z.zip',
+      '_autosave2.zip',
     );
 
-    expect(backup.filename).toBe('_autosave1-20260101T000000Z.zip');
+    expect(backup.filename).toBe('_autosave2.zip');
     expect(backup.data).toEqual(Buffer.from([1, 2, 3]));
   });
 
-  it('restores a backup through a Job and restarts the server', async () => {
+  it('restores a save through a Job and restarts the server', async () => {
     const server = {
       apiVersion: 'games.dev.streamixs.com/v1alpha1',
       kind: 'FactorioServer',
@@ -483,7 +483,6 @@ describe('ServersService', () => {
       spec: {
         version: '2.1.24',
         suspended: false,
-        backup: { enabled: true },
       },
     };
     getNamespacedCustomObject.mockResolvedValue(server);
@@ -497,10 +496,10 @@ describe('ServersService', () => {
 
     const result = await service.restoreBackup(
       'my-server',
-      'world-20260101T000000Z.zip',
+      '_autosave2.zip',
     );
 
-    expect(result.save).toBe('world.zip');
+    expect(result.save).toBe('_autosave1.zip');
     expect(result.job).toContain('my-server-restore-');
 
     await vi.waitFor(() => {
@@ -520,10 +519,10 @@ describe('ServersService', () => {
                   expect.objectContaining({
                     env: [
                       {
-                        name: 'BACKUP_FILE',
-                        value: 'world-20260101T000000Z.zip',
+                        name: 'SAVE_FILE',
+                        value: '_autosave2.zip',
                       },
-                      { name: 'TARGET_SAVE', value: 'world.zip' },
+                      { name: 'TARGET_SAVE', value: '_autosave1.zip' },
                     ],
                   }),
                 ],
@@ -531,12 +530,6 @@ describe('ServersService', () => {
                   {
                     name: 'data',
                     persistentVolumeClaim: { claimName: 'my-server-data' },
-                  },
-                  {
-                    name: 'backups',
-                    persistentVolumeClaim: {
-                      claimName: 'my-server-backups',
-                    },
                   },
                 ],
               }),
@@ -606,7 +599,7 @@ describe('ServersService', () => {
     getNamespacedCustomObject.mockResolvedValue({
       containers: [
         { name: 'factorio', usage: { cpu: '12m', memory: '383Mi' } },
-        { name: 'backup', usage: { cpu: '2m', memory: '8Mi' } },
+        { name: 'saves', usage: { cpu: '2m', memory: '8Mi' } },
       ],
     });
 
