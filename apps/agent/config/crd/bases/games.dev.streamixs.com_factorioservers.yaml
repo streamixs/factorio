@@ -62,17 +62,25 @@ spec:
                         type.
                       properties:
                         frequency:
-                          description: frequency controls how often the entity appears.
-                            Maps to frequency.
+                          description: |-
+                            frequency controls how often the entity appears. Factorio's MapGenSize
+                            range is 0 or 1/6..6. Maps to frequency.
+                          maximum: 6
+                          minimum: 0
                           type: number
                         richness:
                           description: |-
-                            richness controls how much resource each patch contains.
-                            Maps to richness.
+                            richness controls how much resource each patch contains. Factorio's
+                            MapGenSize range is 0 or 1/6..6. Maps to richness.
+                          maximum: 6
+                          minimum: 0
                           type: number
                         size:
-                          description: size controls the size of the generated patches.
-                            Maps to size.
+                          description: |-
+                            size controls the size of the generated patches. Factorio's MapGenSize
+                            range is 0 or 1/6..6. Maps to size.
+                          maximum: 6
+                          minimum: 0
                           type: number
                       type: object
                     description: |-
@@ -98,8 +106,11 @@ spec:
                         description: name is the cliff entity name. Maps to name.
                         type: string
                       richness:
-                        description: richness controls how many cliffs are generated.
-                          Maps to richness.
+                        description: |-
+                          richness controls how many cliffs are generated. 0 disables cliffs and
+                          10 makes the rows completely solid. Maps to richness.
+                        maximum: 10
+                        minimum: 0
                         type: number
                     type: object
                   height:
@@ -131,7 +142,10 @@ spec:
                   startingArea:
                     description: |-
                       startingArea controls the size of the area cleared around the starting
-                      positions. Maps to starting_area.
+                      positions. Factorio's MapGenSize range is 0 or 1/6..6. Maps to
+                      starting_area.
+                    maximum: 6
+                    minimum: 0
                     type: number
                   startingPoints:
                     description: |-
@@ -150,12 +164,17 @@ spec:
                     type: array
                   terrainSegmentation:
                     description: |-
-                      terrainSegmentation controls how fragmented the terrain is.
-                      Maps to terrain_segmentation.
+                      terrainSegmentation controls how fragmented the terrain is. Factorio's
+                      MapGenSize range is 0 or 1/6..6. Maps to terrain_segmentation.
+                    maximum: 6
+                    minimum: 0
                     type: number
                   water:
-                    description: water controls the amount of water on the map. Maps
-                      to water.
+                    description: |-
+                      water controls the amount of water on the map. Factorio's MapGenSize
+                      range is 0 or 1/6..6. Maps to water.
+                    maximum: 6
+                    minimum: 0
                     type: number
                   width:
                     description: |-
@@ -185,6 +204,7 @@ spec:
                       spoilTimeModifier:
                         description: spoilTimeModifier scales spoilage times. Maps
                           to spoil_time_modifier.
+                        minimum: 0
                         type: number
                       technologyDifficulty:
                         description: |-
@@ -199,6 +219,7 @@ spec:
                         description: |-
                           technologyPriceMultiplier scales technology costs.
                           Maps to technology_price_multiplier.
+                        minimum: 0
                         type: number
                     type: object
                   enemyEvolution:
@@ -210,6 +231,7 @@ spec:
                         description: |-
                           destroyFactor is the evolution gained per destroyed entity.
                           Maps to destroy_factor.
+                        minimum: 0
                         type: number
                       enabled:
                         description: enabled enables enemy evolution. Maps to enabled.
@@ -218,10 +240,12 @@ spec:
                         description: |-
                           pollutionFactor is the evolution gained per unit of pollution.
                           Maps to pollution_factor.
+                        minimum: 0
                         type: number
                       timeFactor:
                         description: timeFactor is the evolution gained per tick.
                           Maps to time_factor.
+                        minimum: 0
                         type: number
                     type: object
                   enemyExpansion:
@@ -233,6 +257,7 @@ spec:
                         description: |-
                           buildingCoefficient weights enemy buildings when choosing an expansion
                           target. Maps to building_coefficient.
+                        minimum: 0
                         type: number
                       enabled:
                         description: enabled enables enemy expansion. Maps to enabled.
@@ -258,6 +283,7 @@ spec:
                           maxCollidingTilesCoefficient is the maximum fraction of colliding tiles
                           an expansion group tolerates. Maps to
                           max_colliding_tiles_coefficient.
+                        minimum: 0
                         type: number
                       maxExpansionCooldown:
                         description: |-
@@ -285,16 +311,19 @@ spec:
                           neighbouringBaseChunkCoefficient weights neighbouring base chunks when
                           choosing an expansion target. Maps to
                           neighbouring_base_chunk_coefficient.
+                        minimum: 0
                         type: number
                       neighbouringChunkCoefficient:
                         description: |-
                           neighbouringChunkCoefficient weights neighbouring chunks when choosing
                           an expansion target. Maps to neighbouring_chunk_coefficient.
+                        minimum: 0
                         type: number
                       otherBaseCoefficient:
                         description: |-
                           otherBaseCoefficient weights other bases when choosing an expansion
                           target. Maps to other_base_coefficient.
+                        minimum: 0
                         type: number
                       settlerGroupMaxSize:
                         description: |-
@@ -327,11 +356,13 @@ spec:
                         description: |-
                           ageing is the fraction of pollution removed every tick.
                           Maps to ageing.
+                        minimum: 0
                         type: number
                       diffusionRatio:
                         description: |-
                           diffusionRatio is the fraction of pollution that diffuses to
                           neighbouring chunks every tick. Maps to diffusion_ratio.
+                        minimum: 0
                         type: number
                       enabled:
                         description: enabled enables pollution. Maps to enabled.
@@ -341,46 +372,55 @@ spec:
                           enemyAttackPollutionConsumptionModifier scales the pollution consumed
                           by enemy attacks. Maps to
                           enemy_attack_pollution_consumption_modifier.
+                        minimum: 0
                         type: number
                       expectedMaxPerChunk:
                         description: |-
                           expectedMaxPerChunk is the pollution amount used to normalise the
                           pollution overlay. Maps to expected_max_per_chunk.
+                        minimum: 0
                         type: number
                       maxPollutionToRestoreTrees:
                         description: |-
                           maxPollutionToRestoreTrees is the maximum pollution that can be
                           restored by trees. Maps to max_pollution_to_restore_trees.
+                        minimum: 0
                         type: number
                       minPollutionToDamageTrees:
                         description: |-
                           minPollutionToDamageTrees is the pollution amount that starts damaging
                           trees. Maps to min_pollution_to_damage_trees.
+                        minimum: 0
                         type: number
                       minToDiffuse:
                         description: |-
                           minToDiffuse is the pollution amount below which no diffusion happens.
                           Maps to min_to_diffuse.
+                        minimum: 0
                         type: number
                       minToShowPerChunk:
                         description: |-
                           minToShowPerChunk is the pollution amount below which the overlay is
                           hidden. Maps to min_to_show_per_chunk.
+                        minimum: 0
                         type: number
                       pollutionPerTreeDamage:
                         description: |-
                           pollutionPerTreeDamage is the pollution absorbed per tree damage.
                           Maps to pollution_per_tree_damage.
+                        minimum: 0
                         type: number
                       pollutionRestoredPerTreeDamage:
                         description: |-
                           pollutionRestoredPerTreeDamage is the pollution restored per tree
                           damage. Maps to pollution_restored_per_tree_damage.
+                        minimum: 0
                         type: number
                       pollutionWithMaxForestDamage:
                         description: |-
                           pollutionWithMaxForestDamage is the pollution amount that deals maximum
                           forest damage. Maps to pollution_with_max_forest_damage.
+                        minimum: 0
                         type: number
                     type: object
                   raw:
@@ -465,8 +505,10 @@ spec:
                       maxPlayers:
                         description: |-
                           maxPlayers is the maximum number of players allowed to connect at the
-                          same time. A value of 0 means no limit. Maps to max_players.
+                          same time. A value of 0 means no limit; Factorio's engine limit is
+                          65,535. Maps to max_players.
                         format: int32
+                        maximum: 65535
                         minimum: 0
                         type: integer
                       requireUserVerification:
@@ -629,9 +671,11 @@ spec:
                       maxHeartbeatsPerSecond:
                         description: |-
                           maxHeartbeatsPerSecond is the maximum number of heartbeats per second.
-                          Maps to max_heartbeats_per_second.
+                          Factorio documents the range 6..240. Maps to
+                          max_heartbeats_per_second.
                         format: int32
-                        minimum: 0
+                        maximum: 240
+                        minimum: 6
                         type: integer
                       maxUploadKilobytesPerSecond:
                         description: |-

@@ -69,57 +69,68 @@ type PollutionSpec struct {
 	// diffusionRatio is the fraction of pollution that diffuses to
 	// neighbouring chunks every tick. Maps to diffusion_ratio.
 	// +optional
+	// +kubebuilder:validation:Minimum=0
 	DiffusionRatio *float64 `json:"diffusionRatio,omitempty"`
 
 	// minToDiffuse is the pollution amount below which no diffusion happens.
 	// Maps to min_to_diffuse.
 	// +optional
+	// +kubebuilder:validation:Minimum=0
 	MinToDiffuse *float64 `json:"minToDiffuse,omitempty"`
 
 	// ageing is the fraction of pollution removed every tick.
 	// Maps to ageing.
 	// +optional
+	// +kubebuilder:validation:Minimum=0
 	Ageing *float64 `json:"ageing,omitempty"`
 
 	// expectedMaxPerChunk is the pollution amount used to normalise the
 	// pollution overlay. Maps to expected_max_per_chunk.
 	// +optional
+	// +kubebuilder:validation:Minimum=0
 	ExpectedMaxPerChunk *float64 `json:"expectedMaxPerChunk,omitempty"`
 
 	// minToShowPerChunk is the pollution amount below which the overlay is
 	// hidden. Maps to min_to_show_per_chunk.
 	// +optional
+	// +kubebuilder:validation:Minimum=0
 	MinToShowPerChunk *float64 `json:"minToShowPerChunk,omitempty"`
 
 	// minPollutionToDamageTrees is the pollution amount that starts damaging
 	// trees. Maps to min_pollution_to_damage_trees.
 	// +optional
+	// +kubebuilder:validation:Minimum=0
 	MinPollutionToDamageTrees *float64 `json:"minPollutionToDamageTrees,omitempty"`
 
 	// pollutionWithMaxForestDamage is the pollution amount that deals maximum
 	// forest damage. Maps to pollution_with_max_forest_damage.
 	// +optional
+	// +kubebuilder:validation:Minimum=0
 	PollutionWithMaxForestDamage *float64 `json:"pollutionWithMaxForestDamage,omitempty"`
 
 	// pollutionPerTreeDamage is the pollution absorbed per tree damage.
 	// Maps to pollution_per_tree_damage.
 	// +optional
+	// +kubebuilder:validation:Minimum=0
 	PollutionPerTreeDamage *float64 `json:"pollutionPerTreeDamage,omitempty"`
 
 	// pollutionRestoredPerTreeDamage is the pollution restored per tree
 	// damage. Maps to pollution_restored_per_tree_damage.
 	// +optional
+	// +kubebuilder:validation:Minimum=0
 	PollutionRestoredPerTreeDamage *float64 `json:"pollutionRestoredPerTreeDamage,omitempty"`
 
 	// maxPollutionToRestoreTrees is the maximum pollution that can be
 	// restored by trees. Maps to max_pollution_to_restore_trees.
 	// +optional
+	// +kubebuilder:validation:Minimum=0
 	MaxPollutionToRestoreTrees *float64 `json:"maxPollutionToRestoreTrees,omitempty"`
 
 	// enemyAttackPollutionConsumptionModifier scales the pollution consumed
 	// by enemy attacks. Maps to
 	// enemy_attack_pollution_consumption_modifier.
 	// +optional
+	// +kubebuilder:validation:Minimum=0
 	EnemyAttackPollutionConsumptionModifier *float64 `json:"enemyAttackPollutionConsumptionModifier,omitempty"`
 }
 
@@ -132,16 +143,19 @@ type EnemyEvolutionSpec struct {
 
 	// timeFactor is the evolution gained per tick. Maps to time_factor.
 	// +optional
+	// +kubebuilder:validation:Minimum=0
 	TimeFactor *float64 `json:"timeFactor,omitempty"`
 
 	// destroyFactor is the evolution gained per destroyed entity.
 	// Maps to destroy_factor.
 	// +optional
+	// +kubebuilder:validation:Minimum=0
 	DestroyFactor *float64 `json:"destroyFactor,omitempty"`
 
 	// pollutionFactor is the evolution gained per unit of pollution.
 	// Maps to pollution_factor.
 	// +optional
+	// +kubebuilder:validation:Minimum=0
 	PollutionFactor *float64 `json:"pollutionFactor,omitempty"`
 }
 
@@ -175,28 +189,33 @@ type EnemyExpansionSpec struct {
 	// buildingCoefficient weights enemy buildings when choosing an expansion
 	// target. Maps to building_coefficient.
 	// +optional
+	// +kubebuilder:validation:Minimum=0
 	BuildingCoefficient *float64 `json:"buildingCoefficient,omitempty"`
 
 	// otherBaseCoefficient weights other bases when choosing an expansion
 	// target. Maps to other_base_coefficient.
 	// +optional
+	// +kubebuilder:validation:Minimum=0
 	OtherBaseCoefficient *float64 `json:"otherBaseCoefficient,omitempty"`
 
 	// neighbouringChunkCoefficient weights neighbouring chunks when choosing
 	// an expansion target. Maps to neighbouring_chunk_coefficient.
 	// +optional
+	// +kubebuilder:validation:Minimum=0
 	NeighbouringChunkCoefficient *float64 `json:"neighbouringChunkCoefficient,omitempty"`
 
 	// neighbouringBaseChunkCoefficient weights neighbouring base chunks when
 	// choosing an expansion target. Maps to
 	// neighbouring_base_chunk_coefficient.
 	// +optional
+	// +kubebuilder:validation:Minimum=0
 	NeighbouringBaseChunkCoefficient *float64 `json:"neighbouringBaseChunkCoefficient,omitempty"`
 
 	// maxCollidingTilesCoefficient is the maximum fraction of colliding tiles
 	// an expansion group tolerates. Maps to
 	// max_colliding_tiles_coefficient.
 	// +optional
+	// +kubebuilder:validation:Minimum=0
 	MaxCollidingTilesCoefficient *float64 `json:"maxCollidingTilesCoefficient,omitempty"`
 
 	// settlerGroupMinSize is the minimum size of an expansion group.
@@ -242,9 +261,11 @@ type DifficultySettingsSpec struct {
 	// technologyPriceMultiplier scales technology costs.
 	// Maps to technology_price_multiplier.
 	// +optional
+	// +kubebuilder:validation:Minimum=0
 	TechnologyPriceMultiplier *float64 `json:"technologyPriceMultiplier,omitempty"`
 
 	// spoilTimeModifier scales spoilage times. Maps to spoil_time_modifier.
 	// +optional
+	// +kubebuilder:validation:Minimum=0
 	SpoilTimeModifier *float64 `json:"spoilTimeModifier,omitempty"`
 }

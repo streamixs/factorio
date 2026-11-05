@@ -77,9 +77,11 @@ type ServerIdentitySpec struct {
 type AccessControlSpec struct {
 
 	// maxPlayers is the maximum number of players allowed to connect at the
-	// same time. A value of 0 means no limit. Maps to max_players.
+	// same time. A value of 0 means no limit; Factorio's engine limit is
+	// 65,535. Maps to max_players.
 	// +optional
 	// +kubebuilder:validation:Minimum=0
+	// +kubebuilder:validation:Maximum=65535
 	MaxPlayers *int32 `json:"maxPlayers,omitempty"`
 
 	// gamePasswordRef references the Secret key holding the password players
@@ -204,9 +206,11 @@ type PlayerManagementSpec struct {
 	MinimumLatencyInTicks *int32 `json:"minimumLatencyInTicks,omitempty"`
 
 	// maxHeartbeatsPerSecond is the maximum number of heartbeats per second.
-	// Maps to max_heartbeats_per_second.
+	// Factorio documents the range 6..240. Maps to
+	// max_heartbeats_per_second.
 	// +optional
-	// +kubebuilder:validation:Minimum=0
+	// +kubebuilder:validation:Minimum=6
+	// +kubebuilder:validation:Maximum=240
 	MaxHeartbeatsPerSecond *int32 `json:"maxHeartbeatsPerSecond,omitempty"`
 }
 

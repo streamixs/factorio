@@ -25,13 +25,18 @@ import (
 // generated; changing them has no effect on an existing save.
 type MapGenSettingsSpec struct {
 
-	// terrainSegmentation controls how fragmented the terrain is.
-	// Maps to terrain_segmentation.
+	// terrainSegmentation controls how fragmented the terrain is. Factorio's
+	// MapGenSize range is 0 or 1/6..6. Maps to terrain_segmentation.
 	// +optional
+	// +kubebuilder:validation:Minimum=0
+	// +kubebuilder:validation:Maximum=6
 	TerrainSegmentation *float64 `json:"terrainSegmentation,omitempty"`
 
-	// water controls the amount of water on the map. Maps to water.
+	// water controls the amount of water on the map. Factorio's MapGenSize
+	// range is 0 or 1/6..6. Maps to water.
 	// +optional
+	// +kubebuilder:validation:Minimum=0
+	// +kubebuilder:validation:Maximum=6
 	Water *float64 `json:"water,omitempty"`
 
 	// width is the map width in tiles. A value of 0 means an infinite map.
@@ -47,8 +52,11 @@ type MapGenSettingsSpec struct {
 	Height *int32 `json:"height,omitempty"`
 
 	// startingArea controls the size of the area cleared around the starting
-	// positions. Maps to starting_area.
+	// positions. Factorio's MapGenSize range is 0 or 1/6..6. Maps to
+	// starting_area.
 	// +optional
+	// +kubebuilder:validation:Minimum=0
+	// +kubebuilder:validation:Maximum=6
 	StartingArea *float64 `json:"startingArea,omitempty"`
 
 	// peacefulMode prevents enemies from attacking unless provoked.
@@ -102,17 +110,25 @@ type MapPosition struct {
 // type.
 type AutoplaceControlSpec struct {
 
-	// frequency controls how often the entity appears. Maps to frequency.
+	// frequency controls how often the entity appears. Factorio's MapGenSize
+	// range is 0 or 1/6..6. Maps to frequency.
 	// +optional
+	// +kubebuilder:validation:Minimum=0
+	// +kubebuilder:validation:Maximum=6
 	Frequency *float64 `json:"frequency,omitempty"`
 
-	// size controls the size of the generated patches. Maps to size.
+	// size controls the size of the generated patches. Factorio's MapGenSize
+	// range is 0 or 1/6..6. Maps to size.
 	// +optional
+	// +kubebuilder:validation:Minimum=0
+	// +kubebuilder:validation:Maximum=6
 	Size *float64 `json:"size,omitempty"`
 
-	// richness controls how much resource each patch contains.
-	// Maps to richness.
+	// richness controls how much resource each patch contains. Factorio's
+	// MapGenSize range is 0 or 1/6..6. Maps to richness.
 	// +optional
+	// +kubebuilder:validation:Minimum=0
+	// +kubebuilder:validation:Maximum=6
 	Richness *float64 `json:"richness,omitempty"`
 }
 
@@ -133,7 +149,10 @@ type CliffSettingsSpec struct {
 	// +optional
 	CliffElevationInterval *float64 `json:"cliffElevationInterval,omitempty"`
 
-	// richness controls how many cliffs are generated. Maps to richness.
+	// richness controls how many cliffs are generated. 0 disables cliffs and
+	// 10 makes the rows completely solid. Maps to richness.
 	// +optional
+	// +kubebuilder:validation:Minimum=0
+	// +kubebuilder:validation:Maximum=10
 	Richness *float64 `json:"richness,omitempty"`
 }
