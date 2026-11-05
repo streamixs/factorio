@@ -3,6 +3,8 @@
 import {
   findCondition,
   type FactorioServer,
+  type ServerConnection,
+  type ServerUsage,
   type ServiceType,
 } from "@factorio/shared";
 import Link from "next/link";
@@ -35,11 +37,18 @@ import {
 import {
   createServer,
   deleteServer,
+  getServerConnection,
+  getServerUsage,
   listServers,
   startServer,
   stopServer,
 } from "@/lib/api";
 import { serverStatusBadge } from "@/lib/server-status";
+import {
+  formatBytes,
+  formatCpu,
+  primaryGameAddress,
+} from "@/lib/server-connection";
 
 const SERVICE_TYPES: ServiceType[] = ["ClusterIP", "NodePort", "LoadBalancer"];
 const SERVICE_OPTIONS = SERVICE_TYPES.map((type) => ({
@@ -47,9 +56,15 @@ const SERVICE_OPTIONS = SERVICE_TYPES.map((type) => ({
   label: type,
 }));
 
+interface ServerDetails {
+  connection: ServerConnection | null;
+  usage: ServerUsage | null;
+}
+
 export default function Home() {
   const router = useRouter();
   const [servers, setServers] = useState<FactorioServer[]>([]);
+  const [details, setDetails] = useState<Record<string, ServerDetails>>({});
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [pending, setPending] = useState<string | null>(null);
@@ -67,9 +82,23 @@ export default function Home() {
   const refresh = useCallback(async () => {
     try {
       setError(null);
-      setServers(await listServers());
+      const list = await listServers();
+      setServers(list);
+
+      const entries = await Promise.all(
+        list.map(async (server) => {
+          const [connection, usage] = await Promise.all([
+            getServerConnection(server.metadata.name).catch(() => null),
+            getServerUsage(server.metadata.name).catch(() => null),
+          ]);
+          return [server.metadata.name, { connection, usage }] as const;
+        }),
+      );
+      setDetails(Object.fromEntries(entries));
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Impossible de charger l'API");
+      setError(
+        err instanceof Error ? err.message : "Impossible de charger l'API",
+      );
     } finally {
       setLoading(false);
     }
@@ -78,6 +107,12 @@ export default function Home() {
   useEffect(() => {
     // eslint-disable-next-line react-hooks/set-state-in-effect
     void refresh();
+
+    const interval = setInterval(() => {
+      void refresh();
+    }, 30000);
+
+    return () => clearInterval(interval);
   }, [refresh]);
 
   async function handleCreate(event: FormEvent<HTMLFormElement>) {
@@ -215,6 +250,16 @@ export default function Home() {
                 const display =
                   server.spec.server?.identity?.name ?? server.metadata.name;
                 const busy = pending === server.metadata.name;
+                const serverDetails = details[server.metadata.name];
+                const address = primaryGameAddress(
+                  serverDetails?.connection,
+                );
+                const usage = serverDetails?.usage;
+                const usageText = suspended
+                  ? "Arrêté"
+                  : usage?.available === true
+                    ? `${formatCpu(usage.cpuMillicores)} · ${formatBytes(usage.memoryBytes)}`
+                    : "—";
 
                 return (
                   <Card key={server.metadata.name}>
@@ -255,6 +300,21 @@ export default function Home() {
                               server.metadata.creationTimestamp,
                             ).toLocaleDateString()}
                       </span>
+                      <Separator className="col-span-2" />
+                      <div className="col-span-2 flex items-center justify-between gap-3 rounded-md bg-muted/50 px-3 py-2">
+                        <span className="text-xs text-muted-foreground">
+                          Connexion
+                        </span>
+                        <span className="text-right font-mono text-xs break-all">
+                          {address ?? "—"}
+                        </span>
+                      </div>
+                      <div className="col-span-2 flex items-center justify-between gap-3">
+                        <span className="text-xs text-muted-foreground">
+                          Charge
+                        </span>
+                        <span className="text-xs">{usageText}</span>
+                      </div>
                       {degraded?.status === "True" &&
                         degraded.message !== undefined && (
                           <>

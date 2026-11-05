@@ -5,6 +5,7 @@ import {
   type EffectiveSettings,
   type FactorioServer,
 } from "@factorio/shared";
+import { ArrowLeft } from "lucide-react";
 import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
 import { Suspense, useCallback, useEffect, useState } from "react";
@@ -25,11 +26,13 @@ import {
 import { serverStatusBadge } from "@/lib/server-status";
 
 import { BackupsPanel } from "./backups";
+import { ConnectionPanel } from "./connection";
 import { EventsPanel, LogsPanel } from "./diagnostics";
 import { SettingsForm } from "./settings-form";
 
 const VIEWS = [
   { id: "config", label: "Configuration" },
+  { id: "connection", label: "Connexion" },
   { id: "logs", label: "Logs" },
   { id: "events", label: "Events" },
   { id: "backups", label: "Backups" },
@@ -188,13 +191,16 @@ function ServerDetail() {
 
   return (
     <main className="mx-auto flex w-full max-w-6xl flex-1 flex-col gap-6 px-4 py-10 sm:px-6 lg:px-8">
-      <Link href="/" className={buttonVariants({ variant: "ghost", size: "sm" })}>
-        ← Tous les serveurs
-      </Link>
-
       <header className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
         <div className="min-w-0">
           <div className="flex flex-wrap items-center gap-3">
+            <Link
+              href="/"
+              aria-label="Retour aux serveurs"
+              className={buttonVariants({ variant: "ghost", size: "icon-sm" })}
+            >
+              <ArrowLeft className="size-4" />
+            </Link>
             <h1 className="truncate font-mono text-2xl font-semibold tracking-tight">
               {server.metadata.name}
             </h1>
@@ -281,6 +287,13 @@ function ServerDetail() {
                 effective: merged,
               });
             }}
+          />
+        </TabsContent>
+
+        <TabsContent value="connection" className="mt-4">
+          <ConnectionPanel
+            name={server.metadata.name}
+            suspended={suspended}
           />
         </TabsContent>
 

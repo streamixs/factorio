@@ -3,8 +3,10 @@ import type {
   EffectiveSettings,
   FactorioServer,
   ServerBackups,
+  ServerConnection,
   ServerEvent,
   ServerLogs,
+  ServerUsage,
   UpdateFactorioServerInput,
 } from "@factorio/shared";
 
@@ -111,6 +113,14 @@ export function getServerEvents(name: string): Promise<ServerEvent[]> {
 
 export function getEffectiveSettings(name: string): Promise<EffectiveSettings> {
   return request<EffectiveSettings>(`/${encodeURIComponent(name)}/effective`);
+}
+
+export function getServerConnection(name: string): Promise<ServerConnection> {
+  return request<ServerConnection>(`/${encodeURIComponent(name)}/connection`);
+}
+
+export function getServerUsage(name: string): Promise<ServerUsage> {
+  return request<ServerUsage>(`/${encodeURIComponent(name)}/usage`);
 }
 
 export function getServerBackups(name: string): Promise<ServerBackups> {
