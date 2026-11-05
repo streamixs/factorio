@@ -1,11 +1,27 @@
 "use client";
 
-import { findCondition, type FactorioServer } from "@factorio/shared";
+import {
+  findCondition,
+  type EffectiveSettings,
+  type FactorioServer,
+} from "@factorio/shared";
 import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
 import { Suspense, useCallback, useEffect, useState } from "react";
+import { toast } from "sonner";
 
-import { deleteServer, getServer, startServer, stopServer } from "@/lib/api";
+import { Alert, AlertDescription } from "@/components/ui/alert";
+import { Badge } from "@/components/ui/badge";
+import { Button, buttonVariants } from "@/components/ui/button";
+import { Skeleton } from "@/components/ui/skeleton";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import {
+  deleteServer,
+  getEffectiveSettings,
+  getServer,
+  startServer,
+  stopServer,
+} from "@/lib/api";
 import { serverStatusBadge } from "@/lib/server-status";
 
 import { EventsPanel, LogsPanel } from "./diagnostics";
@@ -17,19 +33,21 @@ const VIEWS = [
   { id: "events", label: "Events" },
 ] as const;
 
-type ViewId = (typeof VIEWS)[number]["id"];
-
 export default function ServerDetailPage() {
   return (
-    <Suspense
-      fallback={
-        <main className="mx-auto w-full max-w-6xl flex-1 px-4 py-10 text-sm text-zinc-500 sm:px-6 lg:px-8">
-          Chargement du serveur…
-        </main>
-      }
-    >
+    <Suspense fallback={<DetailSkeleton />}>
       <ServerDetail />
     </Suspense>
+  );
+}
+
+function DetailSkeleton() {
+  return (
+    <main className="mx-auto flex w-full max-w-6xl flex-1 flex-col gap-6 px-4 py-10 sm:px-6 lg:px-8">
+      <Skeleton className="h-5 w-32" />
+      <Skeleton className="h-10 w-64" />
+      <Skeleton className="h-96 w-full" />
+    </main>
   );
 }
 
@@ -39,12 +57,14 @@ function ServerDetail() {
   const router = useRouter();
 
   const [server, setServer] = useState<FactorioServer | null>(null);
+  const [settings, setSettings] = useState<EffectiveSettings | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [warning, setWarning] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [pending, setPending] = useState(false);
-  const [view, setView] = useState<ViewId>("config");
+  const [view, setView] = useState<string>("config");
 
-  const refresh = useCallback(async () => {
+  const load = useCallback(async () => {
     if (name === "") {
       setError("Nom de serveur manquant");
       setLoading(false);
@@ -53,7 +73,22 @@ function ServerDetail() {
 
     try {
       setError(null);
-      setServer(await getServer(name));
+      setWarning(null);
+
+      const current = await getServer(name);
+      let effective: EffectiveSettings;
+
+      try {
+        effective = await getEffectiveSettings(name);
+      } catch {
+        effective = { defaults: {}, effective: current.spec };
+        setWarning(
+          "Les valeurs effectives ne sont pas encore disponibles. L'agent doit être redéployé pour publier les defaults.",
+        );
+      }
+
+      setServer(current);
+      setSettings(effective);
     } catch (err) {
       setError(
         err instanceof Error ? err.message : "Impossible de charger le serveur",
@@ -64,11 +99,11 @@ function ServerDetail() {
   }, [name]);
 
   useEffect(() => {
-    // Initial load. The state is set from an async response, not during this
-    // render, but the rule only sees the call chain into refresh().
+    // Initial load. refresh() sets state from an async response, not during
+    // this render, but the rule only sees the call chain into it.
     // eslint-disable-next-line react-hooks/set-state-in-effect
-    void refresh();
-  }, [refresh]);
+    void load();
+  }, [load]);
 
   async function handleToggle() {
     if (server === null) {
@@ -84,10 +119,12 @@ function ServerDetail() {
         ? await startServer(name)
         : await stopServer(name);
       setServer(updated);
+      toast.success(suspended ? "Serveur démarré" : "Serveur arrêté");
     } catch (err) {
-      setError(
-        err instanceof Error ? err.message : "Impossible de changer l'état",
-      );
+      const message =
+        err instanceof Error ? err.message : "Impossible de changer l'état";
+      setError(message);
+      toast.error(message);
     } finally {
       setPending(false);
     }
@@ -107,32 +144,36 @@ function ServerDetail() {
 
     try {
       await deleteServer(name);
+      toast.success("Serveur supprimé");
       router.push("/");
     } catch (err) {
-      setError(
-        err instanceof Error ? err.message : "Impossible de supprimer le serveur",
-      );
+      const message =
+        err instanceof Error ? err.message : "Impossible de supprimer le serveur";
+      setError(message);
+      toast.error(message);
       setPending(false);
     }
   }
 
   if (loading) {
     return (
-      <main className="mx-auto w-full max-w-6xl flex-1 px-4 py-10 text-sm text-zinc-500 sm:px-6 lg:px-8">
-        Chargement du serveur…
+      <main className="mx-auto flex w-full max-w-6xl flex-1 flex-col gap-6 px-4 py-10 sm:px-6 lg:px-8">
+        <DetailSkeleton />
       </main>
     );
   }
 
-  if (server === null) {
+  if (server === null || settings === null) {
     return (
       <main className="mx-auto flex w-full max-w-6xl flex-1 flex-col gap-4 px-4 py-10 sm:px-6 lg:px-8">
-        <Link href="/" className="text-sm text-zinc-500 hover:underline">
+        <Link href="/" className={buttonVariants({ variant: "ghost", size: "sm" })}>
           ← Tous les serveurs
         </Link>
-        <div className="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700 dark:border-red-900 dark:bg-red-950 dark:text-red-300">
-          {error ?? "Serveur introuvable"}
-        </div>
+        <Alert variant="destructive">
+          <AlertDescription>
+            {error ?? "Serveur introuvable"}
+          </AlertDescription>
+        </Alert>
       </main>
     );
   }
@@ -145,7 +186,7 @@ function ServerDetail() {
 
   return (
     <main className="mx-auto flex w-full max-w-6xl flex-1 flex-col gap-6 px-4 py-10 sm:px-6 lg:px-8">
-      <Link href="/" className="text-sm text-zinc-500 hover:underline">
+      <Link href="/" className={buttonVariants({ variant: "ghost", size: "sm" })}>
         ← Tous les serveurs
       </Link>
 
@@ -155,87 +196,96 @@ function ServerDetail() {
             <h1 className="truncate font-mono text-2xl font-semibold tracking-tight">
               {server.metadata.name}
             </h1>
-            <span
-              className={`rounded-full px-2.5 py-1 text-xs font-medium ${badge.className}`}
-            >
+            <Badge variant="outline" className={badge.className}>
               {badge.label}
-            </span>
+            </Badge>
           </div>
-          <p className="mt-1 text-sm text-zinc-500 dark:text-zinc-400">
+          <p className="mt-1 text-sm text-muted-foreground">
             {displayName} · v{server.spec.version ?? "unknown"}
           </p>
         </div>
 
         <div className="flex flex-wrap gap-2">
-          <button
+          <Button
             type="button"
-            onClick={() => void refresh()}
+            variant="outline"
+            size="sm"
+            onClick={() => void load()}
             disabled={pending}
-            className="rounded-lg border border-zinc-300 px-3 py-2 text-sm font-medium transition hover:bg-zinc-100 disabled:opacity-50 dark:border-zinc-700 dark:hover:bg-zinc-800"
           >
             Rafraîchir
-          </button>
-          <button
+          </Button>
+          <Button
             type="button"
+            variant={suspended ? "default" : "secondary"}
+            size="sm"
             onClick={() => void handleToggle()}
             disabled={pending}
-            className={
-              suspended
-                ? "rounded-lg border border-emerald-300 px-3 py-2 text-sm font-medium text-emerald-700 transition hover:bg-emerald-50 disabled:opacity-50 dark:border-emerald-800 dark:text-emerald-300 dark:hover:bg-emerald-950"
-                : "rounded-lg border border-amber-300 px-3 py-2 text-sm font-medium text-amber-700 transition hover:bg-amber-50 disabled:opacity-50 dark:border-amber-800 dark:text-amber-300 dark:hover:bg-amber-950"
-            }
           >
             {pending ? "…" : suspended ? "Démarrer" : "Arrêter"}
-          </button>
-          <button
+          </Button>
+          <Button
             type="button"
+            variant="destructive"
+            size="sm"
             onClick={() => void handleDelete()}
             disabled={pending}
-            className="rounded-lg border border-red-200 px-3 py-2 text-sm font-medium text-red-700 transition hover:bg-red-50 disabled:opacity-50 dark:border-red-900 dark:text-red-300 dark:hover:bg-red-950"
           >
             Supprimer
-          </button>
+          </Button>
         </div>
       </header>
 
       {error !== null && (
-        <div className="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700 dark:border-red-900 dark:bg-red-950 dark:text-red-300">
-          {error}
-        </div>
+        <Alert variant="destructive">
+          <AlertDescription>{error}</AlertDescription>
+        </Alert>
+      )}
+
+      {warning !== null && (
+        <Alert>
+          <AlertDescription>{warning}</AlertDescription>
+        </Alert>
       )}
 
       {degraded?.status === "True" && degraded.message !== undefined && (
-        <div className="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700 dark:border-red-900 dark:bg-red-950 dark:text-red-300">
-          {degraded.message}
-        </div>
+        <Alert variant="destructive">
+          <AlertDescription>{degraded.message}</AlertDescription>
+        </Alert>
       )}
 
-      <div className="flex flex-wrap gap-1 rounded-xl border border-zinc-200 bg-white p-1 dark:border-zinc-800 dark:bg-zinc-900">
-        {VIEWS.map((item) => (
-          <button
-            key={item.id}
-            type="button"
-            onClick={() => setView(item.id)}
-            className={
-              view === item.id
-                ? "rounded-lg bg-zinc-900 px-3 py-1.5 text-sm font-medium text-white dark:bg-zinc-100 dark:text-zinc-900"
-                : "rounded-lg px-3 py-1.5 text-sm font-medium text-zinc-600 hover:bg-zinc-100 dark:text-zinc-300 dark:hover:bg-zinc-800"
-            }
-          >
-            {item.label}
-          </button>
-        ))}
-      </div>
+      <Tabs value={view} onValueChange={(value) => setView(String(value))}>
+        <TabsList className="h-auto flex-wrap">
+          {VIEWS.map((item) => (
+            <TabsTrigger key={item.id} value={item.id}>
+              {item.label}
+            </TabsTrigger>
+          ))}
+        </TabsList>
 
-      <div className={view === "config" ? "" : "hidden"}>
-        <SettingsForm
-          server={server}
-          onSaved={(updated) => setServer(updated)}
-        />
-      </div>
+        <TabsContent value="config" keepMounted className="mt-4">
+          <SettingsForm
+            server={server}
+            defaults={settings.defaults}
+            effective={settings.effective}
+            onSaved={(updated, merged) => {
+              setServer(updated);
+              setSettings({
+                defaults: settings.defaults,
+                effective: merged,
+              });
+            }}
+          />
+        </TabsContent>
 
-      {view === "logs" && <LogsPanel name={server.metadata.name} />}
-      {view === "events" && <EventsPanel name={server.metadata.name} />}
+        <TabsContent value="logs" className="mt-4">
+          <LogsPanel name={server.metadata.name} />
+        </TabsContent>
+
+        <TabsContent value="events" className="mt-4">
+          <EventsPanel name={server.metadata.name} />
+        </TabsContent>
+      </Tabs>
     </main>
   );
 }

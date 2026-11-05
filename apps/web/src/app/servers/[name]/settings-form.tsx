@@ -7,40 +7,63 @@ import {
   type FactorioServer,
   type FactorioServerSpec,
 } from "@factorio/shared";
-import { useState, type ReactNode } from "react";
+import { useState } from "react";
 import {
+  Controller,
   FormProvider,
   useForm,
+  useFormContext,
   type FieldPath,
 } from "react-hook-form";
+import { toast } from "sonner";
 import { z } from "zod";
 
-import { updateServer } from "@/lib/api";
-
+import { Alert, AlertDescription } from "@/components/ui/alert";
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
 import {
-  CheckboxField,
-  JsonEditor,
-  NumberField,
-  SecretField,
-  SelectField,
-  TagsField,
-  TextAreaField,
-  TextField,
-  inputClass,
-  toOptionalNumber,
-} from "./fields";
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from "@/components/ui/card";
+import { Checkbox } from "@/components/ui/checkbox";
+import {
+  Field,
+  FieldContent,
+  FieldDescription,
+  FieldError,
+  FieldGroup,
+  FieldLabel,
+} from "@/components/ui/field";
+import { Input } from "@/components/ui/input";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import { Separator } from "@/components/ui/separator";
+import { Switch } from "@/components/ui/switch";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Textarea } from "@/components/ui/textarea";
 
-export interface FormValues {
-  spec: FactorioServerSpec;
-  credentials: {
-    gamePassword: string;
-    password: string;
-    token: string;
-    clearGamePassword: boolean;
-    clearPassword: boolean;
-    clearToken: boolean;
-  };
-}
+import { updateServer } from "@/lib/api";
+import {
+  RESOURCES,
+  RESOURCE_FIELDS,
+  SETTINGS_SECTIONS,
+  diffAgainstDefaults,
+  emptyCredentials,
+  mergeWithDefaults,
+  type FieldDefinition,
+  type FormValues,
+  type SettingsSection,
+} from "@/lib/settings-registry";
+
+const DEFAULT_SELECT_VALUE = "__default__";
 
 const formSchema = z.object({
   spec: factorioServerSpecSchema,
@@ -54,33 +77,6 @@ const formSchema = z.object({
   }),
 });
 
-const TABS = [
-  { id: "general", label: "Général" },
-  { id: "access", label: "Accès" },
-  { id: "autosave", label: "Sauvegarde" },
-  { id: "players", label: "Joueurs" },
-  { id: "mapgen", label: "Génération de map" },
-  { id: "mapsettings", label: "Réglages de map" },
-  { id: "infra", label: "Stockage & réseau" },
-  { id: "advanced", label: "Avancé" },
-] as const;
-
-type TabId = (typeof TABS)[number]["id"];
-
-const RESOURCES = [
-  "coal",
-  "stone",
-  "copper-ore",
-  "iron-ore",
-  "uranium-ore",
-  "crude-oil",
-  "water",
-  "trees",
-  "enemy-base",
-] as const;
-
-const RESOURCE_FIELDS = ["frequency", "size", "richness"] as const;
-
 type RawEditors = {
   server: string;
   mapGen: string;
@@ -91,11 +87,11 @@ function rawText(value: unknown): string {
   return value === undefined ? "" : JSON.stringify(value, null, 2);
 }
 
-function fromServerRaw(server: FactorioServer): RawEditors {
+function rawEditorsFrom(spec: FactorioServerSpec): RawEditors {
   return {
-    server: rawText(server.spec.server?.raw),
-    mapGen: rawText(server.spec.mapGenSettings?.raw),
-    mapSettings: rawText(server.spec.mapSettings?.raw),
+    server: rawText(spec.server?.raw),
+    mapGen: rawText(spec.mapGenSettings?.raw),
+    mapSettings: rawText(spec.mapSettings?.raw),
   };
 }
 
@@ -125,140 +121,37 @@ function parseRawEditor(
   return parsed as Record<string, unknown>;
 }
 
-// RHF creates intermediate objects for registered paths, even when every
-// field below them is empty. Remove those empty objects before sending the
-// spec so they do not override Factorio defaults.
-function pruneEmptyObjects(value: unknown): unknown {
-  if (Array.isArray(value)) {
-    return value
-      .map((item) => pruneEmptyObjects(item))
-      .filter((item) => item !== undefined);
-  }
-
-  if (value !== null && typeof value === "object") {
-    const result: Record<string, unknown> = {};
-    for (const [key, item] of Object.entries(value)) {
-      const pruned = pruneEmptyObjects(item);
-      if (pruned !== undefined) {
-        result[key] = pruned;
-      }
-    }
-    return Object.keys(result).length > 0 ? result : undefined;
-  }
-
-  return value;
-}
-
-// Fill the effective Factorio defaults for booleans and enums, so a checkbox
-// that is unchecked does not silently override a default that is true.
-function toFormValues(server: FactorioServer): FormValues {
-  const spec = structuredClone(server.spec);
-
-  spec.server ??= {};
-  spec.server.access ??= {};
-  spec.server.access.visibility ??= {};
-  spec.server.access.visibility.public ??= true;
-  spec.server.access.visibility.lan ??= true;
-  spec.server.access.requireUserVerification ??= true;
-  spec.server.access.allowCommands ??= "admins-only";
-
-  spec.server.autoSave ??= {};
-  spec.server.autoSave.onlyOnServer ??= true;
-
-  spec.server.playerManagement ??= {};
-  spec.server.playerManagement.autoPauseWhenNoPlayers ??= true;
-  spec.server.playerManagement.onlyAdminsCanPause ??= true;
-
-  spec.mapGenSettings ??= {};
-  spec.mapGenSettings.peacefulMode ??= false;
-
-  spec.mapSettings ??= {};
-  spec.mapSettings.pollution ??= {};
-  spec.mapSettings.pollution.enabled ??= true;
-  spec.mapSettings.enemyEvolution ??= {};
-  spec.mapSettings.enemyEvolution.enabled ??= true;
-  spec.mapSettings.enemyExpansion ??= {};
-  spec.mapSettings.enemyExpansion.enabled ??= true;
-
-  return {
-    spec,
-    credentials: {
-      gamePassword: "",
-      password: "",
-      token: "",
-      clearGamePassword: false,
-      clearPassword: false,
-      clearToken: false,
-    },
-  };
-}
-
-function Section({
-  title,
-  badge,
-  children,
-}: {
-  title: string;
-  badge?: string;
-  children: ReactNode;
-}) {
-  return (
-    <section className="rounded-xl border border-zinc-200 bg-white p-5 shadow-sm dark:border-zinc-800 dark:bg-zinc-900">
-      <div className="mb-4 flex flex-wrap items-center gap-2">
-        <h2 className="text-lg font-medium">{title}</h2>
-        {badge !== undefined && (
-          <span className="rounded-full bg-zinc-100 px-2 py-0.5 text-xs font-medium text-zinc-600 dark:bg-zinc-800 dark:text-zinc-300">
-            {badge}
-          </span>
-        )}
-      </div>
-      <div className="flex flex-col gap-4">{children}</div>
-    </section>
-  );
-}
-
-function SubSection({
-  title,
-  children,
-  open = false,
-}: {
-  title: string;
-  children: ReactNode;
-  open?: boolean;
-}) {
-  return (
-    <details
-      open={open}
-      className="rounded-lg border border-zinc-200 p-4 dark:border-zinc-800"
-    >
-      <summary className="cursor-pointer text-sm font-semibold">
-        {title}
-      </summary>
-      <div className="mt-4 grid gap-4 sm:grid-cols-2">{children}</div>
-    </details>
-  );
+function numberOrUndefined(value: string): number | undefined {
+  return value === "" ? undefined : Number(value);
 }
 
 export function SettingsForm({
   server,
+  defaults,
+  effective,
   onSaved,
 }: {
   server: FactorioServer;
-  onSaved: (server: FactorioServer) => void;
+  defaults: FactorioServerSpec;
+  effective: FactorioServerSpec;
+  onSaved: (server: FactorioServer, effective: FactorioServerSpec) => void;
 }) {
   const form = useForm<FormValues>({
     resolver: zodResolver(formSchema),
-    defaultValues: toFormValues(server),
+    defaultValues: {
+      spec: structuredClone(effective),
+      credentials: emptyCredentials(),
+    },
     mode: "onBlur",
   });
-  const { register, handleSubmit, reset, formState } = form;
+  const { handleSubmit, reset, formState } = form;
 
-  const [tab, setTab] = useState<TabId>("general");
+  const [tab, setTab] = useState<string>(SETTINGS_SECTIONS[0].id);
   const [rawEditors, setRawEditors] = useState<RawEditors>(() =>
-    fromServerRaw(server),
+    rawEditorsFrom(effective),
   );
   const [initialRaw, setInitialRaw] = useState<RawEditors>(() =>
-    fromServerRaw(server),
+    rawEditorsFrom(effective),
   );
   const [rawError, setRawError] = useState<string | null>(null);
   const [saveError, setSaveError] = useState<string | null>(null);
@@ -270,11 +163,13 @@ export function SettingsForm({
     rawEditors.mapSettings !== initialRaw.mapSettings;
   const dirty = formState.isDirty || rawDirty;
 
-  const credentialRefs = {
-    gamePassword: server.spec.server?.access?.gamePasswordRef !== undefined,
-    password:
+  const secretIsSet: Record<string, boolean> = {
+    "credentials.gamePassword":
+      server.spec.server?.access?.gamePasswordRef !== undefined,
+    "credentials.password":
       server.spec.server?.authentication?.passwordRef !== undefined,
-    token: server.spec.server?.authentication?.tokenRef !== undefined,
+    "credentials.token":
+      server.spec.server?.authentication?.tokenRef !== undefined,
   };
 
   async function onSubmit(values: FormValues) {
@@ -288,10 +183,7 @@ export function SettingsForm({
     try {
       serverRaw = parseRawEditor(rawEditors.server, "server.raw");
       mapGenRaw = parseRawEditor(rawEditors.mapGen, "mapGenSettings.raw");
-      mapSettingsRaw = parseRawEditor(
-        rawEditors.mapSettings,
-        "mapSettings.raw",
-      );
+      mapSettingsRaw = parseRawEditor(rawEditors.mapSettings, "mapSettings.raw");
     } catch (error) {
       setRawError(error instanceof Error ? error.message : "JSON invalide");
       setTab("advanced");
@@ -299,8 +191,7 @@ export function SettingsForm({
     }
     setRawError(null);
 
-    const spec = (pruneEmptyObjects(structuredClone(values.spec)) ??
-      {}) as FactorioServerSpec;
+    const spec = structuredClone(values.spec);
 
     if (serverRaw !== undefined) {
       spec.server = { ...(spec.server ?? {}), raw: serverRaw };
@@ -309,10 +200,7 @@ export function SettingsForm({
     }
 
     if (mapGenRaw !== undefined) {
-      spec.mapGenSettings = {
-        ...(spec.mapGenSettings ?? {}),
-        raw: mapGenRaw,
-      };
+      spec.mapGenSettings = { ...(spec.mapGenSettings ?? {}), raw: mapGenRaw };
     } else if (spec.mapGenSettings !== undefined) {
       delete spec.mapGenSettings.raw;
     }
@@ -346,29 +234,35 @@ export function SettingsForm({
       credentials.token = values.credentials.token;
     }
 
+    const sparse = (diffAgainstDefaults(spec, defaults) ??
+      {}) as FactorioServerSpec;
+
     try {
       const updated = await updateServer(server.metadata.name, {
-        spec,
+        spec: sparse,
         credentials:
           Object.keys(credentials).length > 0 ? credentials : undefined,
       });
+      const merged = mergeWithDefaults(defaults, updated.spec);
+      const raw = rawEditorsFrom(merged);
 
-      reset(toFormValues(updated));
-      const raw = fromServerRaw(updated);
+      reset({ spec: structuredClone(merged), credentials: emptyCredentials() });
       setRawEditors(raw);
       setInitialRaw(raw);
       setSaved(true);
-      onSaved(updated);
+      onSaved(updated, merged);
+      toast.success("Configuration enregistrée");
     } catch (error) {
-      setSaveError(
-        error instanceof Error ? error.message : "Impossible d'enregistrer",
-      );
+      const message =
+        error instanceof Error ? error.message : "Impossible d'enregistrer";
+      setSaveError(message);
+      toast.error(message);
     }
   }
 
   function handleReset() {
-    reset(toFormValues(server));
-    const raw = fromServerRaw(server);
+    const raw = rawEditorsFrom(effective);
+    reset({ spec: structuredClone(effective), credentials: emptyCredentials() });
     setRawEditors(raw);
     setInitialRaw(raw);
     setRawError(null);
@@ -382,587 +276,474 @@ export function SettingsForm({
         onSubmit={(event) => void handleSubmit(onSubmit)(event)}
         className="flex flex-col gap-4"
       >
-        <div className="flex flex-wrap gap-1 rounded-xl border border-zinc-200 bg-white p-1 dark:border-zinc-800 dark:bg-zinc-900">
-          {TABS.map((item) => (
-            <button
-              key={item.id}
-              type="button"
-              onClick={() => setTab(item.id)}
-              className={
-                tab === item.id
-                  ? "rounded-lg bg-zinc-900 px-3 py-1.5 text-sm font-medium text-white dark:bg-zinc-100 dark:text-zinc-900"
-                  : "rounded-lg px-3 py-1.5 text-sm font-medium text-zinc-600 hover:bg-zinc-100 dark:text-zinc-300 dark:hover:bg-zinc-800"
-              }
+        <Tabs value={tab} onValueChange={(value) => setTab(String(value))}>
+          <TabsList className="flex h-auto w-full flex-wrap justify-start">
+            {SETTINGS_SECTIONS.map((section) => (
+              <TabsTrigger key={section.id} value={section.id}>
+                {section.title}
+              </TabsTrigger>
+            ))}
+          </TabsList>
+
+          {SETTINGS_SECTIONS.map((section) => (
+            <TabsContent
+              key={section.id}
+              value={section.id}
+              keepMounted
+              className="mt-4"
             >
-              {item.label}
-            </button>
+              <SectionCard
+                section={section}
+                secretIsSet={secretIsSet}
+                rawEditors={rawEditors}
+                setRawEditors={setRawEditors}
+                rawError={rawError}
+              />
+            </TabsContent>
           ))}
-        </div>
+        </Tabs>
 
-        <div className={tab === "general" ? "flex flex-col gap-4" : "hidden"}>
-          <Section title="Général" badge="Redémarre le serveur">
-            <div className="grid gap-4 sm:grid-cols-2">
-              <TextField
-                name="spec.version"
-                label="Version Factorio"
-                placeholder="2.1.24"
-                hint="Changer de version redémarre le serveur."
-                emptyAsUndefined
-              />
-              <TextField
-                name="spec.server.identity.name"
-                label="Nom affiché"
-                placeholder="Mon serveur"
-                emptyAsUndefined
-              />
-            </div>
-            <TextAreaField
-              name="spec.server.identity.description"
-              label="Description"
-            />
-            <TagsField name="spec.server.identity.tags" label="Tags" />
-          </Section>
-        </div>
-
-        <div className={tab === "access" ? "flex flex-col gap-4" : "hidden"}>
-          <Section title="Accès" badge="Redémarre le serveur">
-            <div className="grid gap-4 sm:grid-cols-2">
-              <NumberField
-                name="spec.server.access.maxPlayers"
-                label="Joueurs maximum"
-                hint="0 = illimité"
-              />
-              <SelectField
-                name="spec.server.access.allowCommands"
-                label="Commandes console"
-                options={[
-                  { value: "", label: "Défaut" },
-                  { value: "true", label: "Tous les joueurs" },
-                  { value: "false", label: "Personne" },
-                  { value: "admins-only", label: "Admins uniquement" },
-                ]}
-              />
-            </div>
-            <div className="grid gap-4 sm:grid-cols-2">
-              <CheckboxField
-                name="spec.server.access.visibility.public"
-                label="Lister publiquement"
-                hint="Nécessite un token factorio.com."
-              />
-              <CheckboxField
-                name="spec.server.access.visibility.lan"
-                label="Visible sur le LAN"
-              />
-              <CheckboxField
-                name="spec.server.access.requireUserVerification"
-                label="Comptes factorio.com vérifiés"
-              />
-            </div>
-            <SubSection title="Identifiants" open>
-              <SecretField
-                valueName="credentials.gamePassword"
-                clearName="credentials.clearGamePassword"
-                label="Mot de passe de partie"
-                hint="Stocké dans le Secret <serveur>-credentials."
-                isSet={credentialRefs.gamePassword}
-              />
-              <TextField
-                name="spec.server.authentication.username"
-                label="Compte factorio.com"
-                placeholder="nom de compte"
-              />
-              <SecretField
-                valueName="credentials.password"
-                clearName="credentials.clearPassword"
-                label="Mot de passe factorio.com"
-                isSet={credentialRefs.password}
-              />
-              <SecretField
-                valueName="credentials.token"
-                clearName="credentials.clearToken"
-                label="Token factorio.com"
-                isSet={credentialRefs.token}
-              />
-            </SubSection>
-          </Section>
-        </div>
-
-        <div className={tab === "autosave" ? "flex flex-col gap-4" : "hidden"}>
-          <Section title="Sauvegarde" badge="Redémarre le serveur">
-            <div className="grid gap-4 sm:grid-cols-2">
-              <NumberField
-                name="spec.server.autoSave.interval"
-                label="Intervalle (minutes)"
-                hint="0 désactive l'autosave"
-              />
-              <NumberField
-                name="spec.server.autoSave.slots"
-                label="Nombre de slots"
-              />
-            </div>
-            <div className="grid gap-4 sm:grid-cols-2">
-              <CheckboxField
-                name="spec.server.autoSave.nonBlockingSaving"
-                label="Sauvegarde non bloquante"
-                hint="Expérimental."
-              />
-              <CheckboxField
-                name="spec.server.autoSave.onlyOnServer"
-                label="Sauvegardes uniquement sur le serveur"
-              />
-            </div>
-          </Section>
-        </div>
-
-        <div className={tab === "players" ? "flex flex-col gap-4" : "hidden"}>
-          <Section title="Joueurs" badge="Redémarre le serveur">
-            <div className="grid gap-4 sm:grid-cols-2">
-              <NumberField
-                name="spec.server.playerManagement.afkAutokickInterval"
-                label="Kick AFK après (minutes)"
-                hint="0 = jamais"
-              />
-              <NumberField
-                name="spec.server.playerManagement.maxUploadSlots"
-                label="Slots d'upload max"
-              />
-              <NumberField
-                name="spec.server.playerManagement.maxUploadKilobytesPerSecond"
-                label="Upload max (Ko/s)"
-                hint="0 = illimité"
-              />
-              <NumberField
-                name="spec.server.playerManagement.minimumLatencyInTicks"
-                label="Latence minimale (ticks)"
-              />
-              <NumberField
-                name="spec.server.playerManagement.maxHeartbeatsPerSecond"
-                label="Heartbeats max par seconde"
-              />
-            </div>
-            <div className="grid gap-4 sm:grid-cols-2">
-              <CheckboxField
-                name="spec.server.playerManagement.autoPauseWhenNoPlayers"
-                label="Pause quand aucun joueur"
-              />
-              <CheckboxField
-                name="spec.server.playerManagement.onlyAdminsCanPause"
-                label="Seuls les admins peuvent pauser"
-              />
-              <CheckboxField
-                name="spec.server.playerManagement.ignorePlayerLimitForReturningPlayers"
-                label="Ignorer la limite pour les joueurs habitués"
-              />
-            </div>
-          </Section>
-        </div>
-
-        <div className={tab === "mapgen" ? "flex flex-col gap-4" : "hidden"}>
-          <Section title="Génération de map" badge="Prochaine map">
-            <p className="text-sm text-zinc-500 dark:text-zinc-400">
-              Ces réglages ne s&apos;appliquent qu&apos;à une nouvelle map. Ils
-              n&apos;ont aucun effet sur la save existante.
-            </p>
-            <div className="grid gap-4 sm:grid-cols-3">
-              <NumberField
-                name="spec.mapGenSettings.terrainSegmentation"
-                label="Terrain"
-                step="0.1"
-                placeholder="1"
-              />
-              <NumberField
-                name="spec.mapGenSettings.water"
-                label="Eau"
-                step="0.1"
-                placeholder="1"
-              />
-              <NumberField
-                name="spec.mapGenSettings.startingArea"
-                label="Zone de départ"
-                step="0.1"
-                placeholder="1"
-              />
-              <NumberField
-                name="spec.mapGenSettings.width"
-                label="Largeur"
-                placeholder="0"
-                hint="0 = infinie"
-              />
-              <NumberField
-                name="spec.mapGenSettings.height"
-                label="Hauteur"
-                placeholder="0"
-              />
-              <NumberField
-                name="spec.mapGenSettings.seed"
-                label="Seed"
-                placeholder="aléatoire"
-              />
-            </div>
-            <CheckboxField
-              name="spec.mapGenSettings.peacefulMode"
-              label="Mode pacifique"
-            />
-            <SubSection title="Ressources (autoplace)">
-              <div className="overflow-x-auto sm:col-span-2">
-                <table className="w-full min-w-[520px] text-sm">
-                  <thead>
-                    <tr className="text-left text-xs text-zinc-500 dark:text-zinc-400">
-                      <th className="pb-2 pr-3 font-medium">Ressource</th>
-                      <th className="pb-2 px-1 font-medium">Fréquence</th>
-                      <th className="pb-2 px-1 font-medium">Taille</th>
-                      <th className="pb-2 px-1 font-medium">Richesse</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {RESOURCES.map((resource) => (
-                      <tr key={resource}>
-                        <td className="py-1 pr-3 font-mono text-xs">
-                          {resource}
-                        </td>
-                        {RESOURCE_FIELDS.map((field) => (
-                          <td key={field} className="p-1">
-                            <input
-                              type="number"
-                              step="0.1"
-                              className={inputClass}
-                              {...register(
-                                `spec.mapGenSettings.autoplaceControls.${resource}.${field}` as FieldPath<FormValues>,
-                                { setValueAs: toOptionalNumber },
-                              )}
-                            />
-                          </td>
-                        ))}
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            </SubSection>
-            <SubSection title="Falaises">
-              <TextField
-                name="spec.mapGenSettings.cliffSettings.name"
-                label="Nom"
-                placeholder="cliff"
-                emptyAsUndefined
-              />
-              <NumberField
-                name="spec.mapGenSettings.cliffSettings.cliffElevation0"
-                label="Élévation de base"
-                step="0.1"
-              />
-              <NumberField
-                name="spec.mapGenSettings.cliffSettings.cliffElevationInterval"
-                label="Intervalle d'élévation"
-                step="0.1"
-              />
-              <NumberField
-                name="spec.mapGenSettings.cliffSettings.richness"
-                label="Richesse"
-                step="0.1"
-              />
-            </SubSection>
-          </Section>
-        </div>
-
-        <div
-          className={tab === "mapsettings" ? "flex flex-col gap-4" : "hidden"}
-        >
-          <Section title="Réglages de map" badge="Prochaine map">
-            <p className="text-sm text-zinc-500 dark:text-zinc-400">
-              Ces réglages sont appliqués à la génération de la map. Les
-              modifier ne change pas la map existante.
-            </p>
-
-            <SubSection title="Pollution" open>
-              <CheckboxField
-                name="spec.mapSettings.pollution.enabled"
-                label="Pollution activée"
-              />
-              <NumberField
-                name="spec.mapSettings.pollution.diffusionRatio"
-                label="Ratio de diffusion"
-                step="any"
-              />
-              <NumberField
-                name="spec.mapSettings.pollution.minToDiffuse"
-                label="Minimum pour diffuser"
-                step="any"
-              />
-              <NumberField
-                name="spec.mapSettings.pollution.ageing"
-                label="Vieillissement"
-                step="any"
-              />
-              <NumberField
-                name="spec.mapSettings.pollution.expectedMaxPerChunk"
-                label="Max attendu par chunk"
-                step="any"
-              />
-              <NumberField
-                name="spec.mapSettings.pollution.minToShowPerChunk"
-                label="Minimum affiché par chunk"
-                step="any"
-              />
-              <NumberField
-                name="spec.mapSettings.pollution.minPollutionToDamageTrees"
-                label="Pollution pour abîmer les arbres"
-                step="any"
-              />
-              <NumberField
-                name="spec.mapSettings.pollution.pollutionWithMaxForestDamage"
-                label="Pollution pour dégâts max"
-                step="any"
-              />
-              <NumberField
-                name="spec.mapSettings.pollution.pollutionPerTreeDamage"
-                label="Pollution par dégât d'arbre"
-                step="any"
-              />
-              <NumberField
-                name="spec.mapSettings.pollution.pollutionRestoredPerTreeDamage"
-                label="Pollution restaurée par dégât"
-                step="any"
-              />
-              <NumberField
-                name="spec.mapSettings.pollution.maxPollutionToRestoreTrees"
-                label="Max restauré par les arbres"
-                step="any"
-              />
-              <NumberField
-                name="spec.mapSettings.pollution.enemyAttackPollutionConsumptionModifier"
-                label="Conso de pollution par attaque"
-                step="any"
-              />
-            </SubSection>
-
-            <SubSection title="Évolution des ennemis">
-              <CheckboxField
-                name="spec.mapSettings.enemyEvolution.enabled"
-                label="Évolution activée"
-              />
-              <NumberField
-                name="spec.mapSettings.enemyEvolution.timeFactor"
-                label="Facteur temps"
-                step="any"
-              />
-              <NumberField
-                name="spec.mapSettings.enemyEvolution.destroyFactor"
-                label="Facteur destruction"
-                step="any"
-              />
-              <NumberField
-                name="spec.mapSettings.enemyEvolution.pollutionFactor"
-                label="Facteur pollution"
-                step="any"
-              />
-            </SubSection>
-
-            <SubSection title="Expansion des ennemis">
-              <CheckboxField
-                name="spec.mapSettings.enemyExpansion.enabled"
-                label="Expansion activée"
-              />
-              <NumberField
-                name="spec.mapSettings.enemyExpansion.maxExpansionDistance"
-                label="Distance d'expansion max"
-              />
-              <NumberField
-                name="spec.mapSettings.enemyExpansion.friendlyBaseInfluenceRadius"
-                label="Rayon des bases amies"
-              />
-              <NumberField
-                name="spec.mapSettings.enemyExpansion.enemyBuildingInfluenceRadius"
-                label="Rayon des bâtiments ennemis"
-              />
-              <NumberField
-                name="spec.mapSettings.enemyExpansion.buildingCoefficient"
-                label="Coefficient bâtiment"
-                step="any"
-              />
-              <NumberField
-                name="spec.mapSettings.enemyExpansion.otherBaseCoefficient"
-                label="Coefficient autre base"
-                step="any"
-              />
-              <NumberField
-                name="spec.mapSettings.enemyExpansion.neighbouringChunkCoefficient"
-                label="Coefficient chunk voisin"
-                step="any"
-              />
-              <NumberField
-                name="spec.mapSettings.enemyExpansion.neighbouringBaseChunkCoefficient"
-                label="Coefficient base voisine"
-                step="any"
-              />
-              <NumberField
-                name="spec.mapSettings.enemyExpansion.maxCollidingTilesCoefficient"
-                label="Coefficient collisions"
-                step="any"
-              />
-              <NumberField
-                name="spec.mapSettings.enemyExpansion.settlerGroupMinSize"
-                label="Groupe de colons min"
-              />
-              <NumberField
-                name="spec.mapSettings.enemyExpansion.settlerGroupMaxSize"
-                label="Groupe de colons max"
-              />
-              <NumberField
-                name="spec.mapSettings.enemyExpansion.minExpansionCooldown"
-                label="Cooldown min (ticks)"
-              />
-              <NumberField
-                name="spec.mapSettings.enemyExpansion.maxExpansionCooldown"
-                label="Cooldown max (ticks)"
-              />
-            </SubSection>
-
-            <SubSection title="Difficulté">
-              <SelectField
-                name="spec.mapSettings.difficultySettings.recipeDifficulty"
-                label="Recettes"
-                numeric
-                options={[
-                  { value: "", label: "Défaut" },
-                  { value: "0", label: "Normal" },
-                  { value: "1", label: "Coûteux" },
-                ]}
-              />
-              <SelectField
-                name="spec.mapSettings.difficultySettings.technologyDifficulty"
-                label="Technologies"
-                numeric
-                options={[
-                  { value: "", label: "Défaut" },
-                  { value: "0", label: "Normal" },
-                  { value: "1", label: "Coûteux" },
-                ]}
-              />
-              <NumberField
-                name="spec.mapSettings.difficultySettings.technologyPriceMultiplier"
-                label="Multiplicateur de prix"
-                step="any"
-              />
-              <NumberField
-                name="spec.mapSettings.difficultySettings.spoilTimeModifier"
-                label="Modificateur de péremption"
-                step="any"
-              />
-            </SubSection>
-
-            <NumberField
-              name="spec.mapSettings.maxFailedBehaviorCount"
-              label="Échecs de comportement max"
-            />
-          </Section>
-        </div>
-
-        <div className={tab === "infra" ? "flex flex-col gap-4" : "hidden"}>
-          <Section title="Stockage & réseau" badge="Service immédiat">
-            <div className="grid gap-4 sm:grid-cols-2">
-              <TextField
-                name="spec.storage.size"
-                label="Taille du volume"
-                placeholder="10Gi"
-                hint="Un PVC existant n'est pas redimensionné."
-                emptyAsUndefined
-              />
-              <TextField
-                name="spec.storage.storageClassName"
-                label="StorageClass"
-                placeholder="défaut du cluster"
-                emptyAsUndefined
-              />
-              <SelectField
-                name="spec.service.type"
-                label="Type de Service"
-                options={[
-                  { value: "ClusterIP", label: "ClusterIP" },
-                  { value: "NodePort", label: "NodePort" },
-                  { value: "LoadBalancer", label: "LoadBalancer" },
-                ]}
-              />
-            </div>
-          </Section>
-        </div>
-
-        <div
-          className={tab === "advanced" ? "flex flex-col gap-4" : "hidden"}
-        >
-          <Section title="JSON avancé" badge="Échappatoire">
-            <p className="text-sm text-zinc-500 dark:text-zinc-400">
-              Pour les paramètres qui ne sont pas exposés dans les onglets. Les
-              clés déjà définies par un champ typé sont refusées.
-            </p>
-            {rawError !== null && (
-              <p className="text-sm text-red-600 dark:text-red-400">
-                {rawError}
-              </p>
-            )}
-            <JsonEditor
-              label="server.raw"
-              value={rawEditors.server}
-              onChange={(value) =>
-                setRawEditors((current) => ({ ...current, server: value }))
-              }
-              hint="Ex. : minimum_segment_size, auto_pause_when_players_connect."
-            />
-            <JsonEditor
-              label="mapGenSettings.raw"
-              value={rawEditors.mapGen}
-              onChange={(value) =>
-                setRawEditors((current) => ({ ...current, mapGen: value }))
-              }
-              hint="Ex. : property_expression_names, autoplace d'autres entités."
-            />
-            <JsonEditor
-              label="mapSettings.raw"
-              value={rawEditors.mapSettings}
-              onChange={(value) =>
-                setRawEditors((current) => ({
-                  ...current,
-                  mapSettings: value,
-                }))
-              }
-              hint="Ex. : unit_group, path_finder, asteroids."
-            />
-          </Section>
-        </div>
-
-        <div className="sticky bottom-4 z-10 flex flex-wrap items-center gap-3 rounded-xl border border-zinc-200 bg-white/95 p-3 shadow-lg backdrop-blur dark:border-zinc-800 dark:bg-zinc-900/95">
-          <button
-            type="submit"
-            disabled={!dirty || formState.isSubmitting}
-            className="rounded-lg bg-zinc-900 px-4 py-2 text-sm font-medium text-white transition hover:bg-zinc-700 disabled:cursor-not-allowed disabled:opacity-50 dark:bg-zinc-100 dark:text-zinc-900 dark:hover:bg-zinc-300"
-          >
+        <div className="sticky bottom-4 z-10 flex flex-wrap items-center gap-3 rounded-xl border bg-background/95 p-3 shadow-lg backdrop-blur">
+          <Button type="submit" disabled={!dirty || formState.isSubmitting}>
             {formState.isSubmitting ? "Enregistrement…" : "Enregistrer"}
-          </button>
-          <button
+          </Button>
+          <Button
             type="button"
+            variant="outline"
             onClick={handleReset}
             disabled={!dirty || formState.isSubmitting}
-            className="rounded-lg border border-zinc-300 px-3 py-2 text-sm font-medium transition hover:bg-zinc-100 disabled:cursor-not-allowed disabled:opacity-50 dark:border-zinc-700 dark:hover:bg-zinc-800"
           >
             Annuler
-          </button>
-          {saved && !dirty && (
-            <span className="text-sm text-emerald-600 dark:text-emerald-400">
-              Enregistré
-            </span>
-          )}
+          </Button>
+          {saved && !dirty && <Badge variant="secondary">Enregistré</Badge>}
           {saveError !== null && (
-            <span className="text-sm text-red-600 dark:text-red-400">
-              {saveError}
-            </span>
+            <span className="text-sm text-destructive">{saveError}</span>
           )}
-          {!formState.isSubmitting && Object.keys(formState.errors).length > 0 && (
-            <span className="text-sm text-red-600 dark:text-red-400">
-              Certains champs sont invalides.
-            </span>
-          )}
+          {!formState.isSubmitting &&
+            Object.keys(formState.errors).length > 0 && (
+              <span className="text-sm text-destructive">
+                Certains champs sont invalides.
+              </span>
+            )}
         </div>
       </form>
     </FormProvider>
+  );
+}
+
+function SectionCard({
+  section,
+  secretIsSet,
+  rawEditors,
+  setRawEditors,
+  rawError,
+}: {
+  section: SettingsSection;
+  secretIsSet: Record<string, boolean>;
+  rawEditors: RawEditors;
+  setRawEditors: (editors: RawEditors) => void;
+  rawError: string | null;
+}) {
+  return (
+    <Card>
+      <CardHeader>
+        <div className="flex flex-wrap items-center gap-2">
+          <CardTitle>{section.title}</CardTitle>
+          {section.badge !== undefined && (
+            <Badge variant="secondary">{section.badge}</Badge>
+          )}
+        </div>
+        {section.description !== undefined && (
+          <CardDescription>{section.description}</CardDescription>
+        )}
+      </CardHeader>
+      <CardContent className="flex flex-col gap-6">
+        {section.groups.map((group, index) => (
+          <div key={group.title ?? index} className="flex flex-col gap-4">
+            {group.title !== undefined && (
+              <>
+                <div className="flex items-center gap-3">
+                  <h3 className="text-sm font-semibold">{group.title}</h3>
+                  <Separator className="flex-1" />
+                </div>
+              </>
+            )}
+            <FieldGroup className="grid gap-4 sm:grid-cols-2">
+              {group.fields.map((field) => (
+                <FieldRenderer
+                  key={field.path}
+                  definition={field}
+                  secretIsSet={secretIsSet[field.path] === true}
+                />
+              ))}
+            </FieldGroup>
+          </div>
+        ))}
+
+        {section.custom === "autoplace" && <AutoplaceTable />}
+
+        {section.custom === "raw" && (
+          <RawEditors
+            editors={rawEditors}
+            setEditors={setRawEditors}
+            error={rawError}
+          />
+        )}
+      </CardContent>
+    </Card>
+  );
+}
+
+function FieldRenderer({
+  definition,
+  secretIsSet,
+}: {
+  definition: FieldDefinition;
+  secretIsSet: boolean;
+}) {
+  const { control } = useFormContext<FormValues>();
+  const path = definition.path as FieldPath<FormValues>;
+
+  if (definition.kind === "secret") {
+    return (
+      <SecretField definition={definition} secretIsSet={secretIsSet} />
+    );
+  }
+
+  return (
+    <Controller
+      control={control}
+      name={path}
+      render={({ field, fieldState }) => {
+        const error = fieldState.error?.message;
+        const content = (
+          <>
+            {definition.kind === "switch" ? (
+              <Field orientation="horizontal">
+                <FieldContent>
+                  <FieldLabel htmlFor={definition.path}>
+                    {definition.label}
+                  </FieldLabel>
+                  {definition.help !== undefined && (
+                    <FieldDescription>{definition.help}</FieldDescription>
+                  )}
+                </FieldContent>
+                <Switch
+                  id={definition.path}
+                  checked={Boolean(field.value)}
+                  onCheckedChange={(checked) => field.onChange(checked)}
+                  aria-invalid={fieldState.invalid}
+                />
+              </Field>
+            ) : (
+              <Field data-invalid={fieldState.invalid}>
+                <FieldLabel htmlFor={definition.path}>
+                  {definition.label}
+                </FieldLabel>
+                {renderControl(definition, field, fieldState.invalid)}
+                {definition.help !== undefined && (
+                  <FieldDescription>{definition.help}</FieldDescription>
+                )}
+                {error !== undefined && <FieldError>{error}</FieldError>}
+              </Field>
+            )}
+          </>
+        );
+
+        return definition.wide ? (
+          <div className="sm:col-span-2">{content}</div>
+        ) : (
+          content
+        );
+      }}
+    />
+  );
+}
+
+function renderControl(
+  definition: FieldDefinition,
+  field: {
+    value: unknown;
+    onChange: (value: unknown) => void;
+    onBlur: () => void;
+  },
+  invalid: boolean,
+) {
+  switch (definition.kind) {
+    case "number":
+      return (
+        <Input
+          id={definition.path}
+          type="number"
+          step={definition.step ?? "1"}
+          placeholder={definition.placeholder}
+          value={
+            typeof field.value === "number" || typeof field.value === "string"
+              ? field.value
+              : ""
+          }
+          onChange={(event) =>
+            field.onChange(numberOrUndefined(event.target.value))
+          }
+          onBlur={field.onBlur}
+          aria-invalid={invalid}
+        />
+      );
+    case "textarea":
+      return (
+        <Textarea
+          id={definition.path}
+          placeholder={definition.placeholder}
+          value={typeof field.value === "string" ? field.value : ""}
+          onChange={(event) => field.onChange(event.target.value)}
+          onBlur={field.onBlur}
+          aria-invalid={invalid}
+        />
+      );
+    case "tags":
+      return (
+        <Input
+          id={definition.path}
+          placeholder={definition.placeholder}
+          value={
+            Array.isArray(field.value) ? field.value.join(", ") : ""
+          }
+          onChange={(event) =>
+            field.onChange(
+              event.target.value
+                .split(",")
+                .map((tag) => tag.trim())
+                .filter((tag) => tag !== ""),
+            )
+          }
+          onBlur={field.onBlur}
+          aria-invalid={invalid}
+        />
+      );
+    case "select": {
+      const options = (definition.options ?? []).map((option) => ({
+        ...option,
+        value: option.value === "" ? DEFAULT_SELECT_VALUE : option.value,
+      }));
+      const current =
+        field.value === undefined ||
+        field.value === null ||
+        field.value === ""
+          ? DEFAULT_SELECT_VALUE
+          : String(field.value);
+
+      return (
+        <Select
+          items={options}
+          value={current}
+          onValueChange={(value) =>
+            field.onChange(
+              value === DEFAULT_SELECT_VALUE
+                ? undefined
+                : definition.numeric
+                  ? Number(value)
+                  : value,
+            )
+          }
+        >
+          <SelectTrigger id={definition.path} aria-invalid={invalid}>
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            {options.map((option) => (
+              <SelectItem key={option.value} value={option.value}>
+                {option.label}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+      );
+    }
+    default:
+      return (
+        <Input
+          id={definition.path}
+          placeholder={definition.placeholder}
+          value={typeof field.value === "string" ? field.value : ""}
+          onChange={(event) =>
+            field.onChange(
+              definition.emptyAsUndefined && event.target.value === ""
+                ? undefined
+                : event.target.value,
+            )
+          }
+          onBlur={field.onBlur}
+          aria-invalid={invalid}
+        />
+      );
+  }
+}
+
+function SecretField({
+  definition,
+  secretIsSet,
+}: {
+  definition: FieldDefinition;
+  secretIsSet: boolean;
+}) {
+  const { control, watch } = useFormContext<FormValues>();
+  const path = definition.path as FieldPath<FormValues>;
+  const clearPath = definition.clearPath as FieldPath<FormValues>;
+  const cleared = Boolean(watch(clearPath));
+
+  return (
+    <Field>
+      <FieldLabel htmlFor={definition.path}>{definition.label}</FieldLabel>
+      <Controller
+        control={control}
+        name={path}
+        render={({ field }) => (
+          <Input
+            id={definition.path}
+            type="password"
+            disabled={cleared}
+            value={typeof field.value === "string" ? field.value : ""}
+            onChange={(event) => field.onChange(event.target.value)}
+            placeholder={
+              secretIsSet ? "Laisser vide pour conserver" : "Non défini"
+            }
+          />
+        )}
+      />
+      {secretIsSet && (
+        <Controller
+          control={control}
+          name={clearPath}
+          render={({ field }) => (
+            <label className="flex items-center gap-2 text-xs text-muted-foreground">
+              <Checkbox
+                checked={Boolean(field.value)}
+                onCheckedChange={(checked) => field.onChange(checked)}
+              />
+              Effacer la valeur actuelle
+            </label>
+          )}
+        />
+      )}
+      {definition.help !== undefined && (
+        <FieldDescription>{definition.help}</FieldDescription>
+      )}
+    </Field>
+  );
+}
+
+function AutoplaceTable() {
+  const { register } = useFormContext<FormValues>();
+
+  return (
+    <div className="flex flex-col gap-3">
+      <div className="flex items-center gap-3">
+        <h3 className="text-sm font-semibold">Ressources (autoplace)</h3>
+        <Separator className="flex-1" />
+      </div>
+      <div className="overflow-x-auto">
+        <table className="w-full min-w-[520px] text-sm">
+          <thead>
+            <tr className="text-left text-xs text-muted-foreground">
+              <th className="pb-2 pr-3 font-medium">Ressource</th>
+              <th className="px-1 pb-2 font-medium">Fréquence</th>
+              <th className="px-1 pb-2 font-medium">Taille</th>
+              <th className="px-1 pb-2 font-medium">Richesse</th>
+            </tr>
+          </thead>
+          <tbody>
+            {RESOURCES.map((resource) => (
+              <tr key={resource}>
+                <td className="py-1 pr-3 font-mono text-xs">{resource}</td>
+                {RESOURCE_FIELDS.map((field) => (
+                  <td key={field} className="p-1">
+                    <Input
+                      type="number"
+                      step="0.1"
+                      className="h-8"
+                      {...register(
+                        `spec.mapGenSettings.autoplaceControls.${resource}.${field}` as FieldPath<FormValues>,
+                        {
+                          setValueAs: (value: unknown) =>
+                            value === "" ? undefined : Number(value),
+                        },
+                      )}
+                    />
+                  </td>
+                ))}
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
+}
+
+function RawEditors({
+  editors,
+  setEditors,
+  error,
+}: {
+  editors: RawEditors;
+  setEditors: (editors: RawEditors) => void;
+  error: string | null;
+}) {
+  return (
+    <div className="flex flex-col gap-4">
+      {error !== null && (
+        <Alert variant="destructive">
+          <AlertDescription>{error}</AlertDescription>
+        </Alert>
+      )}
+      <Field>
+        <FieldLabel htmlFor="raw-server">server.raw</FieldLabel>
+        <Textarea
+          id="raw-server"
+          className="font-mono text-xs"
+          rows={8}
+          value={editors.server}
+          onChange={(event) =>
+            setEditors({ ...editors, server: event.target.value })
+          }
+          spellCheck={false}
+        />
+        <FieldDescription>
+          Ex. : minimum_segment_size, auto_pause_when_players_connect.
+        </FieldDescription>
+      </Field>
+      <Field>
+        <FieldLabel htmlFor="raw-mapgen">mapGenSettings.raw</FieldLabel>
+        <Textarea
+          id="raw-mapgen"
+          className="font-mono text-xs"
+          rows={8}
+          value={editors.mapGen}
+          onChange={(event) =>
+            setEditors({ ...editors, mapGen: event.target.value })
+          }
+          spellCheck={false}
+        />
+        <FieldDescription>
+          Ex. : property_expression_names, autres entités autoplace.
+        </FieldDescription>
+      </Field>
+      <Field>
+        <FieldLabel htmlFor="raw-map">mapSettings.raw</FieldLabel>
+        <Textarea
+          id="raw-map"
+          className="font-mono text-xs"
+          rows={8}
+          value={editors.mapSettings}
+          onChange={(event) =>
+            setEditors({ ...editors, mapSettings: event.target.value })
+          }
+          spellCheck={false}
+        />
+        <FieldDescription>
+          Ex. : unit_group, path_finder, asteroids.
+        </FieldDescription>
+      </Field>
+    </div>
   );
 }

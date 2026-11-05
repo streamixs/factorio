@@ -1,5 +1,6 @@
 import type {
   CreateFactorioServerInput,
+  EffectiveSettings,
   FactorioServer,
   ServerEvent,
   ServerLogs,
@@ -103,4 +104,8 @@ export function getServerLogs(
 
 export function getServerEvents(name: string): Promise<ServerEvent[]> {
   return request<ServerEvent[]>(`/${encodeURIComponent(name)}/events`);
+}
+
+export function getEffectiveSettings(name: string): Promise<EffectiveSettings> {
+  return request<EffectiveSettings>(`/${encodeURIComponent(name)}/effective`);
 }

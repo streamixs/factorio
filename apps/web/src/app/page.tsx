@@ -1,37 +1,58 @@
 "use client";
 
-import Link from "next/link";
-import { useRouter } from "next/navigation";
 import {
   findCondition,
   type FactorioServer,
   type ServiceType,
 } from "@factorio/shared";
-import {
-  useCallback,
-  useEffect,
-  useState,
-  type FormEvent,
-} from "react";
+import Link from "next/link";
+import { useRouter } from "next/navigation";
+import { useCallback, useEffect, useState, type FormEvent } from "react";
+import { toast } from "sonner";
 
-import { createServer, deleteServer, listServers, startServer, stopServer } from "@/lib/api";
+import { Alert, AlertDescription } from "@/components/ui/alert";
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardFooter,
+  CardHeader,
+  CardTitle,
+} from "@/components/ui/card";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Separator } from "@/components/ui/separator";
+import { Skeleton } from "@/components/ui/skeleton";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import {
+  createServer,
+  deleteServer,
+  listServers,
+  startServer,
+  stopServer,
+} from "@/lib/api";
 import { serverStatusBadge } from "@/lib/server-status";
 
 const SERVICE_TYPES: ServiceType[] = ["ClusterIP", "NodePort", "LoadBalancer"];
-
-const inputClass =
-  "w-full rounded-lg border border-zinc-300 bg-white px-3 py-2 text-sm text-zinc-900 outline-none transition focus:border-zinc-500 focus:ring-2 focus:ring-zinc-200 dark:border-zinc-700 dark:bg-zinc-950 dark:text-zinc-100 dark:focus:border-zinc-500 dark:focus:ring-zinc-800";
-
-const labelClass =
-  "flex flex-col gap-1 text-sm font-medium text-zinc-700 dark:text-zinc-300";
+const SERVICE_OPTIONS = SERVICE_TYPES.map((type) => ({
+  value: type,
+  label: type,
+}));
 
 export default function Home() {
   const router = useRouter();
   const [servers, setServers] = useState<FactorioServer[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [pendingDeletion, setPendingDeletion] = useState<string | null>(null);
-  const [pendingAction, setPendingAction] = useState<string | null>(null);
+  const [pending, setPending] = useState<string | null>(null);
 
   const [name, setName] = useState("");
   const [displayName, setDisplayName] = useState("");
@@ -48,15 +69,13 @@ export default function Home() {
       setError(null);
       setServers(await listServers());
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Unable to reach the API");
+      setError(err instanceof Error ? err.message : "Impossible de charger l'API");
     } finally {
       setLoading(false);
     }
   }, []);
 
   useEffect(() => {
-    // Initial load. refresh() sets state from an async response, not during
-    // this render, but the rule only sees the call chain into it.
     // eslint-disable-next-line react-hooks/set-state-in-effect
     void refresh();
   }, [refresh]);
@@ -87,317 +106,316 @@ export default function Home() {
           gamePassword === "" ? undefined : { gamePassword },
       });
 
-      setName("");
-      setDisplayName("");
-      setSeed("");
-      setGamePassword("");
+      toast.success("Serveur créé");
       router.push(`/servers/${encodeURIComponent(created.metadata.name)}`);
     } catch (err) {
-      setError(
-        err instanceof Error ? err.message : "Unable to create the server",
-      );
+      const message =
+        err instanceof Error ? err.message : "Impossible de créer le serveur";
+      setError(message);
+      toast.error(message);
     } finally {
       setCreating(false);
     }
   }
 
   async function handleToggle(server: FactorioServer) {
-    const suspended = server.spec.suspended === true;
-    const name = server.metadata.name;
-
-    setPendingAction(name);
+    setPending(server.metadata.name);
     setError(null);
 
     try {
-      await (suspended ? startServer(name) : stopServer(name));
+      const suspended = server.spec.suspended === true;
+      await (suspended
+        ? startServer(server.metadata.name)
+        : stopServer(server.metadata.name));
       await refresh();
+      toast.success(suspended ? "Serveur démarré" : "Serveur arrêté");
     } catch (err) {
-      setError(
-        err instanceof Error
-          ? err.message
-          : `Unable to ${suspended ? "start" : "stop"} the server`,
-      );
+      const message =
+        err instanceof Error ? err.message : "Impossible de changer l'état";
+      setError(message);
+      toast.error(message);
     } finally {
-      setPendingAction(null);
+      setPending(null);
     }
   }
 
   async function handleDelete(serverName: string) {
     if (
       !window.confirm(
-        `Delete ${serverName}? Its persistent volume will be removed with it.`,
+        `Supprimer ${serverName} ? Son volume persistant sera supprimé avec lui.`,
       )
     ) {
       return;
     }
 
-    setPendingDeletion(serverName);
+    setPending(serverName);
     setError(null);
 
     try {
       await deleteServer(serverName);
       await refresh();
+      toast.success("Serveur supprimé");
     } catch (err) {
-      setError(
-        err instanceof Error ? err.message : "Unable to delete the server",
-      );
+      const message =
+        err instanceof Error ? err.message : "Impossible de supprimer le serveur";
+      setError(message);
+      toast.error(message);
     } finally {
-      setPendingDeletion(null);
+      setPending(null);
     }
   }
 
   return (
-    <main className="mx-auto flex w-full max-w-6xl flex-1 flex-col gap-8 px-4 py-10 sm:px-6 lg:px-8">
+    <main className="mx-auto flex w-full max-w-6xl flex-1 flex-col gap-6 px-4 py-10 sm:px-6 lg:px-8">
       <header className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
         <div>
           <h1 className="text-3xl font-semibold tracking-tight">
             Factorio Platform
           </h1>
-          <p className="mt-1 text-sm text-zinc-600 dark:text-zinc-400">
-            Manage the Factorio servers running in Kubernetes.
+          <p className="mt-1 text-sm text-muted-foreground">
+            Gère les serveurs Factorio exécutés dans Kubernetes.
           </p>
         </div>
-        <button
-          type="button"
-          onClick={() => void refresh()}
-          className="self-start rounded-lg border border-zinc-300 px-3 py-2 text-sm font-medium transition hover:bg-zinc-100 dark:border-zinc-700 dark:hover:bg-zinc-800"
-        >
-          Refresh
-        </button>
+        <Button variant="outline" size="sm" onClick={() => void refresh()}>
+          Rafraîchir
+        </Button>
       </header>
 
       {error !== null && (
-        <div className="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700 dark:border-red-900 dark:bg-red-950 dark:text-red-300">
-          {error}
-        </div>
+        <Alert variant="destructive">
+          <AlertDescription>{error}</AlertDescription>
+        </Alert>
       )}
 
-      <section className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_360px]">
-        <div className="flex flex-col gap-4">
-          <h2 className="text-lg font-medium">Servers</h2>
+      <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_360px]">
+        <section className="flex flex-col gap-4">
+          <h2 className="text-lg font-medium">Serveurs</h2>
 
-          {loading && (
-            <p className="text-sm text-zinc-500">Loading servers…</p>
-          )}
+          {loading ? (
+            <div className="grid gap-4 sm:grid-cols-2">
+              <Skeleton className="h-48 w-full" />
+              <Skeleton className="h-48 w-full" />
+            </div>
+          ) : servers.length === 0 ? (
+            <Card>
+              <CardContent className="py-10 text-center text-sm text-muted-foreground">
+                Aucun serveur pour l&apos;instant. Crée-en un depuis le
+                formulaire.
+              </CardContent>
+            </Card>
+          ) : (
+            <div className="grid gap-4 sm:grid-cols-2">
+              {servers.map((server) => {
+                const badge = serverStatusBadge(server);
+                const suspended = server.spec.suspended === true;
+                const degraded = findCondition(server, "Degraded");
+                const storage = server.spec.storage?.size ?? "10Gi";
+                const service = server.spec.service?.type ?? "ClusterIP";
+                const players = server.spec.server?.access?.maxPlayers ?? 0;
+                const display =
+                  server.spec.server?.identity?.name ?? server.metadata.name;
+                const busy = pending === server.metadata.name;
 
-          {!loading && servers.length === 0 && (
-            <div className="rounded-xl border border-dashed border-zinc-300 p-8 text-center text-sm text-zinc-500 dark:border-zinc-700">
-              No server yet. Create one from the form.
+                return (
+                  <Card key={server.metadata.name}>
+                    <CardHeader>
+                      <div className="flex items-start justify-between gap-3">
+                        <div className="min-w-0">
+                          <CardTitle className="truncate font-mono text-base">
+                            <Link
+                              href={`/servers/${encodeURIComponent(server.metadata.name)}`}
+                              className="hover:underline"
+                            >
+                              {server.metadata.name}
+                            </Link>
+                          </CardTitle>
+                          <CardDescription className="truncate">
+                            {display} · v{server.spec.version ?? "unknown"}
+                          </CardDescription>
+                        </div>
+                        <Badge variant="outline" className={badge.className}>
+                          {badge.label}
+                        </Badge>
+                      </div>
+                    </CardHeader>
+                    <CardContent className="grid grid-cols-2 gap-x-4 gap-y-2 text-sm">
+                      <span className="text-muted-foreground">
+                        Joueurs max
+                      </span>
+                      <span>{players === 0 ? "Illimité" : players}</span>
+                      <span className="text-muted-foreground">Stockage</span>
+                      <span>{storage}</span>
+                      <span className="text-muted-foreground">Service</span>
+                      <span>{service}</span>
+                      <span className="text-muted-foreground">Créé</span>
+                      <span>
+                        {server.metadata.creationTimestamp === undefined
+                          ? "—"
+                          : new Date(
+                              server.metadata.creationTimestamp,
+                            ).toLocaleDateString()}
+                      </span>
+                      {degraded?.status === "True" &&
+                        degraded.message !== undefined && (
+                          <>
+                            <Separator className="col-span-2" />
+                            <p className="col-span-2 text-xs text-destructive">
+                              {degraded.message}
+                            </p>
+                          </>
+                        )}
+                    </CardContent>
+                    <CardFooter className="justify-end gap-2">
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        onClick={() => void handleToggle(server)}
+                        disabled={busy}
+                      >
+                        {suspended ? "Démarrer" : "Arrêter"}
+                      </Button>
+                      <Button
+                        type="button"
+                        variant="destructive"
+                        size="sm"
+                        onClick={() =>
+                          void handleDelete(server.metadata.name)
+                        }
+                        disabled={busy}
+                      >
+                        Supprimer
+                      </Button>
+                    </CardFooter>
+                  </Card>
+                );
+              })}
             </div>
           )}
+        </section>
 
-          {servers.map((server) => {
-            const badge = serverStatusBadge(server);
-            const degraded = findCondition(server, "Degraded");
-            const suspended = server.spec.suspended === true;
-            const storage = server.spec.storage?.size ?? "10Gi";
-            const service = server.spec.service?.type ?? "ClusterIP";
-            const players = server.spec.server?.access?.maxPlayers ?? 0;
-            const display =
-              server.spec.server?.identity?.name ?? server.metadata.name;
-
-            return (
-              <article
-                key={server.metadata.name}
-                className="rounded-xl border border-zinc-200 bg-white p-5 shadow-sm dark:border-zinc-800 dark:bg-zinc-900"
-              >
-                <div className="flex items-start justify-between gap-4">
-                  <div className="min-w-0">
-                    <Link
-                      href={`/servers/${encodeURIComponent(server.metadata.name)}`}
-                      className="block truncate font-mono text-base font-medium hover:underline"
-                    >
-                      {server.metadata.name}
-                    </Link>
-                    <p className="truncate text-sm text-zinc-500 dark:text-zinc-400">
-                      {display} · v{server.spec.version ?? "unknown"}
-                    </p>
-                  </div>
-                  <span
-                    className={`shrink-0 rounded-full px-2.5 py-1 text-xs font-medium ${badge.className}`}
-                  >
-                    {badge.label}
-                  </span>
-                </div>
-
-                <dl className="mt-4 grid grid-cols-2 gap-x-4 gap-y-2 text-sm">
-                  <dt className="text-zinc-500 dark:text-zinc-400">
-                    Max players
-                  </dt>
-                  <dd>{players === 0 ? "Unlimited" : players}</dd>
-                  <dt className="text-zinc-500 dark:text-zinc-400">Storage</dt>
-                  <dd>{storage}</dd>
-                  <dt className="text-zinc-500 dark:text-zinc-400">Service</dt>
-                  <dd>{service}</dd>
-                  <dt className="text-zinc-500 dark:text-zinc-400">Created</dt>
-                  <dd>
-                    {server.metadata.creationTimestamp === undefined
-                      ? "—"
-                      : new Date(
-                          server.metadata.creationTimestamp,
-                        ).toLocaleDateString()}
-                  </dd>
-                </dl>
-
-                {degraded?.status === "True" && degraded.message !== undefined && (
-                  <p className="mt-3 rounded-lg bg-red-50 px-3 py-2 text-xs text-red-700 dark:bg-red-950 dark:text-red-300">
-                    {degraded.message}
-                  </p>
-                )}
-
-                <div className="mt-4 flex justify-end gap-2">
-                  <button
-                    type="button"
-                    onClick={() => void handleToggle(server)}
-                    disabled={pendingAction === server.metadata.name}
-                    className={
-                      suspended
-                        ? "rounded-lg border border-emerald-200 px-3 py-1.5 text-sm font-medium text-emerald-700 transition hover:bg-emerald-50 disabled:cursor-not-allowed disabled:opacity-50 dark:border-emerald-900 dark:text-emerald-300 dark:hover:bg-emerald-950"
-                        : "rounded-lg border border-amber-200 px-3 py-1.5 text-sm font-medium text-amber-700 transition hover:bg-amber-50 disabled:cursor-not-allowed disabled:opacity-50 dark:border-amber-900 dark:text-amber-300 dark:hover:bg-amber-950"
-                    }
-                  >
-                    {pendingAction === server.metadata.name
-                      ? suspended
-                        ? "Starting…"
-                        : "Stopping…"
-                      : suspended
-                        ? "Start"
-                        : "Stop"}
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => void handleDelete(server.metadata.name)}
-                    disabled={pendingDeletion === server.metadata.name}
-                    className="rounded-lg border border-red-200 px-3 py-1.5 text-sm font-medium text-red-700 transition hover:bg-red-50 disabled:cursor-not-allowed disabled:opacity-50 dark:border-red-900 dark:text-red-300 dark:hover:bg-red-950"
-                  >
-                    {pendingDeletion === server.metadata.name
-                      ? "Deleting…"
-                      : "Delete"}
-                  </button>
-                </div>
-              </article>
-            );
-          })}
-        </div>
-
-        <form
-          onSubmit={(event) => void handleCreate(event)}
-          className="flex h-fit flex-col gap-4 rounded-xl border border-zinc-200 bg-white p-5 shadow-sm dark:border-zinc-800 dark:bg-zinc-900"
-        >
-          <div>
-            <h2 className="text-lg font-medium">New server</h2>
-            <p className="text-sm text-zinc-500 dark:text-zinc-400">
-              The resource is created in the namespace configured on the API.
-            </p>
-          </div>
-
-          <label className={labelClass}>
-            Name
-            <input
-              className={inputClass}
-              value={name}
-              onChange={(event) => setName(event.target.value)}
-              placeholder="my-factorio"
-              pattern="[a-z0-9]([-a-z0-9]*[a-z0-9])?"
-              maxLength={63}
-              required
-            />
-          </label>
-
-          <label className={labelClass}>
-            Display name
-            <input
-              className={inputClass}
-              value={displayName}
-              onChange={(event) => setDisplayName(event.target.value)}
-              placeholder="My Factorio Server"
-              maxLength={64}
-            />
-          </label>
-
-          <div className="grid grid-cols-2 gap-3">
-            <label className={labelClass}>
-              Version
-              <input
-                className={inputClass}
-                value={version}
-                onChange={(event) => setVersion(event.target.value)}
-                placeholder="2.1.24"
-              />
-            </label>
-            <label className={labelClass}>
-              Max players
-              <input
-                className={inputClass}
-                type="number"
-                min={0}
-                value={maxPlayers}
-                onChange={(event) => setMaxPlayers(event.target.value)}
-              />
-            </label>
-          </div>
-
-          <div className="grid grid-cols-2 gap-3">
-            <label className={labelClass}>
-              Map seed
-              <input
-                className={inputClass}
-                type="number"
-                min={0}
-                max={4294967295}
-                value={seed}
-                onChange={(event) => setSeed(event.target.value)}
-                placeholder="random"
-              />
-            </label>
-            <label className={labelClass}>
-              Storage
-              <input
-                className={inputClass}
-                value={storageSize}
-                onChange={(event) => setStorageSize(event.target.value)}
-                placeholder="10Gi"
-              />
-            </label>
-          </div>
-
-          <label className={labelClass}>
-            Service type
-            <select
-              className={inputClass}
-              value={serviceType}
-              onChange={(event) =>
-                setServiceType(event.target.value as ServiceType)
-              }
+        <Card className="h-fit">
+          <CardHeader>
+            <CardTitle>Nouveau serveur</CardTitle>
+            <CardDescription>
+              La ressource est créée dans le namespace configuré sur l&apos;API.
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            <form
+              onSubmit={(event) => void handleCreate(event)}
+              className="flex flex-col gap-4"
             >
-              {SERVICE_TYPES.map((type) => (
-                <option key={type} value={type}>
-                  {type}
-                </option>
-              ))}
-            </select>
-          </label>
+              <div className="flex flex-col gap-2">
+                <Label htmlFor="create-name">Nom</Label>
+                <Input
+                  id="create-name"
+                  value={name}
+                  onChange={(event) => setName(event.target.value)}
+                  placeholder="my-factorio"
+                  pattern="[a-z0-9]([-a-z0-9]*[a-z0-9])?"
+                  maxLength={63}
+                  required
+                />
+              </div>
 
-          <label className={labelClass}>
-            Game password (optional)
-            <input
-              className={inputClass}
-              type="password"
-              value={gamePassword}
-              onChange={(event) => setGamePassword(event.target.value)}
-              placeholder="Leave empty for no password"
-            />
-          </label>
+              <div className="flex flex-col gap-2">
+                <Label htmlFor="create-display-name">Nom affiché</Label>
+                <Input
+                  id="create-display-name"
+                  value={displayName}
+                  onChange={(event) => setDisplayName(event.target.value)}
+                  placeholder="My Factorio Server"
+                  maxLength={64}
+                />
+              </div>
 
-          <button
-            type="submit"
-            disabled={creating}
-            className="rounded-lg bg-zinc-900 px-4 py-2 text-sm font-medium text-white transition hover:bg-zinc-700 disabled:cursor-not-allowed disabled:opacity-50 dark:bg-zinc-100 dark:text-zinc-900 dark:hover:bg-zinc-300"
-          >
-            {creating ? "Creating…" : "Create server"}
-          </button>
-        </form>
-      </section>
+              <div className="grid grid-cols-2 gap-3">
+                <div className="flex flex-col gap-2">
+                  <Label htmlFor="create-version">Version</Label>
+                  <Input
+                    id="create-version"
+                    value={version}
+                    onChange={(event) => setVersion(event.target.value)}
+                    placeholder="2.1.24"
+                  />
+                </div>
+                <div className="flex flex-col gap-2">
+                  <Label htmlFor="create-max-players">Joueurs max</Label>
+                  <Input
+                    id="create-max-players"
+                    type="number"
+                    min={0}
+                    value={maxPlayers}
+                    onChange={(event) => setMaxPlayers(event.target.value)}
+                  />
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div className="flex flex-col gap-2">
+                  <Label htmlFor="create-seed">Seed</Label>
+                  <Input
+                    id="create-seed"
+                    type="number"
+                    min={0}
+                    max={4294967295}
+                    value={seed}
+                    onChange={(event) => setSeed(event.target.value)}
+                    placeholder="aléatoire"
+                  />
+                </div>
+                <div className="flex flex-col gap-2">
+                  <Label htmlFor="create-storage">Stockage</Label>
+                  <Input
+                    id="create-storage"
+                    value={storageSize}
+                    onChange={(event) => setStorageSize(event.target.value)}
+                    placeholder="10Gi"
+                  />
+                </div>
+              </div>
+
+              <div className="flex flex-col gap-2">
+                <Label htmlFor="create-service">Type de Service</Label>
+                <Select
+                  items={SERVICE_OPTIONS}
+                  value={serviceType}
+                  onValueChange={(value) => setServiceType(value as ServiceType)}
+                >
+                  <SelectTrigger id="create-service">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {SERVICE_OPTIONS.map((option) => (
+                      <SelectItem key={option.value} value={option.value}>
+                        {option.label}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+
+              <div className="flex flex-col gap-2">
+                <Label htmlFor="create-password">
+                  Mot de passe de partie
+                </Label>
+                <Input
+                  id="create-password"
+                  type="password"
+                  value={gamePassword}
+                  onChange={(event) => setGamePassword(event.target.value)}
+                  placeholder="Optionnel"
+                />
+              </div>
+
+              <Button type="submit" disabled={creating}>
+                {creating ? "Création…" : "Créer le serveur"}
+              </Button>
+            </form>
+          </CardContent>
+        </Card>
+      </div>
     </main>
   );
 }
