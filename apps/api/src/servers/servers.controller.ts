@@ -24,6 +24,7 @@ import type {
   ServerConnection,
   ServerEvent,
   ServerLogs,
+  ServerOperation,
   ServerUsage,
   UpdateFactorioServerInput,
 } from '@factorio/shared';
@@ -102,8 +103,13 @@ export class ServersController {
   restoreBackup(
     @Param('name') name: string,
     @Param('file') file: string,
-  ): Promise<{ save: string; job: string }> {
+  ): Promise<{ operation: string }> {
     return this.servers.restoreBackup(name, file);
+  }
+
+  @Get(':name/operations')
+  operations(@Param('name') name: string): Promise<ServerOperation[]> {
+    return this.servers.operations(name);
   }
 
   @Post(':name/import')
@@ -112,7 +118,7 @@ export class ServersController {
     @Param('name') name: string,
     @Req() request: Request,
     @Headers('content-length') contentLength?: string,
-  ): Promise<{ job: string }> {
+  ): Promise<{ operation: string }> {
     return this.servers.importSave(name, request, contentLength);
   }
 

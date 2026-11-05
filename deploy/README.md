@@ -40,14 +40,17 @@ The web and API deployments themselves live in `factorio-system`.
 The Role in the target namespace allows:
 
 - `factorioservers` CRUD
-- `secrets` get/create/update/delete (managed credentials)
+- `factoriooperations` create/list/watch (durable restore/import)
+- `secrets` get/create/update/delete (managed credentials and RCON)
 - `configmaps` get (effective settings)
 - `pods` list and `pods/log` get (logs)
 - `events` list (diagnostics)
 - `services` get (connection details)
-- `jobs` create/get/delete (save restore)
 - `metrics.k8s.io/pods` get/list (CPU and memory)
 - `nodes` get/list cluster-wide (NodePort addresses)
+
+The agent runs the restore/import Jobs and owns the suspend/resume state
+machine; the API only creates `FactorioOperation` resources.
 
 The API does not need `deployments` or pod write access; the agent owns those
 resources.

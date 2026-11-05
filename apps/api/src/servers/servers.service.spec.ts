@@ -1,5 +1,6 @@
 import {
   BadRequestException,
+  ConflictException,
   NotFoundException,
   PayloadTooLargeException,
 } from '@nestjs/common';
@@ -476,7 +477,7 @@ describe('ServersService', () => {
     expect(backup.data).toEqual(Buffer.from([1, 2, 3]));
   });
 
-  it('restores a save through a Job and restarts the server', async () => {
+  it('creates a restore operation', async () => {
     const server = {
       apiVersion: 'games.dev.streamixs.com/v1alpha1',
       kind: 'FactorioServer',
@@ -491,61 +492,46 @@ describe('ServersService', () => {
       },
     };
     getNamespacedCustomObject.mockResolvedValue(server);
-    replaceNamespacedCustomObject.mockImplementation(
-      (request: { body: FactorioServer }) => Promise.resolve(request.body),
-    );
-    listNamespacedPod.mockResolvedValue({ items: [] });
-    createNamespacedJob.mockResolvedValue({});
-    readNamespacedJob.mockResolvedValue({ status: { succeeded: 1 } });
-    deleteNamespacedJob.mockResolvedValue({});
+    createNamespacedCustomObject.mockResolvedValue({
+      metadata: { name: 'my-server-restore-abc' },
+    });
 
     const result = await service.restoreBackup(
       'my-server',
       '_autosave2.zip',
     );
 
-    expect(result.save).toBe('_autosave1.zip');
-    expect(result.job).toContain('my-server-restore-');
-
-    await vi.waitFor(() => {
-      expect(createNamespacedJob).toHaveBeenCalled();
-      expect(replaceNamespacedCustomObject).toHaveBeenCalledTimes(2);
-      expect(deleteNamespacedJob).toHaveBeenCalled();
-    });
-
-    expect(createNamespacedJob).toHaveBeenCalledWith(
+    expect(result.operation).toBe('my-server-restore-abc');
+    expect(createNamespacedCustomObject).toHaveBeenCalledWith(
       expect.objectContaining({
+        group: 'games.dev.streamixs.com',
+        version: 'v1alpha1',
         namespace: 'games',
+        plural: 'factoriooperations',
         body: expect.objectContaining({
-          spec: expect.objectContaining({
-            template: expect.objectContaining({
-              spec: expect.objectContaining({
-                containers: [
-                  expect.objectContaining({
-                    env: [
-                      {
-                        name: 'SAVE_FILE',
-                        value: '_autosave2.zip',
-                      },
-                      { name: 'TARGET_SAVE', value: '_autosave1.zip' },
-                    ],
-                  }),
-                ],
-                volumes: [
-                  {
-                    name: 'data',
-                    persistentVolumeClaim: { claimName: 'my-server-data' },
-                  },
-                ],
+          kind: 'FactorioOperation',
+          metadata: expect.objectContaining({
+            generateName: 'my-server-restore-',
+            ownerReferences: [
+              expect.objectContaining({
+                kind: 'FactorioServer',
+                name: 'my-server',
+                uid: 'uid-1',
+                controller: true,
               }),
-            }),
+            ],
           }),
+          spec: {
+            serverName: 'my-server',
+            type: 'Restore',
+            saveFile: '_autosave2.zip',
+          },
         }),
       }),
     );
   });
 
-  it('imports a save through a Job and restarts the server', async () => {
+  it('creates an import operation with a one-time URL', async () => {
     const server = {
       apiVersion: 'games.dev.streamixs.com/v1alpha1',
       kind: 'FactorioServer',
@@ -560,13 +546,9 @@ describe('ServersService', () => {
       },
     };
     getNamespacedCustomObject.mockResolvedValue(server);
-    replaceNamespacedCustomObject.mockImplementation(
-      (request: { body: FactorioServer }) => Promise.resolve(request.body),
-    );
-    listNamespacedPod.mockResolvedValue({ items: [] });
-    createNamespacedJob.mockResolvedValue({});
-    readNamespacedJob.mockResolvedValue({ status: { succeeded: 1 } });
-    deleteNamespacedJob.mockResolvedValue({});
+    createNamespacedCustomObject.mockResolvedValue({
+      metadata: { name: 'my-server-import-abc' },
+    });
 
     const result = await service.importSave(
       'my-server',
@@ -574,46 +556,71 @@ describe('ServersService', () => {
       '8',
     );
 
-    expect(result.job).toContain('my-server-import-');
-
-    await vi.waitFor(() => {
-      expect(createNamespacedJob).toHaveBeenCalled();
-      expect(replaceNamespacedCustomObject).toHaveBeenCalledTimes(2);
-      expect(deleteNamespacedJob).toHaveBeenCalled();
-    });
-
-    expect(createNamespacedJob).toHaveBeenCalledWith(
+    expect(result.operation).toBe('my-server-import-abc');
+    expect(createNamespacedCustomObject).toHaveBeenCalledWith(
       expect.objectContaining({
-        namespace: 'games',
+        plural: 'factoriooperations',
         body: expect.objectContaining({
+          metadata: expect.objectContaining({
+            generateName: 'my-server-import-',
+          }),
           spec: expect.objectContaining({
-            template: expect.objectContaining({
-              spec: expect.objectContaining({
-                containers: [
-                  expect.objectContaining({
-                    env: [
-                      expect.objectContaining({
-                        name: 'IMPORT_URL',
-                        value: expect.stringContaining(
-                          '/api/servers/my-server/imports/',
-                        ),
-                      }),
-                      { name: 'TARGET_SAVE', value: '_autosave1.zip' },
-                    ],
-                  }),
-                ],
-                volumes: [
-                  {
-                    name: 'data',
-                    persistentVolumeClaim: { claimName: 'my-server-data' },
-                  },
-                ],
-              }),
-            }),
+            serverName: 'my-server',
+            type: 'Import',
+            importUrl: expect.stringContaining(
+              '/api/servers/my-server/imports/',
+            ),
           }),
         }),
       }),
     );
+  });
+
+  it('lists operations for one server, newest first', async () => {
+    listNamespacedCustomObject.mockResolvedValue({
+      items: [
+        {
+          metadata: {
+            name: 'op-old',
+            creationTimestamp: '2026-01-01T00:00:00.000Z',
+          },
+          spec: {
+            serverName: 'my-server',
+            type: 'Restore',
+            saveFile: 'old.zip',
+          },
+          status: {
+            phase: 'Completed',
+            message: 'Save installed',
+            completedAt: '2026-01-01T00:01:00.000Z',
+          },
+        },
+        {
+          metadata: {
+            name: 'op-other',
+            creationTimestamp: '2026-01-03T00:00:00.000Z',
+          },
+          spec: { serverName: 'other-server', type: 'Import' },
+        },
+        {
+          metadata: {
+            name: 'op-new',
+            creationTimestamp: '2026-01-02T00:00:00.000Z',
+          },
+          spec: { serverName: 'my-server', type: 'Import' },
+          status: { phase: 'Running' },
+        },
+      ],
+    });
+
+    const operations = await service.operations('my-server');
+
+    expect(operations.map((operation) => operation.name)).toEqual([
+      'op-new',
+      'op-old',
+    ]);
+    expect(operations[0].phase).toBe('Running');
+    expect(operations[1].saveFile).toBe('old.zip');
   });
 
   it('rejects an import that is not a zip', async () => {
@@ -630,7 +637,7 @@ describe('ServersService', () => {
       ),
     ).rejects.toBeInstanceOf(BadRequestException);
 
-    expect(createNamespacedJob).not.toHaveBeenCalled();
+    expect(createNamespacedCustomObject).not.toHaveBeenCalled();
   });
 
   it('rejects a save larger than the import limit', async () => {
@@ -790,10 +797,35 @@ describe('ServersService', () => {
     replaceNamespacedCustomObject.mockImplementation(
       (request: { body: FactorioServer }) => Promise.resolve(request.body),
     );
+    listNamespacedCustomObject.mockResolvedValue({ items: [] });
 
     const server = await service.setSuspended('my-server', false);
 
     expect(server.spec.suspended).toBe(false);
+  });
+
+  it('refuses to start a server while an operation is running', async () => {
+    getNamespacedCustomObject.mockResolvedValue({
+      apiVersion: 'games.dev.streamixs.com/v1alpha1',
+      kind: 'FactorioServer',
+      metadata: { name: 'my-server', namespace: 'games' },
+      spec: { version: '2.1.24', suspended: true },
+    });
+    listNamespacedCustomObject.mockResolvedValue({
+      items: [
+        {
+          metadata: { name: 'my-server-restore-abc' },
+          spec: { serverName: 'my-server', type: 'Restore' },
+          status: { phase: 'Running' },
+        },
+      ],
+    });
+
+    await expect(
+      service.setSuspended('my-server', false),
+    ).rejects.toBeInstanceOf(ConflictException);
+
+    expect(replaceNamespacedCustomObject).not.toHaveBeenCalled();
   });
 
   it('deletes with background propagation', async () => {

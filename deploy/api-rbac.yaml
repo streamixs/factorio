@@ -25,6 +25,15 @@ rules:
       - patch
       - delete
   - apiGroups:
+      - games.dev.streamixs.com
+    resources:
+      - factoriooperations
+    verbs:
+      - get
+      - list
+      - watch
+      - create
+  - apiGroups:
       - ""
     resources:
       - secrets
@@ -71,14 +80,6 @@ rules:
     verbs:
       - get
       - list
-  - apiGroups:
-      - batch
-    resources:
-      - jobs
-    verbs:
-      - create
-      - get
-      - delete
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRole

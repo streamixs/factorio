@@ -11,8 +11,6 @@ import {
 import { ApiException } from '@kubernetes/client-node';
 import type {
   CoreV1Event,
-  V1Job,
-  V1OwnerReference,
   V1Pod,
   V1Secret,
   V1Service,
@@ -43,6 +41,9 @@ import type {
   ServerConnection,
   ServerEvent,
   ServerLogs,
+  ServerOperation,
+  ServerOperationPhase,
+  ServerOperationType,
   ServerUsage,
   ServicePortInfo,
   UpdateFactorioServerInput,
@@ -53,6 +54,7 @@ import { KubernetesService } from '../kubernetes/kubernetes.service.js';
 const GROUP = 'games.dev.streamixs.com';
 const VERSION = 'v1alpha1';
 const PLURAL = 'factorioservers';
+const OPERATIONS_PLURAL = 'factoriooperations';
 const DEFAULT_VERSION = '2.1.24';
 
 const NAME_PATTERN = /^[a-z0-9]([-a-z0-9]*[a-z0-9])?$/;
@@ -66,7 +68,6 @@ const CREDENTIAL_KEYS = {
 
 const SAVES_HTTP_PORT = 8080;
 const BACKUP_FILE_PATTERN = /^[A-Za-z0-9_][A-Za-z0-9._-]*\.zip$/;
-const PRIMARY_SAVE_NAME = '_autosave1.zip';
 const RCON_PORT = 27015;
 const RCON_SECRET_SUFFIX = '-rcon';
 const RCON_PASSWORD_KEY = 'rconpw';
@@ -78,32 +79,10 @@ const RCON_EXEC_TYPE = 2;
 const RCON_RESPONSE_TYPE = 0;
 const IMPORT_DIR = join(tmpdir(), 'factorio-imports');
 const MAX_IMPORT_BYTES = 1024 * 1024 * 1024;
-const IMPORT_TTL_MS = 10 * 60 * 1000;
+const IMPORT_TTL_MS = 30 * 60 * 1000;
 const API_INTERNAL_URL =
   process.env.API_INTERNAL_URL ??
   'http://factorio-api.factorio-system.svc.cluster.local:3001';
-const RESTORE_SCRIPT = `set -eu
-mkdir -p /factorio/saves
-if [ -f "/factorio/saves/$TARGET_SAVE" ]; then
-  cp -p "/factorio/saves/$TARGET_SAVE" "/factorio/saves/pre-restore-$(date -u +%Y%m%dT%H%M%SZ)-$TARGET_SAVE"
-fi
-if [ "$SAVE_FILE" != "$TARGET_SAVE" ]; then
-  cp "/factorio/saves/$SAVE_FILE" "/factorio/saves/$TARGET_SAVE"
-fi
-touch "/factorio/saves/$TARGET_SAVE"
-`;
-const IMPORT_SCRIPT = `set -eu
-mkdir -p /factorio/saves
-target="/factorio/saves/$TARGET_SAVE"
-tmp="/factorio/saves/.import.tmp.zip"
-trap 'rm -f "$tmp"' EXIT
-if [ -f "$target" ]; then
-  cp -p "$target" "/factorio/saves/pre-import-$(date -u +%Y%m%dT%H%M%SZ)-$TARGET_SAVE"
-fi
-wget -q -O "$tmp" "$IMPORT_URL"
-mv "$tmp" "$target"
-touch "$target"
-`;
 
 interface PendingImport {
   name: string;
@@ -111,12 +90,32 @@ interface PendingImport {
   expiresAt: number;
 }
 
+interface FactorioOperationResource {
+  metadata?: {
+    name?: string;
+    creationTimestamp?: string;
+  };
+  spec?: {
+    serverName?: string;
+    type?: ServerOperationType;
+    saveFile?: string;
+  };
+  status?: {
+    phase?: string;
+    message?: string;
+    completedAt?: string;
+  };
+}
+
 @Injectable()
 export class ServersService {
   private readonly logger = new Logger(ServersService.name);
   private readonly imports = new Map<string, PendingImport>();
 
-  constructor(private readonly kubernetes: KubernetesService) {}
+  constructor(private readonly kubernetes: KubernetesService) {
+    // Uploaded saves are kept only until the operation Job fetches them.
+    setInterval(() => this.pruneImports(), 60_000).unref();
+  }
 
   async list(): Promise<FactorioServer[]> {
     const result = await this.call(() =>
@@ -238,6 +237,20 @@ export class ServersService {
     suspended: boolean,
   ): Promise<FactorioServer> {
     const server = await this.get(name);
+
+    if (!suspended) {
+      const operations = await this.operations(name);
+      const active = operations.find(
+        (operation) =>
+          operation.phase !== 'Completed' && operation.phase !== 'Failed',
+      );
+      if (active !== undefined) {
+        throw new ConflictException(
+          `Operation ${active.name} is still in progress`,
+        );
+      }
+    }
+
     server.spec.suspended = suspended;
     return this.replace(server, server.spec);
   }
@@ -520,31 +533,28 @@ export class ServersService {
   async restoreBackup(
     name: string,
     file: string,
-  ): Promise<{ save: string; job: string }> {
+  ): Promise<{ operation: string }> {
     this.assertName(name);
     assertBackupFile(file);
 
     const server = await this.get(name);
-    const wasSuspended = server.spec.suspended === true;
-    const save = PRIMARY_SAVE_NAME;
-    const jobName = restoreJobName(name);
+    const operation = await this.createOperation(server, 'Restore', {
+      saveFile: file,
+    });
 
-    void this.runRestore(server, name, file, save, jobName, wasSuspended);
-
-    return { save, job: jobName };
+    return { operation };
   }
 
   /**
-   * Stores an uploaded save and starts a Job that installs it as the world of
-   * the server. The file is streamed to a temporary file on the API pod and
-   * fetched by the Job from the API over the pod network, so the API never
-   * needs to mount the data volume.
+   * Stores an uploaded save and creates a durable operation. The agent owns
+   * the suspend/Job/resume state machine and downloads the file from the API,
+   * so an API restart no longer leaves the server stopped.
    */
   async importSave(
     name: string,
     body: Readable,
     contentLength?: string,
-  ): Promise<{ job: string }> {
+  ): Promise<{ operation: string }> {
     this.assertName(name);
 
     const declared = Number(contentLength ?? '0');
@@ -579,17 +589,76 @@ export class ServersService {
       expiresAt: Date.now() + IMPORT_TTL_MS,
     });
 
-    const jobName = importJobName(name);
-    void this.runImport(
-      server,
-      name,
-      filePath,
-      token,
-      jobName,
-      server.spec.suspended === true,
+    const operation = await this.createOperation(server, 'Import', {
+      importUrl: importUrl(name, token),
+    });
+
+    return { operation };
+  }
+
+  async operations(name: string): Promise<ServerOperation[]> {
+    this.assertName(name);
+
+    const result = await this.call(() =>
+      this.kubernetes.customObjects.listNamespacedCustomObject({
+        group: GROUP,
+        version: VERSION,
+        namespace: this.kubernetes.namespace,
+        plural: OPERATIONS_PLURAL,
+      }),
     );
 
-    return { job: jobName };
+    const items =
+      (result as { items?: FactorioOperationResource[] } | undefined)?.items ??
+      [];
+
+    return items
+      .filter((item) => item.spec?.serverName === name)
+      .map(toServerOperation)
+      .sort(
+        (left, right) =>
+          Date.parse(right.createdAt) - Date.parse(left.createdAt),
+      );
+  }
+
+  private async createOperation(
+    server: FactorioServer,
+    type: ServerOperationType,
+    extra: { saveFile?: string; importUrl?: string },
+  ): Promise<string> {
+    const namespace =
+      server.metadata.namespace ?? this.kubernetes.namespace;
+    const body = {
+      apiVersion: `${GROUP}/${VERSION}`,
+      kind: 'FactorioOperation',
+      metadata: {
+        generateName: `${server.metadata.name}-${type.toLowerCase()}-`,
+        namespace,
+        ownerReferences: [this.ownerReference(server)],
+      },
+      spec: {
+        serverName: server.metadata.name,
+        type,
+        ...extra,
+      },
+    };
+
+    const created = await this.call(() =>
+      this.kubernetes.customObjects.createNamespacedCustomObject({
+        group: GROUP,
+        version: VERSION,
+        namespace,
+        plural: OPERATIONS_PLURAL,
+        body,
+      }),
+    );
+
+    const operationName = (created as { metadata?: { name?: string } })
+      .metadata?.name;
+    if (operationName === undefined || operationName === '') {
+      throw new InternalServerErrorException('Operation name is missing');
+    }
+    return operationName;
   }
 
   /**
@@ -668,109 +737,12 @@ export class ServersService {
     }
   }
 
-  private async runImport(
-    server: FactorioServer,
-    name: string,
-    filePath: string,
-    token: string,
-    jobName: string,
-    wasSuspended: boolean,
-  ): Promise<void> {
-    try {
-      if (!wasSuspended) {
-        await this.setSuspended(name, true);
-      }
-
-      await this.waitForPodsGone(name);
-
-      const job = buildImportJob(
-        server,
-        importUrl(name, token),
-        jobName,
-        this.ownerReference(server),
-      );
-      await this.kubernetes.batch.createNamespacedJob({
-        namespace: this.kubernetes.namespace,
-        body: job,
-      });
-      await this.waitForJob(jobName);
-    } catch (error) {
-      this.logger.error(
-        `Import of the save for ${name} failed`,
-        error instanceof Error ? error.stack : String(error),
-      );
-    } finally {
-      this.imports.delete(token);
-      await unlink(filePath).catch(() => undefined);
-      await this.deleteJobQuietly(jobName);
-
-      if (!wasSuspended) {
-        try {
-          await this.setSuspended(name, false);
-        } catch (error) {
-          this.logger.error(
-            'Import completed but the server could not be restarted',
-            error instanceof Error ? error.stack : String(error),
-          );
-        }
-      }
-    }
-  }
-
   private pruneImports(): void {
     const now = Date.now();
     for (const [token, entry] of this.imports) {
       if (entry.expiresAt <= now) {
         this.imports.delete(token);
         void unlink(entry.path).catch(() => undefined);
-      }
-    }
-  }
-
-  private async runRestore(
-    server: FactorioServer,
-    name: string,
-    file: string,
-    save: string,
-    jobName: string,
-    wasSuspended: boolean,
-  ): Promise<void> {
-    try {
-      if (!wasSuspended) {
-        await this.setSuspended(name, true);
-      }
-
-      await this.waitForPodsGone(name);
-
-      const job = buildRestoreJob(
-        server,
-        file,
-        save,
-        jobName,
-        this.ownerReference(server),
-      );
-      await this.kubernetes.batch.createNamespacedJob({
-        namespace: this.kubernetes.namespace,
-        body: job,
-      });
-      await this.waitForJob(jobName);
-    } catch (error) {
-      this.logger.error(
-        `Restore of ${file} failed`,
-        error instanceof Error ? error.stack : String(error),
-      );
-    } finally {
-      await this.deleteJobQuietly(jobName);
-
-      if (!wasSuspended) {
-        try {
-          await this.setSuspended(name, false);
-        } catch (error) {
-          this.logger.error(
-            'Restore completed but the server could not be restarted',
-            error instanceof Error ? error.stack : String(error),
-          );
-        }
       }
     }
   }
@@ -789,56 +761,6 @@ export class ServersService {
     return fetch(`http://${host}:${SAVES_HTTP_PORT}${path}`, {
       signal: AbortSignal.timeout(5000),
     });
-  }
-
-  private async waitForPodsGone(name: string): Promise<void> {
-    for (let attempt = 0; attempt < 60; attempt++) {
-      const pods = await this.kubernetes.core.listNamespacedPod({
-        namespace: this.kubernetes.namespace,
-        labelSelector: `app.kubernetes.io/instance=${name}`,
-      });
-
-      if ((pods.items ?? []).length === 0) {
-        return;
-      }
-
-      await delay(2000);
-    }
-
-    throw new ConflictException('Server pod did not terminate');
-  }
-
-  private async waitForJob(jobName: string): Promise<void> {
-    for (let attempt = 0; attempt < 90; attempt++) {
-      const job = await this.kubernetes.batch.readNamespacedJob({
-        name: jobName,
-        namespace: this.kubernetes.namespace,
-      });
-
-      if ((job.status?.succeeded ?? 0) > 0) {
-        return;
-      }
-
-      if ((job.status?.failed ?? 0) > 0) {
-        throw new InternalServerErrorException('Restore job failed');
-      }
-
-      await delay(2000);
-    }
-
-    throw new InternalServerErrorException('Restore job timed out');
-  }
-
-  private async deleteJobQuietly(jobName: string): Promise<void> {
-    try {
-      await this.kubernetes.batch.deleteNamespacedJob({
-        name: jobName,
-        namespace: this.kubernetes.namespace,
-        propagationPolicy: 'Background',
-      });
-    } catch {
-      // The restore result matters more than a leftover Job.
-    }
   }
 
   private async replace(
@@ -1076,11 +998,6 @@ function assertBackupFile(file: string): void {
   }
 }
 
-function restoreJobName(serverName: string): string {
-  const suffix = Date.now().toString(36).slice(-6);
-  return `${serverName.slice(0, 40)}-restore-${suffix}`;
-}
-
 async function writeLimited(body: Readable, path: string): Promise<void> {
   let total = 0;
   const limiter = new Transform({
@@ -1119,11 +1036,6 @@ async function hasZipMagic(path: string): Promise<boolean> {
   } finally {
     await handle.close();
   }
-}
-
-function importJobName(serverName: string): string {
-  const suffix = Date.now().toString(36).slice(-6);
-  return `${serverName.slice(0, 40)}-import-${suffix}`;
 }
 
 function importUrl(serverName: string, token: string): string {
@@ -1258,6 +1170,30 @@ function rconExec(
   });
 }
 
+function toServerOperation(item: FactorioOperationResource): ServerOperation {
+  return {
+    name: item.metadata?.name ?? '',
+    type: item.spec?.type ?? 'Restore',
+    phase: operationPhase(item.status?.phase),
+    message: item.status?.message,
+    saveFile: item.spec?.saveFile,
+    createdAt: item.metadata?.creationTimestamp ?? new Date(0).toISOString(),
+    completedAt: item.status?.completedAt,
+  };
+}
+
+function operationPhase(value: string | undefined): ServerOperationPhase {
+  switch (value) {
+    case 'Suspending':
+    case 'Running':
+    case 'Completed':
+    case 'Failed':
+      return value;
+    default:
+      return 'Pending';
+  }
+}
+
 function parseBackupLine(line: string): ServerBackup | undefined {
   const [name, size, mtime] = line.trim().split(/\s+/);
   if (name === undefined || !name.endsWith('.zip')) {
@@ -1275,10 +1211,6 @@ function parseBackupLine(line: string): ServerBackup | undefined {
     size: sizeValue,
     createdAt: new Date(mtimeValue * 1000).toISOString(),
   };
-}
-
-function delay(ms: number): Promise<void> {
-  return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
 function parseCpuMillicores(value: string): number {
@@ -1323,141 +1255,6 @@ function parseMemoryBytes(value: string): number {
   };
 
   return match[2] === undefined ? amount : amount * (units[match[2]] ?? 1);
-}
-
-function buildRestoreJob(
-  server: FactorioServer,
-  file: string,
-  save: string,
-  jobName: string,
-  ownerReference: V1OwnerReference,
-): V1Job {
-  const namespace = server.metadata.namespace ?? 'default';
-  const labels = {
-    app: 'factorio-restore',
-    'factorio.dev/server': server.metadata.name,
-  };
-
-  return {
-    apiVersion: 'batch/v1',
-    kind: 'Job',
-    metadata: {
-      name: jobName,
-      namespace,
-      labels,
-      ownerReferences: [ownerReference],
-    },
-    spec: {
-      backoffLimit: 1,
-      ttlSecondsAfterFinished: 300,
-      template: {
-        metadata: { labels },
-        spec: {
-          restartPolicy: 'Never',
-          securityContext: {
-            runAsNonRoot: true,
-            runAsUser: 845,
-            runAsGroup: 845,
-            seccompProfile: { type: 'RuntimeDefault' },
-          },
-          containers: [
-            {
-              name: 'restore',
-              image: 'busybox:1.36',
-              command: ['sh', '-c', RESTORE_SCRIPT],
-              env: [
-                { name: 'SAVE_FILE', value: file },
-                { name: 'TARGET_SAVE', value: save },
-              ],
-              volumeMounts: [
-                { name: 'data', mountPath: '/factorio' },
-              ],
-              securityContext: {
-                allowPrivilegeEscalation: false,
-                readOnlyRootFilesystem: true,
-                capabilities: { drop: ['ALL'] },
-              },
-            },
-          ],
-          volumes: [
-            {
-              name: 'data',
-              persistentVolumeClaim: {
-                claimName: `${server.metadata.name}-data`,
-              },
-            },
-          ],
-        },
-      },
-    },
-  } as V1Job;
-}
-
-function buildImportJob(
-  server: FactorioServer,
-  importURL: string,
-  jobName: string,
-  ownerReference: V1OwnerReference,
-): V1Job {
-  const namespace = server.metadata.namespace ?? 'default';
-  const labels = {
-    app: 'factorio-import',
-    'factorio.dev/server': server.metadata.name,
-  };
-
-  return {
-    apiVersion: 'batch/v1',
-    kind: 'Job',
-    metadata: {
-      name: jobName,
-      namespace,
-      labels,
-      ownerReferences: [ownerReference],
-    },
-    spec: {
-      backoffLimit: 1,
-      ttlSecondsAfterFinished: 300,
-      template: {
-        metadata: { labels },
-        spec: {
-          restartPolicy: 'Never',
-          securityContext: {
-            runAsNonRoot: true,
-            runAsUser: 845,
-            runAsGroup: 845,
-            seccompProfile: { type: 'RuntimeDefault' },
-          },
-          containers: [
-            {
-              name: 'import',
-              image: 'busybox:1.36',
-              command: ['sh', '-c', IMPORT_SCRIPT],
-              env: [
-                { name: 'IMPORT_URL', value: importURL },
-                { name: 'TARGET_SAVE', value: PRIMARY_SAVE_NAME },
-              ],
-              volumeMounts: [
-                { name: 'data', mountPath: '/factorio' },
-              ],
-              securityContext: {
-                allowPrivilegeEscalation: false,
-                readOnlyRootFilesystem: true,
-                capabilities: { drop: ['ALL'] },
-              },
-            },
-          ],
-          volumes: [
-            {
-              name: 'data',
-              persistentVolumeClaim: {
-                claimName: `${server.metadata.name}-data`,
-              },
-            },
-          ],
-        },
-      },
-    },
-  } as V1Job;
 }
 
 function clampTailLines(value?: number): number {
