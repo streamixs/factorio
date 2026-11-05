@@ -27,6 +27,7 @@ const (
 	mapSettingsVolume    = "map-settings"
 
 	prepareDataCommand = "mkdir -p /factorio/config /factorio/saves /factorio/mods"
+	healthcheckPath    = "/docker-healthcheck.sh"
 )
 
 func labelsFor(server *gamesv1alpha1.FactorioServer) map[string]string {
@@ -107,7 +108,10 @@ func BuildDeployment(
 								{Name: "SAVE_NAME", Value: saveName},
 								{Name: "PORT", Value: strconv.Itoa(gamePort)},
 							},
-							VolumeMounts: mounts,
+							StartupProbe:   healthProbe(10, 60),
+							ReadinessProbe: healthProbe(10, 3),
+							LivenessProbe:  healthProbe(30, 3),
+							VolumeMounts:   mounts,
 						},
 					},
 				},
@@ -126,6 +130,22 @@ func dataVolumeFor(server *gamesv1alpha1.FactorioServer) corev1.Volume {
 				ClaimName: PersistentVolumeClaimName(server),
 			},
 		},
+	}
+}
+
+// healthProbe builds a probe that runs the image's RCON healthcheck. It only
+// succeeds once the server answers RCON, which means the world is loaded and
+// players can connect.
+func healthProbe(periodSeconds, failureThreshold int32) *corev1.Probe {
+	return &corev1.Probe{
+		ProbeHandler: corev1.ProbeHandler{
+			Exec: &corev1.ExecAction{
+				Command: []string{healthcheckPath},
+			},
+		},
+		PeriodSeconds:    periodSeconds,
+		TimeoutSeconds:   10,
+		FailureThreshold: failureThreshold,
 	}
 }
 

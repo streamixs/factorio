@@ -100,6 +100,48 @@ func TestBuildDeploymentUsesRecreateAndPreparesData(t *testing.T) {
 	}
 }
 
+func TestBuildDeploymentConfiguresHealthProbes(t *testing.T) {
+	container := BuildDeployment(testServer(), ConfigFiles{}).
+		Spec.Template.Spec.Containers[0]
+
+	probes := map[string]*corev1.Probe{
+		"startup":   container.StartupProbe,
+		"readiness": container.ReadinessProbe,
+		"liveness":  container.LivenessProbe,
+	}
+
+	for name, probe := range probes {
+		if probe == nil {
+			t.Fatalf("%s probe is nil", name)
+		}
+
+		if probe.Exec == nil || len(probe.Exec.Command) != 1 ||
+			probe.Exec.Command[0] != healthcheckPath {
+			t.Errorf("%s probe does not run %s", name, healthcheckPath)
+		}
+
+		if probe.TimeoutSeconds != 10 {
+			t.Errorf("%s probe timeout is %d, want 10",
+				name, probe.TimeoutSeconds)
+		}
+	}
+
+	if container.StartupProbe.FailureThreshold != 60 ||
+		container.StartupProbe.PeriodSeconds != 10 {
+		t.Error("startup probe does not allow ten minutes of startup")
+	}
+
+	if container.ReadinessProbe.PeriodSeconds != 10 ||
+		container.ReadinessProbe.FailureThreshold != 3 {
+		t.Error("unexpected readiness probe timing")
+	}
+
+	if container.LivenessProbe.PeriodSeconds != 30 ||
+		container.LivenessProbe.FailureThreshold != 3 {
+		t.Error("unexpected liveness probe timing")
+	}
+}
+
 func TestBuildDeploymentWithoutSettings(t *testing.T) {
 	server := testServer()
 	server.Spec.Version = ""
