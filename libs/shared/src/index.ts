@@ -263,6 +263,35 @@ export interface ServerBackups {
   backups: ServerBackup[];
 }
 
+export interface ServicePortInfo {
+  name?: string;
+  port: number;
+  protocol: string;
+  nodePort?: number;
+}
+
+export interface ServerConnection {
+  available: boolean;
+  serviceType: string;
+  clusterIP?: string;
+  ports: ServicePortInfo[];
+  loadBalancer: string[];
+  nodeAddresses: string[];
+}
+
+export interface ContainerUsage {
+  name: string;
+  cpuMillicores: number;
+  memoryBytes: number;
+}
+
+export interface ServerUsage {
+  available: boolean;
+  cpuMillicores: number;
+  memoryBytes: number;
+  containers: ContainerUsage[];
+}
+
 export interface EffectiveSettings {
   defaults: FactorioServerSpec;
   effective: FactorioServerSpec;
