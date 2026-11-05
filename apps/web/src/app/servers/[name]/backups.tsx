@@ -62,7 +62,7 @@ export function BackupsPanel({
   async function handleRestore(backup: ServerBackup) {
     if (
       !window.confirm(
-        `Restaurer ${backup.name} ? Le serveur sera arrêté, la save actuelle copiée dans les backups, puis le serveur redémarré.`,
+        `Restaurer ${backup.name} ? Le serveur sera arrêté, la save principale (_autosave1.zip) copiée avant restauration, puis le serveur redémarré.`,
       )
     ) {
       return;
@@ -92,7 +92,7 @@ export function BackupsPanel({
     <Card>
       <CardHeader>
         <CardTitle className="flex flex-wrap items-center gap-2">
-          Sauvegardes
+          Sauvegardes Factorio
           {data !== null && (
             <Badge variant="secondary">{data.backups.length}</Badge>
           )}
@@ -110,8 +110,9 @@ export function BackupsPanel({
             Rafraîchir
           </Button>
           <p className="text-sm text-muted-foreground">
-            Une copie est créée automatiquement selon l&apos;intervalle défini
-            dans l&apos;onglet Sauvegardes de la configuration.
+            Autosaves écrites par Factorio dans /factorio/saves.
+            L&apos;intervalle et le nombre de slots se règlent dans l&apos;onglet
+            Sauvegarde automatique.
           </p>
         </div>
 
@@ -130,13 +131,13 @@ export function BackupsPanel({
           <Alert>
             <AlertDescription>
               Les sauvegardes sont indisponibles. Le serveur doit être démarré
-              et le sidecar de backup prêt.
+              pour lire /factorio/saves.
             </AlertDescription>
           </Alert>
         ) : data.backups.length === 0 ? (
           <p className="text-sm text-muted-foreground">
-            Aucune sauvegarde pour l&apos;instant. La première sera créée au
-            prochain passage du sidecar.
+            Aucune autosave pour l&apos;instant. Factorio en crée une à chaque
+            intervalle de sauvegarde automatique.
           </p>
         ) : (
           <div className="flex flex-col">

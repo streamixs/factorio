@@ -35,7 +35,7 @@ const VIEWS = [
   { id: "connection", label: "Connexion" },
   { id: "logs", label: "Logs" },
   { id: "events", label: "Events" },
-  { id: "backups", label: "Backups" },
+  { id: "backups", label: "Sauvegardes" },
 ] as const;
 
 export default function ServerDetailPage() {

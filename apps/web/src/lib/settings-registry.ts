@@ -623,43 +623,6 @@ export const SETTINGS_SECTIONS: SettingsSection[] = [
     ],
   },
   {
-    id: "backup",
-    title: "Sauvegardes du serveur",
-    badge: "Redémarre le serveur",
-    description:
-      "Copies automatiques des saves sur un volume dédié. La première copie est créée au démarrage du sidecar, puis à chaque intervalle.",
-    groups: [
-      {
-        fields: [
-          {
-            path: "spec.backup.enabled",
-            label: "Sauvegardes activées",
-            kind: "switch",
-          },
-          {
-            path: "spec.backup.size",
-            label: "Taille du volume de backup",
-            kind: "text",
-            placeholder: "10Gi",
-            emptyAsUndefined: true,
-          },
-          {
-            path: "spec.backup.intervalMinutes",
-            label: "Intervalle (minutes)",
-            kind: "number",
-            help: "Défaut : 60.",
-          },
-          {
-            path: "spec.backup.retention",
-            label: "Copies conservées",
-            kind: "number",
-            help: "Défaut : 10. Les plus anciennes sont supprimées.",
-          },
-        ],
-      },
-    ],
-  },
-  {
     id: "advanced",
     title: "Avancé",
     custom: "raw",
