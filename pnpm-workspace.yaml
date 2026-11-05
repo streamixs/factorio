@@ -2,4 +2,5 @@ packages:
   - "apps/*"
   - "libs/*"
 allowBuilds:
+  sharp: false
   unrs-resolver: true
