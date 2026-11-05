@@ -1,4 +1,5 @@
 import {
+  BadGatewayException,
   BadRequestException,
   ConflictException,
   Injectable,
@@ -21,10 +22,12 @@ import { createWriteStream } from 'node:fs';
 import { mkdir, open, unlink } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { Socket } from 'node:net';
 import { Transform, type Readable } from 'node:stream';
 import { pipeline } from 'node:stream/promises';
 import {
   createFactorioServerSchema,
+  rconCommandSchema,
   updateFactorioServerSchema,
   zodErrorMessage,
 } from '@factorio/shared';
@@ -64,6 +67,15 @@ const CREDENTIAL_KEYS = {
 const SAVES_HTTP_PORT = 8080;
 const BACKUP_FILE_PATTERN = /^[A-Za-z0-9_][A-Za-z0-9._-]*\.zip$/;
 const PRIMARY_SAVE_NAME = '_autosave1.zip';
+const RCON_PORT = 27015;
+const RCON_SECRET_SUFFIX = '-rcon';
+const RCON_PASSWORD_KEY = 'rconpw';
+const RCON_TIMEOUT_MS = 30_000;
+const RCON_AUTH_ID = 1;
+const RCON_EXEC_ID = 2;
+const RCON_AUTH_TYPE = 3;
+const RCON_EXEC_TYPE = 2;
+const RCON_RESPONSE_TYPE = 0;
 const IMPORT_DIR = join(tmpdir(), 'factorio-imports');
 const MAX_IMPORT_BYTES = 1024 * 1024 * 1024;
 const IMPORT_TTL_MS = 10 * 60 * 1000;
@@ -600,6 +612,62 @@ export class ServersService {
     return { path: entry.path, filename: `${name}.zip` };
   }
 
+  /**
+   * Runs a command on the Factorio server over RCON. The password is read
+   * from the Secret the agent mounts at config/rconpw.
+   */
+  async rcon(name: string, input: unknown): Promise<{ output: string }> {
+    this.assertName(name);
+
+    const parsed = rconCommandSchema.safeParse(input);
+    if (!parsed.success) {
+      throw new BadRequestException(zodErrorMessage(parsed.error));
+    }
+
+    await this.get(name);
+
+    const pod = await this.findServerPod(name);
+    const podIP = pod?.status?.podIP;
+    if (podIP === undefined) {
+      throw new NotFoundException('Server is not running');
+    }
+
+    let secret: V1Secret;
+    try {
+      secret = await this.kubernetes.core.readNamespacedSecret({
+        name: `${name}${RCON_SECRET_SUFFIX}`,
+        namespace: this.kubernetes.namespace,
+      });
+    } catch {
+      throw new InternalServerErrorException('RCON password is not available');
+    }
+
+    const encoded = secret.data?.[RCON_PASSWORD_KEY];
+    if (encoded === undefined) {
+      throw new InternalServerErrorException('RCON password is missing');
+    }
+
+    const password = Buffer.from(encoded, 'base64').toString('utf8').trim();
+
+    try {
+      const output = await rconExec(
+        podIP,
+        RCON_PORT,
+        password,
+        parsed.data.command,
+      );
+      return { output };
+    } catch (error) {
+      this.logger.error(
+        `RCON command failed for ${name}`,
+        error instanceof Error ? error.stack : String(error),
+      );
+      throw new BadGatewayException(
+        error instanceof Error ? error.message : 'RCON command failed',
+      );
+    }
+  }
+
   private async runImport(
     server: FactorioServer,
     name: string,
@@ -1060,6 +1128,134 @@ function importJobName(serverName: string): string {
 
 function importUrl(serverName: string, token: string): string {
   return `${API_INTERNAL_URL}/api/servers/${encodeURIComponent(serverName)}/imports/${encodeURIComponent(token)}`;
+}
+
+interface RconPacket {
+  id: number;
+  type: number;
+  body: string;
+}
+
+function encodeRconPacket(id: number, type: number, body: string): Buffer {
+  const payload = Buffer.from(body, 'utf8');
+  const packet = Buffer.alloc(14 + payload.length);
+  packet.writeInt32LE(10 + payload.length, 0);
+  packet.writeInt32LE(id, 4);
+  packet.writeInt32LE(type, 8);
+  payload.copy(packet, 12);
+  packet[12 + payload.length] = 0;
+  packet[13 + payload.length] = 0;
+  return packet;
+}
+
+function readRconPackets(buffer: Buffer): {
+  packets: RconPacket[];
+  rest: Buffer;
+} {
+  const packets: RconPacket[] = [];
+  let offset = 0;
+
+  while (buffer.length - offset >= 4) {
+    const length = buffer.readInt32LE(offset);
+    if (length < 10 || buffer.length - offset < 4 + length) {
+      break;
+    }
+
+    const id = buffer.readInt32LE(offset + 4);
+    const type = buffer.readInt32LE(offset + 8);
+    const body = buffer
+      .subarray(offset + 12, offset + 4 + length - 2)
+      .toString('utf8');
+
+    packets.push({ id, type, body });
+    offset += 4 + length;
+  }
+
+  return { packets, rest: buffer.subarray(offset) };
+}
+
+function rconExec(
+  host: string,
+  port: number,
+  password: string,
+  command: string,
+): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const socket = new Socket();
+    let buffer: Buffer = Buffer.alloc(0);
+    let authenticated = false;
+    let settled = false;
+    let output = '';
+    let quietTimer: NodeJS.Timeout | undefined;
+
+    const timer = setTimeout(() => {
+      fail(new Error('RCON timed out'));
+    }, RCON_TIMEOUT_MS);
+
+    function cleanup(): void {
+      clearTimeout(timer);
+      if (quietTimer !== undefined) {
+        clearTimeout(quietTimer);
+      }
+      socket.destroy();
+    }
+
+    function fail(error: Error): void {
+      if (settled) {
+        return;
+      }
+      settled = true;
+      cleanup();
+      reject(error);
+    }
+
+    function succeed(value: string): void {
+      if (settled) {
+        return;
+      }
+      settled = true;
+      cleanup();
+      resolve(value);
+    }
+
+    socket.setTimeout(RCON_TIMEOUT_MS);
+    socket.on('timeout', () => fail(new Error('RCON timed out')));
+    socket.on('error', (error) => fail(error));
+    socket.on('connect', () => {
+      socket.write(encodeRconPacket(RCON_AUTH_ID, RCON_AUTH_TYPE, password));
+    });
+    socket.on('data', (chunk: Buffer) => {
+      buffer = Buffer.concat([buffer, chunk]);
+      const parsed = readRconPackets(buffer);
+      buffer = parsed.rest;
+
+      for (const packet of parsed.packets) {
+        if (!authenticated) {
+          if (packet.id === -1) {
+            fail(new Error('RCON authentication failed'));
+            return;
+          }
+          if (packet.id === RCON_AUTH_ID) {
+            authenticated = true;
+            socket.write(
+              encodeRconPacket(RCON_EXEC_ID, RCON_EXEC_TYPE, command),
+            );
+          }
+          continue;
+        }
+
+        if (packet.id === RCON_EXEC_ID && packet.type === RCON_RESPONSE_TYPE) {
+          output += packet.body;
+          if (quietTimer !== undefined) {
+            clearTimeout(quietTimer);
+          }
+          quietTimer = setTimeout(() => succeed(output), 250);
+        }
+      }
+    });
+
+    socket.connect(port, host);
+  });
 }
 
 function parseBackupLine(line: string): ServerBackup | undefined {

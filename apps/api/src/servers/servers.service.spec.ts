@@ -645,6 +645,30 @@ describe('ServersService', () => {
     expect(getNamespacedCustomObject).not.toHaveBeenCalled();
   });
 
+  it('rejects an empty RCON command', async () => {
+    await expect(
+      service.rcon('my-server', { command: '   ' }),
+    ).rejects.toBeInstanceOf(BadRequestException);
+  });
+
+  it('rejects an RCON command that is too long', async () => {
+    await expect(
+      service.rcon('my-server', { command: 'x'.repeat(1001) }),
+    ).rejects.toBeInstanceOf(BadRequestException);
+  });
+
+  it('reports RCON unavailable when the server is not running', async () => {
+    getNamespacedCustomObject.mockResolvedValue({
+      metadata: { name: 'my-server', namespace: 'games' },
+      spec: { version: '2.1.24' },
+    });
+    listNamespacedPod.mockResolvedValue({ items: [] });
+
+    await expect(
+      service.rcon('my-server', { command: '/players' }),
+    ).rejects.toBeInstanceOf(NotFoundException);
+  });
+
   it('returns the service connection details', async () => {
     readNamespacedService.mockResolvedValue({
       spec: {

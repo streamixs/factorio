@@ -171,6 +171,10 @@ export const factorioServerSpecSchema = z.strictObject({
   service: serviceSettingsSchema.optional(),
 });
 
+export const rconCommandSchema = z.strictObject({
+  command: z.string().trim().min(1).max(1000),
+});
+
 export const credentialsSchema = z.strictObject({
   gamePassword: z.string().max(256).nullable().optional(),
   password: z.string().max(256).nullable().optional(),

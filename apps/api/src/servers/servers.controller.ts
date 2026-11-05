@@ -131,6 +131,15 @@ export class ServersController {
     return new StreamableFile(createReadStream(imported.path));
   }
 
+  @Post(':name/rcon')
+  @HttpCode(HttpStatus.OK)
+  rcon(
+    @Param('name') name: string,
+    @Body() input: unknown,
+  ): Promise<{ output: string }> {
+    return this.servers.rcon(name, input);
+  }
+
   @Post()
   @HttpCode(HttpStatus.CREATED)
   create(@Body() input: CreateFactorioServerInput): Promise<FactorioServer> {

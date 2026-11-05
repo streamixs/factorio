@@ -223,6 +223,10 @@ export interface CredentialsInput {
   token?: string | null;
 }
 
+export interface RconCommandInput {
+  command: string;
+}
+
 export interface UpdateFactorioServerInput {
   spec: FactorioServerSpec;
   credentials?: CredentialsInput;
