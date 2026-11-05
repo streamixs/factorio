@@ -6,11 +6,13 @@ import {
   HttpCode,
   HttpStatus,
   Param,
+  Patch,
   Post,
 } from '@nestjs/common';
 import type {
   CreateFactorioServerInput,
   FactorioServer,
+  UpdateFactorioServerInput,
 } from '@factorio/shared';
 
 import { ServersService } from './servers.service.js';
@@ -33,6 +35,14 @@ export class ServersController {
   @HttpCode(HttpStatus.CREATED)
   create(@Body() input: CreateFactorioServerInput): Promise<FactorioServer> {
     return this.servers.create(input);
+  }
+
+  @Patch(':name')
+  update(
+    @Param('name') name: string,
+    @Body() input: UpdateFactorioServerInput,
+  ): Promise<FactorioServer> {
+    return this.servers.update(name, input);
   }
 
   @Post(':name/start')

@@ -1,33 +1,50 @@
 import { Injectable, Logger, ServiceUnavailableException } from '@nestjs/common';
-import { CustomObjectsApi, KubeConfig } from '@kubernetes/client-node';
+import {
+  CoreV1Api,
+  CustomObjectsApi,
+  KubeConfig,
+} from '@kubernetes/client-node';
+
+interface KubernetesClients {
+  custom: CustomObjectsApi;
+  core: CoreV1Api;
+}
 
 /**
- * Owns the Kubernetes client. The API runs either in-cluster (ServiceAccount)
- * or locally against the current kubeconfig context.
+ * Owns the Kubernetes clients. The API runs either in-cluster
+ * (ServiceAccount) or locally against the current kubeconfig context.
  */
 @Injectable()
 export class KubernetesService {
   readonly namespace: string;
 
   private readonly logger = new Logger(KubernetesService.name);
-  private readonly client: CustomObjectsApi | null;
+  private readonly clients: KubernetesClients | null;
 
   constructor() {
     this.namespace = process.env.FACTORIO_NAMESPACE ?? 'default';
-    this.client = this.createClient();
+    this.clients = this.createClients();
   }
 
   get customObjects(): CustomObjectsApi {
-    if (this.client === null) {
+    return this.requireClients().custom;
+  }
+
+  get core(): CoreV1Api {
+    return this.requireClients().core;
+  }
+
+  private requireClients(): KubernetesClients {
+    if (this.clients === null) {
       throw new ServiceUnavailableException(
         'Kubernetes client is not configured',
       );
     }
 
-    return this.client;
+    return this.clients;
   }
 
-  private createClient(): CustomObjectsApi | null {
+  private createClients(): KubernetesClients | null {
     try {
       const kubeConfig = new KubeConfig();
 
@@ -37,7 +54,10 @@ export class KubernetesService {
         kubeConfig.loadFromDefault();
       }
 
-      return kubeConfig.makeApiClient(CustomObjectsApi);
+      return {
+        custom: kubeConfig.makeApiClient(CustomObjectsApi),
+        core: kubeConfig.makeApiClient(CoreV1Api),
+      };
     } catch (error) {
       this.logger.warn(
         `Kubernetes client is unavailable: ${
