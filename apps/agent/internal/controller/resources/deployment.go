@@ -8,15 +8,21 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
+const gamePort = 34197
+
+func labelsFor(server *gamesv1alpha1.FactorioServer) map[string]string {
+	return map[string]string{
+		"app":                        server.Name,
+		"app.kubernetes.io/name":     "factorio",
+		"app.kubernetes.io/instance": server.Name,
+	}
+}
+
 func BuildDeployment(factorioServer *gamesv1alpha1.FactorioServer) appsv1.Deployment {
 
 	replicas := int32(1)
 
-	labels := map[string]string{
-		"app":                        factorioServer.Name,
-		"app.kubernetes.io/name":     "factorio",
-		"app.kubernetes.io/instance": factorioServer.Name,
-	}
+	labels := labelsFor(factorioServer)
 
 	deployment := appsv1.Deployment{
 		ObjectMeta: metav1.ObjectMeta{
@@ -41,7 +47,7 @@ func BuildDeployment(factorioServer *gamesv1alpha1.FactorioServer) appsv1.Deploy
 							Ports: []corev1.ContainerPort{
 								{
 									Name:          "game",
-									ContainerPort: 34197,
+									ContainerPort: gamePort,
 									Protocol:      corev1.ProtocolUDP,
 								},
 							},

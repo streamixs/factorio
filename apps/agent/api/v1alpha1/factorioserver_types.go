@@ -17,6 +17,7 @@ limitations under the License.
 package v1alpha1
 
 import (
+	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 )
@@ -44,6 +45,38 @@ type FactorioServerSpec struct {
 	// mapSettings defines the settings rendered into map-settings.json.
 	// +optional
 	MapSettings *MapSettingsSpec `json:"mapSettings,omitempty"`
+
+	// storage defines the persistent volume holding the world saves and the
+	// server identity. When omitted, a 10Gi volume is requested.
+	// +optional
+	Storage *StorageSpec `json:"storage,omitempty"`
+
+	// service defines how the game port is exposed.
+	// +optional
+	Service *ServiceSpec `json:"service,omitempty"`
+}
+
+// StorageSpec defines the persistent storage of a FactorioServer.
+type StorageSpec struct {
+	// size is the requested size of the volume, for example "10Gi".
+	// +optional
+	// +kubebuilder:default="10Gi"
+	// +kubebuilder:validation:Pattern=`^(\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))(([KMGTPE]i)|[numkMGTPE]|([eE](\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))))?$`
+	Size string `json:"size,omitempty"`
+
+	// storageClassName selects the StorageClass used for the volume. When
+	// omitted, the cluster default StorageClass is used.
+	// +optional
+	StorageClassName *string `json:"storageClassName,omitempty"`
+}
+
+// ServiceSpec defines how the FactorioServer game port is exposed.
+type ServiceSpec struct {
+	// type selects how the service is exposed.
+	// +optional
+	// +kubebuilder:default=ClusterIP
+	// +kubebuilder:validation:Enum=ClusterIP;NodePort;LoadBalancer
+	Type corev1.ServiceType `json:"type,omitempty"`
 }
 
 // FactorioServerStatus defines the observed state of FactorioServer.
