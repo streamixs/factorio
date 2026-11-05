@@ -150,6 +150,13 @@ export interface StorageSettings {
   storageClassName?: string;
 }
 
+export interface BackupSettings {
+  enabled?: boolean;
+  size?: string;
+  intervalMinutes?: number;
+  retention?: number;
+}
+
 export interface ServiceSettings {
   type?: ServiceType;
 }
@@ -161,6 +168,7 @@ export interface FactorioServerSpec {
   mapGenSettings?: MapGenSettings;
   mapSettings?: MapSettings;
   storage?: StorageSettings;
+  backup?: BackupSettings;
   service?: ServiceSettings;
 }
 
@@ -242,6 +250,17 @@ export interface ServerEvent {
   objectName: string;
   count: number;
   lastTimestamp: string;
+}
+
+export interface ServerBackup {
+  name: string;
+  size: number;
+  createdAt: string;
+}
+
+export interface ServerBackups {
+  available: boolean;
+  backups: ServerBackup[];
 }
 
 export interface EffectiveSettings {
