@@ -37,8 +37,8 @@ func TestBuildDeploymentMountsConfiguredFiles(t *testing.T) {
 		t.Fatal("config hash annotation is empty")
 	}
 
-	if len(deployment.Spec.Template.Spec.Volumes) != 3 {
-		t.Fatalf("got %d volumes, want 3",
+	if len(deployment.Spec.Template.Spec.Volumes) != 4 {
+		t.Fatalf("got %d volumes, want 4",
 			len(deployment.Spec.Template.Spec.Volumes))
 	}
 
@@ -95,9 +95,10 @@ func TestBuildDeploymentUsesRecreateAndPreparesData(t *testing.T) {
 			initContainers[0].Name)
 	}
 
-	if len(initContainers[0].VolumeMounts) != 1 ||
-		initContainers[0].VolumeMounts[0].MountPath != dataDir {
-		t.Error("init container does not mount the data volume")
+	if len(initContainers[0].VolumeMounts) != 2 ||
+		initContainers[0].VolumeMounts[0].MountPath != dataDir ||
+		initContainers[0].VolumeMounts[1].MountPath != backupDir {
+		t.Error("init container does not mount the data and backup volumes")
 	}
 }
 
@@ -207,8 +208,8 @@ func TestBuildDeploymentWithoutSettings(t *testing.T) {
 	deployment := BuildDeployment(server, ConfigFiles{})
 	container := deployment.Spec.Template.Spec.Containers[0]
 
-	if len(deployment.Spec.Template.Spec.Volumes) != 1 {
-		t.Errorf("got %d volumes, want 1",
+	if len(deployment.Spec.Template.Spec.Volumes) != 2 {
+		t.Errorf("got %d volumes, want 2",
 			len(deployment.Spec.Template.Spec.Volumes))
 	}
 
@@ -313,8 +314,8 @@ func TestUpdateDeploymentCopiesConfigAndKeepsAnnotations(t *testing.T) {
 		t.Error("unrelated annotation was lost")
 	}
 
-	if len(existing.Spec.Template.Spec.Volumes) != 2 {
-		t.Errorf("got %d volumes, want 2",
+	if len(existing.Spec.Template.Spec.Volumes) != 3 {
+		t.Errorf("got %d volumes, want 3",
 			len(existing.Spec.Template.Spec.Volumes))
 	}
 
@@ -341,6 +342,95 @@ func TestBuildEffectiveSettingsConfigMap(t *testing.T) {
 	}
 	if got := configMap.Data[EffectiveSettingsKey]; got != `{"maxPlayers":8}` {
 		t.Errorf("effective data is %q", got)
+	}
+}
+
+func TestBuildBackupPersistentVolumeClaim(t *testing.T) {
+	claim, err := BuildBackupPersistentVolumeClaim(testServer())
+	if err != nil {
+		t.Fatalf("build backup claim: %v", err)
+	}
+
+	if got, want := claim.Name, "demo-backups"; got != want {
+		t.Errorf("claim name is %q, want %q", got, want)
+	}
+
+	storage := claim.Spec.Resources.Requests[corev1.ResourceStorage]
+	if got := storage.String(); got != defaultBackupSize {
+		t.Errorf("claim size is %q, want %q", got, defaultBackupSize)
+	}
+
+	server := testServer()
+	server.Spec.Backup = &gamesv1alpha1.BackupSpec{Size: "20Gi"}
+	claim, err = BuildBackupPersistentVolumeClaim(server)
+	if err != nil {
+		t.Fatalf("build backup claim: %v", err)
+	}
+	storage = claim.Spec.Resources.Requests[corev1.ResourceStorage]
+	if got := storage.String(); got != "20Gi" {
+		t.Errorf("claim size is %q, want 20Gi", got)
+	}
+}
+
+func TestBuildDeploymentWithBackupSidecar(t *testing.T) {
+	deployment := BuildDeployment(testServer(), ConfigFiles{})
+
+	var backup *corev1.Container
+	for i := range deployment.Spec.Template.Spec.Containers {
+		if deployment.Spec.Template.Spec.Containers[i].Name == backupContainer {
+			backup = &deployment.Spec.Template.Spec.Containers[i]
+		}
+	}
+	if backup == nil {
+		t.Fatal("backup sidecar is missing")
+	}
+
+	if backup.Image != backupImage {
+		t.Errorf("backup image is %q", backup.Image)
+	}
+	if len(backup.Ports) != 1 || backup.Ports[0].ContainerPort != backupHTTPPort {
+		t.Errorf("backup ports are %v", backup.Ports)
+	}
+
+	env := make(map[string]string, len(backup.Env))
+	for _, variable := range backup.Env {
+		env[variable.Name] = variable.Value
+	}
+	if env["INTERVAL_MINUTES"] != "60" {
+		t.Errorf("INTERVAL_MINUTES is %q", env["INTERVAL_MINUTES"])
+	}
+	if env["RETENTION"] != "10" {
+		t.Errorf("RETENTION is %q", env["RETENTION"])
+	}
+
+	if len(backup.VolumeMounts) != 2 {
+		t.Fatalf("got %d backup mounts, want 2", len(backup.VolumeMounts))
+	}
+	if backup.VolumeMounts[0].MountPath != dataDir ||
+		!backup.VolumeMounts[0].ReadOnly {
+		t.Error("backup sidecar does not mount the data volume read-only")
+	}
+	if backup.VolumeMounts[1].MountPath != backupDir {
+		t.Error("backup sidecar does not mount /backups")
+	}
+}
+
+func TestBuildDeploymentWithoutBackups(t *testing.T) {
+	server := testServer()
+	server.Spec.Backup = &gamesv1alpha1.BackupSpec{Enabled: ptr(false)}
+
+	deployment := BuildDeployment(server, ConfigFiles{})
+
+	if len(deployment.Spec.Template.Spec.Containers) != 1 {
+		t.Errorf("got %d containers, want 1",
+			len(deployment.Spec.Template.Spec.Containers))
+	}
+	if len(deployment.Spec.Template.Spec.Volumes) != 1 {
+		t.Errorf("got %d volumes, want 1",
+			len(deployment.Spec.Template.Spec.Volumes))
+	}
+	if len(deployment.Spec.Template.Spec.InitContainers[0].VolumeMounts) != 1 {
+		t.Error("backup volume is still mounted by the init container")
 	}
 }
 

@@ -200,6 +200,12 @@ func defaultSpec() (*gamesv1alpha1.FactorioServerSpec, error) {
 			),
 		},
 		Storage: &gamesv1alpha1.StorageSpec{Size: "10Gi"},
+		Backup: &gamesv1alpha1.BackupSpec{
+			Enabled:         ptrBool(true),
+			Size:            "10Gi",
+			IntervalMinutes: ptrInt32(60),
+			Retention:       ptrInt32(10),
+		},
 		Service: &gamesv1alpha1.ServiceSpec{
 			Type: corev1.ServiceTypeClusterIP,
 		},

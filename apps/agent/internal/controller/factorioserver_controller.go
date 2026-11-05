@@ -126,6 +126,10 @@ func (r *FactorioServerReconciler) reconcileResources(
 		return fmt.Errorf("reconcile persistent volume claim: %w", err)
 	}
 
+	if err := r.reconcileBackupPersistentVolumeClaim(ctx, server); err != nil {
+		return fmt.Errorf("reconcile backup persistent volume claim: %w", err)
+	}
+
 	if err := r.reconcileSettingsObjects(ctx, server, files); err != nil {
 		return fmt.Errorf("reconcile settings objects: %w", err)
 	}
@@ -548,6 +552,58 @@ func (r *FactorioServerReconciler) reconcileEffectiveSettingsConfigMap(
 		server, settings.Defaults, settings.Effective,
 	)
 	return r.reconcileConfigMap(ctx, server, desired)
+}
+
+// reconcileBackupPersistentVolumeClaim creates the backup claim when backups
+// are enabled and removes it when they are disabled.
+func (r *FactorioServerReconciler) reconcileBackupPersistentVolumeClaim(
+	ctx context.Context,
+	server *gamesv1alpha1.FactorioServer,
+) error {
+	name := factorioresources.BackupPersistentVolumeClaimName(server)
+
+	if !factorioresources.BackupEnabled(server) {
+		return r.deleteIfOwned(ctx, server, &corev1.PersistentVolumeClaim{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      name,
+				Namespace: server.Namespace,
+			},
+		})
+	}
+
+	desired, err := factorioresources.BuildBackupPersistentVolumeClaim(server)
+	if err != nil {
+		return err
+	}
+
+	if err := controllerutil.SetControllerReference(server, desired,
+		r.Scheme); err != nil {
+		return err
+	}
+
+	var existing corev1.PersistentVolumeClaim
+	if err := r.Get(ctx, client.ObjectKeyFromObject(desired),
+		&existing); err != nil {
+		if apierrors.IsNotFound(err) {
+			if err := r.Create(ctx, desired); err != nil {
+				return fmt.Errorf("create backup persistentvolumeclaim %q: %w",
+					desired.Name, err)
+			}
+			r.recordEvent(server, corev1.EventTypeNormal, "Created",
+				fmt.Sprintf("Created PersistentVolumeClaim %q", desired.Name))
+			return nil
+		}
+		return fmt.Errorf("get backup persistentvolumeclaim %q: %w",
+			desired.Name, err)
+	}
+
+	if !metav1.IsControlledBy(&existing, server) {
+		return fmt.Errorf(
+			"backup persistentvolumeclaim %q already exists and is not owned "+
+				"by FactorioServer %q", existing.Name, server.Name)
+	}
+
+	return nil
 }
 
 // reconcileService ensures the Service exposing the game port exists and

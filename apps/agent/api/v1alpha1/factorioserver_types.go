@@ -58,6 +58,11 @@ type FactorioServerSpec struct {
 	// +optional
 	Storage *StorageSpec `json:"storage,omitempty"`
 
+	// backup defines scheduled save backups. When omitted, backups are enabled
+	// with a 10Gi volume, one copy per hour and ten copies retained.
+	// +optional
+	Backup *BackupSpec `json:"backup,omitempty"`
+
 	// service defines how the game port is exposed.
 	// +optional
 	Service *ServiceSpec `json:"service,omitempty"`
@@ -84,6 +89,32 @@ type ServiceSpec struct {
 	// +kubebuilder:default=ClusterIP
 	// +kubebuilder:validation:Enum=ClusterIP;NodePort;LoadBalancer
 	Type corev1.ServiceType `json:"type,omitempty"`
+}
+
+// BackupSpec defines scheduled save backups.
+type BackupSpec struct {
+	// enabled enables the backup sidecar and volume. Defaults to true.
+	// +optional
+	// +kubebuilder:default=true
+	Enabled *bool `json:"enabled,omitempty"`
+
+	// size is the requested size of the backup volume, for example "10Gi".
+	// +optional
+	// +kubebuilder:default="10Gi"
+	// +kubebuilder:validation:Pattern=`^(\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))(([KMGTPE]i)|[numkMGTPE]|([eE](\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))))?$`
+	Size string `json:"size,omitempty"`
+
+	// intervalMinutes is the time between two backups. Defaults to 60.
+	// +optional
+	// +kubebuilder:default=60
+	// +kubebuilder:validation:Minimum=1
+	IntervalMinutes *int32 `json:"intervalMinutes,omitempty"`
+
+	// retention is the number of backup files to keep. Defaults to 10.
+	// +optional
+	// +kubebuilder:default=10
+	// +kubebuilder:validation:Minimum=1
+	Retention *int32 `json:"retention,omitempty"`
 }
 
 // FactorioServerStatus defines the observed state of FactorioServer.

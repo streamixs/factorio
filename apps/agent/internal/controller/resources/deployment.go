@@ -32,6 +32,8 @@ const (
 
 	prepareDataCommand = "mkdir -p /factorio/config /factorio/saves /factorio/mods && " +
 		"chown -R 845:845 /factorio"
+	prepareDataWithBackupCommand = prepareDataCommand +
+		" && mkdir -p " + backupDir + " && chown -R 845:845 " + backupDir
 	healthcheckPath = "/docker-healthcheck.sh"
 )
 
@@ -62,6 +64,21 @@ func BuildDeployment(
 		MountPath: dataDir,
 	})
 
+	backupEnabled := BackupEnabled(server)
+	initMounts := []corev1.VolumeMount{
+		{Name: dataVolume, MountPath: dataDir},
+	}
+	initCommand := prepareDataCommand
+
+	if backupEnabled {
+		volumes = append(volumes, backupVolumeFor(server))
+		initMounts = append(initMounts, corev1.VolumeMount{
+			Name:      backupVolumeName,
+			MountPath: backupDir,
+		})
+		initCommand = prepareDataWithBackupCommand
+	}
+
 	version := server.Spec.Version
 	if version == "" {
 		version = defaultVersion
@@ -71,6 +88,42 @@ func BuildDeployment(
 	runAsGroup := int64(serverUserID)
 	runAsNonRoot := true
 
+	containers := []corev1.Container{
+		{
+			Name:  "factorio",
+			Image: "factoriotools/factorio:" + version,
+			Ports: []corev1.ContainerPort{
+				{
+					Name:          "game",
+					ContainerPort: gamePort,
+					Protocol:      corev1.ProtocolUDP,
+				},
+			},
+			Env: []corev1.EnvVar{
+				{Name: "GENERATE_NEW_SAVE", Value: "true"},
+				{Name: "SAVE_NAME", Value: saveName},
+				{Name: "PORT", Value: strconv.Itoa(gamePort)},
+			},
+			// The image entrypoint chowns /factorio when it runs as
+			// root, which fails on the read-only config mounts. The
+			// init container owns that step, so the server runs as the
+			// factorio user and skips it.
+			SecurityContext: &corev1.SecurityContext{
+				RunAsUser:    &runAsUser,
+				RunAsGroup:   &runAsGroup,
+				RunAsNonRoot: &runAsNonRoot,
+			},
+			StartupProbe:   healthProbe(10, 60),
+			ReadinessProbe: healthProbe(30, 3),
+			LivenessProbe:  healthProbe(60, 3),
+			VolumeMounts:   mounts,
+		},
+	}
+
+	if backupEnabled {
+		containers = append(containers, backupContainerFor(server))
+	}
+
 	template := corev1.PodTemplateSpec{
 		ObjectMeta: metav1.ObjectMeta{
 			Labels:      labels,
@@ -79,46 +132,14 @@ func BuildDeployment(
 		Spec: corev1.PodSpec{
 			InitContainers: []corev1.Container{
 				{
-					Name:    "prepare-data",
-					Image:   prepareImage,
-					Command: []string{"sh", "-c", prepareDataCommand},
-					VolumeMounts: []corev1.VolumeMount{
-						{Name: dataVolume, MountPath: dataDir},
-					},
+					Name:         "prepare-data",
+					Image:        prepareImage,
+					Command:      []string{"sh", "-c", initCommand},
+					VolumeMounts: initMounts,
 				},
 			},
-			Volumes: volumes,
-			Containers: []corev1.Container{
-				{
-					Name:  "factorio",
-					Image: "factoriotools/factorio:" + version,
-					Ports: []corev1.ContainerPort{
-						{
-							Name:          "game",
-							ContainerPort: gamePort,
-							Protocol:      corev1.ProtocolUDP,
-						},
-					},
-					Env: []corev1.EnvVar{
-						{Name: "GENERATE_NEW_SAVE", Value: "true"},
-						{Name: "SAVE_NAME", Value: saveName},
-						{Name: "PORT", Value: strconv.Itoa(gamePort)},
-					},
-					// The image entrypoint chowns /factorio when it runs as
-					// root, which fails on the read-only config mounts. The
-					// init container owns that step, so the server runs as the
-					// factorio user and skips it.
-					SecurityContext: &corev1.SecurityContext{
-						RunAsUser:    &runAsUser,
-						RunAsGroup:   &runAsGroup,
-						RunAsNonRoot: &runAsNonRoot,
-					},
-					StartupProbe:   healthProbe(10, 60),
-					ReadinessProbe: healthProbe(30, 3),
-					LivenessProbe:  healthProbe(60, 3),
-					VolumeMounts:   mounts,
-				},
-			},
+			Volumes:    volumes,
+			Containers: containers,
 		},
 	}
 	template.Annotations[PodTemplateHashAnnotation] = podTemplateHash(template, files)

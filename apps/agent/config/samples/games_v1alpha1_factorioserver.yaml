@@ -27,5 +27,10 @@ spec:
       timeFactor: 0.000004
   storage:
     size: 10Gi
+  backup:
+    enabled: true
+    size: 10Gi
+    intervalMinutes: 60
+    retention: 10
   service:
     type: ClusterIP
