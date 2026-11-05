@@ -13,6 +13,7 @@ import type {
   V1OwnerReference,
   V1Pod,
   V1Secret,
+  V1Service,
 } from '@kubernetes/client-node';
 import {
   createFactorioServerSchema,
@@ -28,8 +29,11 @@ import type {
   FactorioServerSpec,
   ServerBackup,
   ServerBackups,
+  ServerConnection,
   ServerEvent,
   ServerLogs,
+  ServerUsage,
+  ServicePortInfo,
   UpdateFactorioServerInput,
 } from '@factorio/shared';
 
@@ -248,8 +252,129 @@ export class ServersService {
       .slice(0, 100);
   }
 
-  async effective(name: string): Promise<EffectiveSettings> {
+  async connection(name: string): Promise<ServerConnection> {
     this.assertName(name);
+
+    const nodeAddresses = await this.nodeAddresses();
+
+    let service: V1Service;
+    try {
+      service = await this.kubernetes.core.readNamespacedService({
+        name,
+        namespace: this.kubernetes.namespace,
+      });
+    } catch (error) {
+      if (error instanceof ApiException && error.code === 404) {
+        return {
+          available: false,
+          serviceType: 'ClusterIP',
+          ports: [],
+          loadBalancer: [],
+          nodeAddresses,
+        };
+      }
+      throw error;
+    }
+
+    const ports: ServicePortInfo[] = (service.spec?.ports ?? []).map((port) => ({
+      name: port.name,
+      port: port.port,
+      protocol: port.protocol ?? 'TCP',
+      nodePort: port.nodePort,
+    }));
+
+    const loadBalancer = (service.status?.loadBalancer?.ingress ?? [])
+      .map((ingress) => ingress.ip ?? ingress.hostname)
+      .filter((value): value is string => value !== undefined);
+
+    return {
+      available: true,
+      serviceType: service.spec?.type ?? 'ClusterIP',
+      clusterIP: service.spec?.clusterIP,
+      ports,
+      loadBalancer,
+      nodeAddresses,
+    };
+  }
+
+  async usage(name: string): Promise<ServerUsage> {
+    this.assertName(name);
+
+    const pod = await this.findServerPod(name);
+    const podName = pod?.metadata?.name;
+
+    if (podName === undefined) {
+      return {
+        available: false,
+        cpuMillicores: 0,
+        memoryBytes: 0,
+        containers: [],
+      };
+    }
+
+    try {
+      const metrics =
+        (await this.kubernetes.customObjects.getNamespacedCustomObject({
+          group: 'metrics.k8s.io',
+          version: 'v1beta1',
+          namespace: this.kubernetes.namespace,
+          plural: 'pods',
+          name: podName,
+        })) as {
+          containers?: Array<{
+            name?: string;
+            usage?: { cpu?: string; memory?: string };
+          }>;
+        };
+
+      const containers = (metrics.containers ?? []).map((container) => ({
+        name: container.name ?? 'unknown',
+        cpuMillicores: parseCpuMillicores(container.usage?.cpu ?? '0'),
+        memoryBytes: parseMemoryBytes(container.usage?.memory ?? '0'),
+      }));
+
+      return {
+        available: true,
+        cpuMillicores: containers.reduce(
+          (sum, container) => sum + container.cpuMillicores,
+          0,
+        ),
+        memoryBytes: containers.reduce(
+          (sum, container) => sum + container.memoryBytes,
+          0,
+        ),
+        containers,
+      };
+    } catch {
+      return {
+        available: false,
+        cpuMillicores: 0,
+        memoryBytes: 0,
+        containers: [],
+      };
+    }
+  }
+
+  private async nodeAddresses(): Promise<string[]> {
+    try {
+      const nodes = await this.kubernetes.core.listNode({});
+      const addresses = new Set<string>();
+
+      for (const node of nodes.items ?? []) {
+        for (const address of node.status?.addresses ?? []) {
+          if (address.type === 'InternalIP' || address.type === 'ExternalIP') {
+            addresses.add(address.address);
+          }
+        }
+      }
+
+      return [...addresses];
+    } catch {
+      return [];
+    }
+  }
+
+  async effective(name: string): Promise<EffectiveSettings> {    this.assertName(name);
 
     let configMap;
     try {
@@ -283,8 +408,7 @@ export class ServersService {
     }
   }
 
-  async backups(name: string): Promise<ServerBackups> {
-    this.assertName(name);
+  async backups(name: string): Promise<ServerBackups> {    this.assertName(name);
 
     const pod = await this.findServerPod(name);
     const podIP = pod?.status?.podIP;
@@ -743,6 +867,50 @@ function parseBackupLine(line: string): ServerBackup | undefined {
 
 function delay(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+function parseCpuMillicores(value: string): number {
+  const match = /^([0-9.]+)([num])?$/.exec(value.trim());
+  if (match === null) {
+    return 0;
+  }
+
+  const amount = Number(match[1]);
+  switch (match[2]) {
+    case 'n':
+      return amount / 1_000_000;
+    case 'u':
+      return amount / 1_000;
+    case 'm':
+      return amount;
+    default:
+      return amount * 1000;
+  }
+}
+
+function parseMemoryBytes(value: string): number {
+  const match = /^([0-9.]+)([KMGTPE]i?)?$/.exec(value.trim());
+  if (match === null) {
+    return 0;
+  }
+
+  const amount = Number(match[1]);
+  const units: Record<string, number> = {
+    Ki: 1024,
+    Mi: 1024 ** 2,
+    Gi: 1024 ** 3,
+    Ti: 1024 ** 4,
+    Pi: 1024 ** 5,
+    Ei: 1024 ** 6,
+    K: 1e3,
+    M: 1e6,
+    G: 1e9,
+    T: 1e12,
+    P: 1e15,
+    E: 1e18,
+  };
+
+  return match[2] === undefined ? amount : amount * (units[match[2]] ?? 1);
 }
 
 function buildRestoreJob(

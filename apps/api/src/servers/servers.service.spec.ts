@@ -20,6 +20,8 @@ describe('ServersService', () => {
   const readNamespacedPodLog = vi.fn();
   const listNamespacedEvent = vi.fn();
   const readNamespacedConfigMap = vi.fn();
+  const readNamespacedService = vi.fn();
+  const listNode = vi.fn();
   const createNamespacedJob = vi.fn();
   const readNamespacedJob = vi.fn();
   const deleteNamespacedJob = vi.fn();
@@ -52,6 +54,8 @@ describe('ServersService', () => {
               readNamespacedPodLog,
               listNamespacedEvent,
               readNamespacedConfigMap,
+              readNamespacedService,
+              listNode,
             },
             batch: {
               createNamespacedJob,
@@ -541,6 +545,88 @@ describe('ServersService', () => {
         }),
       }),
     );
+  });
+
+  it('returns the service connection details', async () => {
+    readNamespacedService.mockResolvedValue({
+      spec: {
+        type: 'NodePort',
+        clusterIP: '10.0.0.5',
+        ports: [
+          {
+            name: 'game',
+            port: 34197,
+            protocol: 'UDP',
+            nodePort: 31183,
+          },
+        ],
+      },
+      status: { loadBalancer: {} },
+    });
+    listNode.mockResolvedValue({
+      items: [
+        {
+          status: {
+            addresses: [
+              { type: 'InternalIP', address: '192.168.139.2' },
+            ],
+          },
+        },
+      ],
+    });
+
+    const connection = await service.connection('my-server');
+
+    expect(connection).toEqual({
+      available: true,
+      serviceType: 'NodePort',
+      clusterIP: '10.0.0.5',
+      ports: [
+        {
+          name: 'game',
+          port: 34197,
+          protocol: 'UDP',
+          nodePort: 31183,
+        },
+      ],
+      loadBalancer: [],
+      nodeAddresses: ['192.168.139.2'],
+    });
+  });
+
+  it('returns parsed pod usage', async () => {
+    listNamespacedPod.mockResolvedValue({
+      items: [
+        {
+          metadata: { name: 'pod' },
+          status: { podIP: '10.0.0.1', containerStatuses: [{ ready: true }] },
+        },
+      ],
+    });
+    getNamespacedCustomObject.mockResolvedValue({
+      containers: [
+        { name: 'factorio', usage: { cpu: '12m', memory: '383Mi' } },
+        { name: 'backup', usage: { cpu: '2m', memory: '8Mi' } },
+      ],
+    });
+
+    const usage = await service.usage('my-server');
+
+    expect(usage.available).toBe(true);
+    expect(usage.cpuMillicores).toBe(14);
+    expect(usage.memoryBytes).toBe(391 * 1024 * 1024);
+    expect(usage.containers).toHaveLength(2);
+  });
+
+  it('returns unavailable usage when no pod is running', async () => {
+    listNamespacedPod.mockResolvedValue({ items: [] });
+
+    await expect(service.usage('my-server')).resolves.toEqual({
+      available: false,
+      cpuMillicores: 0,
+      memoryBytes: 0,
+      containers: [],
+    });
   });
 
   it('maps a 404 to NotFoundException', async () => {

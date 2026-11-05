@@ -44,10 +44,28 @@ The Role in the target namespace allows:
 - `configmaps` get (effective settings)
 - `pods` list and `pods/log` get (logs)
 - `events` list (diagnostics)
+- `services` get (connection details)
 - `jobs` create/get/delete (backup restore)
+- `metrics.k8s.io/pods` get/list (CPU and memory)
+- `nodes` get/list cluster-wide (NodePort addresses)
 
-The API does not need `services`, `deployments` or pod write access; the agent
-owns those resources.
+The API does not need `deployments` or pod write access; the agent owns those
+resources.
+
+## Metrics
+
+The Connection tab reads CPU and memory from `metrics-server`. On OrbStack the
+kubelet certificate is self-signed, so the component needs
+`--kubelet-insecure-tls`:
+
+```sh
+kubectl apply -f https://github.com/kubernetes-sigs/metrics-server/releases/latest/download/components.yaml
+kubectl -n kube-system patch deployment metrics-server --type=json \
+  -p='[{"op":"add","path":"/spec/template/spec/containers/0/args/-","value":"--kubelet-insecure-tls"}]'
+```
+
+Without `metrics-server` the UI still works; the load card shows
+"métriques indisponibles".
 
 ## Ingress
 

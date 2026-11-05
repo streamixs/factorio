@@ -18,8 +18,10 @@ import type {
   EffectiveSettings,
   FactorioServer,
   ServerBackups,
+  ServerConnection,
   ServerEvent,
   ServerLogs,
+  ServerUsage,
   UpdateFactorioServerInput,
 } from '@factorio/shared';
 
@@ -60,6 +62,16 @@ export class ServersController {
   @Get(':name/effective')
   effective(@Param('name') name: string): Promise<EffectiveSettings> {
     return this.servers.effective(name);
+  }
+
+  @Get(':name/connection')
+  connection(@Param('name') name: string): Promise<ServerConnection> {
+    return this.servers.connection(name);
+  }
+
+  @Get(':name/usage')
+  usage(@Param('name') name: string): Promise<ServerUsage> {
+    return this.servers.usage(name);
   }
 
   @Get(':name/backups')
