@@ -157,6 +157,13 @@ export const storageSettingsSchema = z.strictObject({
   storageClassName: z.string().min(1).optional(),
 });
 
+export const resourcesSettingsSchema = z.strictObject({
+  cpuRequest: z.string().regex(quantityPattern, "must be a Kubernetes quantity").optional(),
+  cpuLimit: z.string().regex(quantityPattern, "must be a Kubernetes quantity").optional(),
+  memoryRequest: z.string().regex(quantityPattern, "must be a Kubernetes quantity").optional(),
+  memoryLimit: z.string().regex(quantityPattern, "must be a Kubernetes quantity").optional(),
+});
+
 export const serviceSettingsSchema = z.strictObject({
   type: z.enum(["ClusterIP", "NodePort", "LoadBalancer"]).optional(),
 });
@@ -168,6 +175,7 @@ export const factorioServerSpecSchema = z.strictObject({
   mapGenSettings: mapGenSettingsSchema.optional(),
   mapSettings: mapSettingsSchema.optional(),
   storage: storageSettingsSchema.optional(),
+  resources: resourcesSettingsSchema.optional(),
   service: serviceSettingsSchema.optional(),
 });
 

@@ -150,6 +150,13 @@ export interface StorageSettings {
   storageClassName?: string;
 }
 
+export interface ResourcesSettings {
+  cpuRequest?: string;
+  cpuLimit?: string;
+  memoryRequest?: string;
+  memoryLimit?: string;
+}
+
 export interface ServiceSettings {
   type?: ServiceType;
 }
@@ -161,6 +168,7 @@ export interface FactorioServerSpec {
   mapGenSettings?: MapGenSettings;
   mapSettings?: MapSettings;
   storage?: StorageSettings;
+  resources?: ResourcesSettings;
   service?: ServiceSettings;
 }
 
@@ -257,6 +265,25 @@ export interface ServerBackup {
 export interface ServerBackups {
   available: boolean;
   backups: ServerBackup[];
+}
+
+export type ServerOperationType = "Restore" | "Import";
+
+export type ServerOperationPhase =
+  | "Pending"
+  | "Suspending"
+  | "Running"
+  | "Completed"
+  | "Failed";
+
+export interface ServerOperation {
+  name: string;
+  type: ServerOperationType;
+  phase: ServerOperationPhase;
+  message?: string;
+  saveFile?: string;
+  createdAt: string;
+  completedAt?: string;
 }
 
 export interface ServicePortInfo {
