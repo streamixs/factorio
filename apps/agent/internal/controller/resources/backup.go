@@ -25,7 +25,9 @@ const (
 
 // backupScript copies the saves every INTERVAL_MINUTES, prunes files beyond
 // RETENTION, writes an index consumed by the API, and serves the directory
-// over HTTP inside the pod network.
+// over HTTP inside the pod network. The copy loop is the container's main
+// process: backgrounding it and exec'ing httpd caused the loop to die after
+// the first copy.
 const backupScript = `set -u
 mkdir -p /backups
 write_index() {
@@ -41,25 +43,25 @@ write_index() {
   done
   mv "$tmp" /backups/index.txt
 }
-(
-  while true; do
-    stamp=$(date -u +%Y%m%dT%H%M%SZ)
-    for save in /factorio/saves/*.zip; do
-      [ -e "$save" ] || continue
-      case "$save" in *.tmp.zip) continue ;; esac
-      base=${save##*/}
-      base=${base%.zip}
-      cp "$save" "/backups/.${base}-${stamp}.tmp"
-      mv "/backups/.${base}-${stamp}.tmp" "/backups/${base}-${stamp}.zip"
-    done
-    ls -1t /backups/*.zip 2>/dev/null | tail -n +$((RETENTION + 1)) | while read -r old; do
-      rm -f "$old"
-    done
-    write_index
-    sleep $((INTERVAL_MINUTES * 60))
+( while true; do httpd -f -p 8080 -h /backups; sleep 5; done ) &
+echo "backup sidecar started: interval=${INTERVAL_MINUTES}m retention=${RETENTION}"
+while true; do
+  stamp=$(date -u +%Y%m%dT%H%M%SZ)
+  for save in /factorio/saves/*.zip; do
+    [ -e "$save" ] || continue
+    case "$save" in *.tmp.zip) continue ;; esac
+    base=${save##*/}
+    base=${base%.zip}
+    cp "$save" "/backups/.${base}-${stamp}.tmp"
+    mv "/backups/.${base}-${stamp}.tmp" "/backups/${base}-${stamp}.zip"
+    echo "backup created: ${base}-${stamp}.zip"
   done
-) &
-exec httpd -f -p 8080 -h /backups
+  ls -1t /backups/*.zip 2>/dev/null | tail -n +$((RETENTION + 1)) | while read -r old; do
+    rm -f "$old"
+  done
+  write_index
+  sleep $((INTERVAL_MINUTES * 60))
+done
 `
 
 // BackupEnabled reports whether the backup sidecar and volume are enabled.
