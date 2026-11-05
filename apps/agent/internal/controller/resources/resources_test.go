@@ -324,6 +324,26 @@ func TestUpdateDeploymentCopiesConfigAndKeepsAnnotations(t *testing.T) {
 	}
 }
 
+func TestBuildEffectiveSettingsConfigMap(t *testing.T) {
+	server := testServer()
+
+	configMap := BuildEffectiveSettingsConfigMap(
+		server,
+		[]byte(`{"maxPlayers":0}`),
+		[]byte(`{"maxPlayers":8}`),
+	)
+
+	if got, want := configMap.Name, "demo-effective-settings"; got != want {
+		t.Errorf("configmap name is %q, want %q", got, want)
+	}
+	if got := configMap.Data[DefaultsSettingsKey]; got != `{"maxPlayers":0}` {
+		t.Errorf("defaults data is %q", got)
+	}
+	if got := configMap.Data[EffectiveSettingsKey]; got != `{"maxPlayers":8}` {
+		t.Errorf("effective data is %q", got)
+	}
+}
+
 func TestBuildSettingsObjects(t *testing.T) {
 	server := testServer()
 

@@ -117,12 +117,21 @@ func (r *FactorioServerReconciler) reconcileResources(
 		return err
 	}
 
+	effective, err := config.RenderEffectiveSettings(&server.Spec)
+	if err != nil {
+		return fmt.Errorf("render effective settings: %w", err)
+	}
+
 	if err := r.reconcilePersistentVolumeClaim(ctx, server); err != nil {
 		return fmt.Errorf("reconcile persistent volume claim: %w", err)
 	}
 
 	if err := r.reconcileSettingsObjects(ctx, server, files); err != nil {
 		return fmt.Errorf("reconcile settings objects: %w", err)
+	}
+
+	if err := r.reconcileEffectiveSettingsConfigMap(ctx, server, effective); err != nil {
+		return fmt.Errorf("reconcile effective settings: %w", err)
 	}
 
 	if err := r.reconcileDeployment(ctx, server, files); err != nil {
@@ -526,6 +535,19 @@ func (r *FactorioServerReconciler) reconcilePersistentVolumeClaim(
 	}
 
 	return nil
+}
+
+// reconcileEffectiveSettingsConfigMap publishes the default and effective
+// specifications for the API and the UI. It is not mounted in the pod.
+func (r *FactorioServerReconciler) reconcileEffectiveSettingsConfigMap(
+	ctx context.Context,
+	server *gamesv1alpha1.FactorioServer,
+	settings *config.EffectiveSettings,
+) error {
+	desired := factorioresources.BuildEffectiveSettingsConfigMap(
+		server, settings.Defaults, settings.Effective,
+	)
+	return r.reconcileConfigMap(ctx, server, desired)
 }
 
 // reconcileService ensures the Service exposing the game port exists and

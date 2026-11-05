@@ -18,6 +18,7 @@ package controller
 
 import (
 	"context"
+	"encoding/json"
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
@@ -77,6 +78,11 @@ var _ = Describe("FactorioServer Controller", func() {
 
 	mapSettingsKey := types.NamespacedName{
 		Name:      resourceName + "-map-settings",
+		Namespace: resourceNamespace,
+	}
+
+	effectiveSettingsKey := types.NamespacedName{
+		Name:      resourceName + "-effective-settings",
 		Namespace: resourceNamespace,
 	}
 
@@ -184,6 +190,12 @@ var _ = Describe("FactorioServer Controller", func() {
 					Namespace: resourceNamespace,
 				},
 			},
+			&corev1.ConfigMap{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      effectiveSettingsKey.Name,
+					Namespace: resourceNamespace,
+				},
+			},
 			&corev1.Service{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      resourceName,
@@ -268,6 +280,19 @@ var _ = Describe("FactorioServer Controller", func() {
 		var mapSettings corev1.ConfigMap
 		err = k8sClient.Get(ctx, mapSettingsKey, &mapSettings)
 		Expect(apierrors.IsNotFound(err)).To(BeTrue())
+
+		var effective corev1.ConfigMap
+		Expect(k8sClient.Get(ctx, effectiveSettingsKey, &effective)).To(Succeed())
+		Expect(effective.Data).To(HaveKey("defaults.json"))
+		Expect(effective.Data).To(HaveKey("effective.json"))
+
+		var effectiveSpec map[string]any
+		Expect(json.Unmarshal(
+			[]byte(effective.Data["effective.json"]),
+			&effectiveSpec,
+		)).To(Succeed())
+		storage := effectiveSpec["storage"].(map[string]any)
+		Expect(storage["size"]).To(Equal("10Gi"))
 
 		var claim corev1.PersistentVolumeClaim
 		Expect(k8sClient.Get(ctx, claimKey, &claim)).To(Succeed())

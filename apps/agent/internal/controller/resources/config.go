@@ -68,6 +68,37 @@ func MapSettingsConfigMapName(server *gamesv1alpha1.FactorioServer) string {
 	return server.Name + "-map-settings"
 }
 
+// EffectiveSettingsConfigMapName returns the name of the ConfigMap exposing
+// the default and effective specifications to the API and the UI.
+func EffectiveSettingsConfigMapName(server *gamesv1alpha1.FactorioServer) string {
+	return server.Name + "-effective-settings"
+}
+
+// Keys used in the effective settings ConfigMap.
+const (
+	DefaultsSettingsKey  = "defaults.json"
+	EffectiveSettingsKey = "effective.json"
+)
+
+// BuildEffectiveSettingsConfigMap builds the ConfigMap holding the default
+// and effective server specifications.
+func BuildEffectiveSettingsConfigMap(
+	server *gamesv1alpha1.FactorioServer,
+	defaults, effective []byte,
+) *corev1.ConfigMap {
+	return &corev1.ConfigMap{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      EffectiveSettingsConfigMapName(server),
+			Namespace: server.Namespace,
+			Labels:    labelsFor(server),
+		},
+		Data: map[string]string{
+			DefaultsSettingsKey:  string(defaults),
+			EffectiveSettingsKey: string(effective),
+		},
+	}
+}
+
 // BuildServerSettingsSecret builds the Secret holding server-settings.json.
 // A Secret is used because the file can contain the game password, the
 // factorio.com account password or its API token.
