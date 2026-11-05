@@ -54,3 +54,15 @@ export function createServer(
 export function deleteServer(name: string): Promise<void> {
   return request<void>(`/${encodeURIComponent(name)}`, { method: "DELETE" });
 }
+
+export function startServer(name: string): Promise<FactorioServer> {
+  return request<FactorioServer>(`/${encodeURIComponent(name)}/start`, {
+    method: "POST",
+  });
+}
+
+export function stopServer(name: string): Promise<FactorioServer> {
+  return request<FactorioServer>(`/${encodeURIComponent(name)}/stop`, {
+    method: "POST",
+  });
+}

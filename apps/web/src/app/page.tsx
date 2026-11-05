@@ -13,7 +13,7 @@ import {
   type FormEvent,
 } from "react";
 
-import { createServer, deleteServer, listServers } from "@/lib/api";
+import { createServer, deleteServer, listServers, startServer, stopServer } from "@/lib/api";
 
 const SERVICE_TYPES: ServiceType[] = ["ClusterIP", "NodePort", "LoadBalancer"];
 
@@ -27,6 +27,14 @@ function statusBadge(server: FactorioServer): {
   label: string;
   className: string;
 } {
+  if (server.spec.suspended === true) {
+    return {
+      label: "Stopped",
+      className:
+        "bg-sky-100 text-sky-700 dark:bg-sky-950 dark:text-sky-300",
+    };
+  }
+
   if (conditionStatus(server, "Degraded") === "True") {
     return {
       label: "Degraded",
@@ -62,6 +70,7 @@ export default function Home() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [pendingDeletion, setPendingDeletion] = useState<string | null>(null);
+  const [pendingAction, setPendingAction] = useState<string | null>(null);
 
   const [name, setName] = useState("");
   const [displayName, setDisplayName] = useState("");
@@ -124,6 +133,27 @@ export default function Home() {
       );
     } finally {
       setCreating(false);
+    }
+  }
+
+  async function handleToggle(server: FactorioServer) {
+    const suspended = server.spec.suspended === true;
+    const name = server.metadata.name;
+
+    setPendingAction(name);
+    setError(null);
+
+    try {
+      await (suspended ? startServer(name) : stopServer(name));
+      await refresh();
+    } catch (err) {
+      setError(
+        err instanceof Error
+          ? err.message
+          : `Unable to ${suspended ? "start" : "stop"} the server`,
+      );
+    } finally {
+      setPendingAction(null);
     }
   }
 
@@ -194,6 +224,7 @@ export default function Home() {
           {servers.map((server) => {
             const badge = statusBadge(server);
             const degraded = findCondition(server, "Degraded");
+            const suspended = server.spec.suspended === true;
             const storage = server.spec.storage?.size ?? "10Gi";
             const service = server.spec.service?.type ?? "ClusterIP";
             const players = server.spec.server?.access?.maxPlayers ?? 0;
@@ -246,7 +277,25 @@ export default function Home() {
                   </p>
                 )}
 
-                <div className="mt-4 flex justify-end">
+                <div className="mt-4 flex justify-end gap-2">
+                  <button
+                    type="button"
+                    onClick={() => void handleToggle(server)}
+                    disabled={pendingAction === server.metadata.name}
+                    className={
+                      suspended
+                        ? "rounded-lg border border-emerald-200 px-3 py-1.5 text-sm font-medium text-emerald-700 transition hover:bg-emerald-50 disabled:cursor-not-allowed disabled:opacity-50 dark:border-emerald-900 dark:text-emerald-300 dark:hover:bg-emerald-950"
+                        : "rounded-lg border border-amber-200 px-3 py-1.5 text-sm font-medium text-amber-700 transition hover:bg-amber-50 disabled:cursor-not-allowed disabled:opacity-50 dark:border-amber-900 dark:text-amber-300 dark:hover:bg-amber-950"
+                    }
+                  >
+                    {pendingAction === server.metadata.name
+                      ? suspended
+                        ? "Starting…"
+                        : "Stopping…"
+                      : suspended
+                        ? "Start"
+                        : "Stop"}
+                  </button>
                   <button
                     type="button"
                     onClick={() => void handleDelete(server.metadata.name)}
