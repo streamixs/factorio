@@ -13,6 +13,8 @@ import (
 	"github.com/streamixs/factorio/apps/agent/internal/config"
 )
 
+const testRconPassword = "test-rcon-password"
+
 func ptr[T any](value T) *T {
 	return &value
 }
@@ -30,20 +32,20 @@ func TestBuildDeploymentMountsConfiguredFiles(t *testing.T) {
 		MapGenSettings: []byte(`{"seed":42}`),
 	}
 
-	deployment := BuildDeployment(testServer(), files)
+	deployment := BuildDeployment(testServer(), files, testRconPassword)
 	container := deployment.Spec.Template.Spec.Containers[0]
 
 	if got := deployment.Spec.Template.Annotations[PodTemplateHashAnnotation]; got == "" {
 		t.Fatal("config hash annotation is empty")
 	}
 
-	if len(deployment.Spec.Template.Spec.Volumes) != 3 {
-		t.Fatalf("got %d volumes, want 3",
+	if len(deployment.Spec.Template.Spec.Volumes) != 4 {
+		t.Fatalf("got %d volumes, want 4",
 			len(deployment.Spec.Template.Spec.Volumes))
 	}
 
-	if len(container.VolumeMounts) != 3 {
-		t.Fatalf("got %d volume mounts, want 3", len(container.VolumeMounts))
+	if len(container.VolumeMounts) != 4 {
+		t.Fatalf("got %d volume mounts, want 4", len(container.VolumeMounts))
 	}
 
 	mounts := make(map[string]corev1.VolumeMount, len(container.VolumeMounts))
@@ -79,7 +81,7 @@ func TestBuildDeploymentMountsConfiguredFiles(t *testing.T) {
 }
 
 func TestBuildDeploymentUsesRecreateAndPreparesData(t *testing.T) {
-	deployment := BuildDeployment(testServer(), ConfigFiles{})
+	deployment := BuildDeployment(testServer(), ConfigFiles{}, testRconPassword)
 
 	if got := deployment.Spec.Strategy.Type; got != appsv1.RecreateDeploymentStrategyType {
 		t.Errorf("got strategy %q, want Recreate", got)
@@ -102,7 +104,7 @@ func TestBuildDeploymentUsesRecreateAndPreparesData(t *testing.T) {
 }
 
 func TestBuildDeploymentConfiguresHealthProbes(t *testing.T) {
-	container := BuildDeployment(testServer(), ConfigFiles{}).
+	container := BuildDeployment(testServer(), ConfigFiles{}, testRconPassword).
 		Spec.Template.Spec.Containers[0]
 
 	probes := map[string]*corev1.Probe{
@@ -144,7 +146,7 @@ func TestBuildDeploymentConfiguresHealthProbes(t *testing.T) {
 }
 
 func TestBuildDeploymentRunsAsFactorioUser(t *testing.T) {
-	deployment := BuildDeployment(testServer(), ConfigFiles{})
+	deployment := BuildDeployment(testServer(), ConfigFiles{}, testRconPassword)
 	container := deployment.Spec.Template.Spec.Containers[0]
 
 	if container.SecurityContext == nil {
@@ -171,7 +173,7 @@ func TestBuildDeploymentRunsAsFactorioUser(t *testing.T) {
 
 func TestPodTemplateHashChangesWithTemplate(t *testing.T) {
 	files := ConfigFiles{}
-	deployment := BuildDeployment(testServer(), files)
+	deployment := BuildDeployment(testServer(), files, testRconPassword)
 	baseHash := deployment.Spec.Template.Annotations[PodTemplateHashAnnotation]
 
 	template := deployment.Spec.Template.DeepCopy()
@@ -186,14 +188,14 @@ func TestBuildDeploymentScalesToZeroWhenSuspended(t *testing.T) {
 	server := testServer()
 	server.Spec.Suspended = true
 
-	deployment := BuildDeployment(server, ConfigFiles{})
+	deployment := BuildDeployment(server, ConfigFiles{}, testRconPassword)
 
 	if deployment.Spec.Replicas == nil || *deployment.Spec.Replicas != 0 {
 		t.Errorf("replicas are %v, want 0", deployment.Spec.Replicas)
 	}
 
 	server.Spec.Suspended = false
-	deployment = BuildDeployment(server, ConfigFiles{})
+	deployment = BuildDeployment(server, ConfigFiles{}, testRconPassword)
 
 	if deployment.Spec.Replicas == nil || *deployment.Spec.Replicas != 1 {
 		t.Errorf("replicas are %v, want 1", deployment.Spec.Replicas)
@@ -204,16 +206,16 @@ func TestBuildDeploymentWithoutSettings(t *testing.T) {
 	server := testServer()
 	server.Spec.Version = ""
 
-	deployment := BuildDeployment(server, ConfigFiles{})
+	deployment := BuildDeployment(server, ConfigFiles{}, testRconPassword)
 	container := deployment.Spec.Template.Spec.Containers[0]
 
-	if len(deployment.Spec.Template.Spec.Volumes) != 1 {
-		t.Errorf("got %d volumes, want 1",
+	if len(deployment.Spec.Template.Spec.Volumes) != 2 {
+		t.Errorf("got %d volumes, want 2",
 			len(deployment.Spec.Template.Spec.Volumes))
 	}
 
-	if len(container.VolumeMounts) != 1 {
-		t.Errorf("got %d volume mounts, want 1", len(container.VolumeMounts))
+	if len(container.VolumeMounts) != 2 {
+		t.Errorf("got %d volume mounts, want 2", len(container.VolumeMounts))
 	}
 
 	if got := container.VolumeMounts[0].MountPath; got != dataDir {
@@ -271,23 +273,23 @@ func TestConfigFilesHash(t *testing.T) {
 
 func TestNeedsUpdate(t *testing.T) {
 	server := testServer()
-	existing := BuildDeployment(server, ConfigFiles{})
+	existing := BuildDeployment(server, ConfigFiles{}, testRconPassword)
 
-	same := BuildDeployment(server, ConfigFiles{})
+	same := BuildDeployment(server, ConfigFiles{}, testRconPassword)
 	if NeedsUpdate(&existing, &same) {
 		t.Error("identical deployments need an update")
 	}
 
 	changedConfig := BuildDeployment(server, ConfigFiles{
 		MapSettings: []byte("{}"),
-	})
+	}, testRconPassword)
 	if !NeedsUpdate(&existing, &changedConfig) {
 		t.Error("config change was not detected")
 	}
 
 	otherVersion := testServer()
 	otherVersion.Spec.Version = "2.0.0"
-	changedImage := BuildDeployment(otherVersion, ConfigFiles{})
+	changedImage := BuildDeployment(otherVersion, ConfigFiles{}, testRconPassword)
 	if !NeedsUpdate(&existing, &changedImage) {
 		t.Error("image change was not detected")
 	}
@@ -295,12 +297,12 @@ func TestNeedsUpdate(t *testing.T) {
 
 func TestUpdateDeploymentCopiesConfigAndKeepsAnnotations(t *testing.T) {
 	server := testServer()
-	existing := BuildDeployment(server, ConfigFiles{})
+	existing := BuildDeployment(server, ConfigFiles{}, testRconPassword)
 	existing.Spec.Template.Annotations["example.com/restarted"] = "true"
 
 	desired := BuildDeployment(server, ConfigFiles{
 		ServerSettings: []byte("{}"),
-	})
+	}, testRconPassword)
 
 	UpdateDeployment(&existing, &desired)
 
@@ -313,8 +315,8 @@ func TestUpdateDeploymentCopiesConfigAndKeepsAnnotations(t *testing.T) {
 		t.Error("unrelated annotation was lost")
 	}
 
-	if len(existing.Spec.Template.Spec.Volumes) != 2 {
-		t.Errorf("got %d volumes, want 2",
+	if len(existing.Spec.Template.Spec.Volumes) != 3 {
+		t.Errorf("got %d volumes, want 3",
 			len(existing.Spec.Template.Spec.Volumes))
 	}
 
@@ -345,7 +347,7 @@ func TestBuildEffectiveSettingsConfigMap(t *testing.T) {
 }
 
 func TestBuildDeploymentServesSaves(t *testing.T) {
-	deployment := BuildDeployment(testServer(), ConfigFiles{})
+	deployment := BuildDeployment(testServer(), ConfigFiles{}, testRconPassword)
 
 	if len(deployment.Spec.Template.Spec.Containers) != 2 {
 		t.Fatalf("got %d containers, want 2",
@@ -389,6 +391,85 @@ func TestBuildDeploymentServesSaves(t *testing.T) {
 		if volume.Name == "backups" {
 			t.Error("the removed backup volume is still present")
 		}
+	}
+}
+
+func TestBuildDeploymentIncludesRcon(t *testing.T) {
+	deployment := BuildDeployment(testServer(), ConfigFiles{}, testRconPassword)
+	container := deployment.Spec.Template.Spec.Containers[0]
+
+	var volume *corev1.Volume
+	for i := range deployment.Spec.Template.Spec.Volumes {
+		if deployment.Spec.Template.Spec.Volumes[i].Name == "rcon" {
+			volume = &deployment.Spec.Template.Spec.Volumes[i]
+		}
+	}
+	if volume == nil || volume.Secret == nil ||
+		volume.Secret.SecretName != "demo-rcon" {
+		t.Fatalf("rcon volume is %+v", volume)
+	}
+
+	var mount *corev1.VolumeMount
+	for i := range container.VolumeMounts {
+		if container.VolumeMounts[i].Name == "rcon" {
+			mount = &container.VolumeMounts[i]
+		}
+	}
+	if mount == nil ||
+		mount.MountPath != path.Join(configDir, RconPasswordKey) ||
+		mount.SubPath != RconPasswordKey || !mount.ReadOnly {
+		t.Fatalf("rcon mount is %+v", mount)
+	}
+
+	if got := deployment.Spec.Template.Annotations[RconPasswordHashAnnotation]; got == "" {
+		t.Error("rcon password hash annotation is empty")
+	}
+
+	if len(container.Ports) != 2 || container.Ports[1].Name != "rcon" ||
+		container.Ports[1].ContainerPort != rconPort {
+		t.Errorf("rcon port is missing: %v", container.Ports)
+	}
+}
+
+func TestBuildDeploymentChangesHashWithRconPassword(t *testing.T) {
+	base := BuildDeployment(testServer(), ConfigFiles{}, "first-password")
+	changed := BuildDeployment(testServer(), ConfigFiles{}, "second-password")
+
+	if base.Spec.Template.Annotations[PodTemplateHashAnnotation] ==
+		changed.Spec.Template.Annotations[PodTemplateHashAnnotation] {
+		t.Error("an RCON password change does not change the pod template hash")
+	}
+}
+
+func TestBuildRconSecret(t *testing.T) {
+	secret := BuildRconSecret(testServer(), "hunter2")
+
+	if got, want := secret.Name, "demo-rcon"; got != want {
+		t.Errorf("secret name is %q, want %q", got, want)
+	}
+	if got := string(secret.Data[RconPasswordKey]); got != "hunter2" {
+		t.Errorf("rcon password is %q", got)
+	}
+	if secret.Type != corev1.SecretTypeOpaque {
+		t.Errorf("secret type is %q", secret.Type)
+	}
+}
+
+func TestGenerateRconPassword(t *testing.T) {
+	first, err := GenerateRconPassword()
+	if err != nil {
+		t.Fatalf("generate password: %v", err)
+	}
+	second, err := GenerateRconPassword()
+	if err != nil {
+		t.Fatalf("generate password: %v", err)
+	}
+
+	if first == second {
+		t.Error("generated passwords are identical")
+	}
+	if len(first) < 16 {
+		t.Errorf("password is too short: %q", first)
 	}
 }
 

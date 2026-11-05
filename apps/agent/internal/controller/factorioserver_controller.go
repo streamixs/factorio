@@ -138,7 +138,12 @@ func (r *FactorioServerReconciler) reconcileResources(
 		return fmt.Errorf("reconcile effective settings: %w", err)
 	}
 
-	if err := r.reconcileDeployment(ctx, server, files); err != nil {
+	rconPassword, err := r.reconcileRconSecret(ctx, server)
+	if err != nil {
+		return fmt.Errorf("reconcile rcon secret: %w", err)
+	}
+
+	if err := r.reconcileDeployment(ctx, server, files, rconPassword); err != nil {
 		return fmt.Errorf("reconcile deployment: %w", err)
 	}
 
@@ -444,14 +449,78 @@ func (r *FactorioServerReconciler) deleteIfOwned(
 	return nil
 }
 
+// reconcileRconSecret ensures the RCON password Secret exists and returns the
+// password the API uses to connect. The password is generated once and kept
+// stable across reconciles; a missing or empty password is regenerated.
+func (r *FactorioServerReconciler) reconcileRconSecret(
+	ctx context.Context,
+	server *gamesv1alpha1.FactorioServer,
+) (string, error) {
+	name := factorioresources.RconSecretName(server)
+
+	var existing corev1.Secret
+	err := r.reader().Get(ctx, types.NamespacedName{
+		Namespace: server.Namespace,
+		Name:      name,
+	}, &existing)
+	if err == nil {
+		if !metav1.IsControlledBy(&existing, server) {
+			return "", fmt.Errorf(
+				"secret %q already exists and is not owned by FactorioServer %q",
+				existing.Name, server.Name)
+		}
+
+		if password := existing.Data[factorioresources.RconPasswordKey]; len(password) > 0 {
+			return string(password), nil
+		}
+
+		password, err := factorioresources.GenerateRconPassword()
+		if err != nil {
+			return "", fmt.Errorf("generate rcon password: %w", err)
+		}
+		if existing.Data == nil {
+			existing.Data = map[string][]byte{}
+		}
+		existing.Data[factorioresources.RconPasswordKey] = []byte(password)
+		if err := r.Update(ctx, &existing); err != nil {
+			return "", fmt.Errorf("update secret %q: %w", existing.Name, err)
+		}
+		r.recordEvent(server, corev1.EventTypeNormal, "Updated",
+			fmt.Sprintf("Updated Secret %q", existing.Name))
+		return password, nil
+	}
+	if !apierrors.IsNotFound(err) {
+		return "", fmt.Errorf("get secret %q: %w", name, err)
+	}
+
+	password, err := factorioresources.GenerateRconPassword()
+	if err != nil {
+		return "", fmt.Errorf("generate rcon password: %w", err)
+	}
+
+	desired := factorioresources.BuildRconSecret(server, password)
+	if err := controllerutil.SetControllerReference(server, desired,
+		r.Scheme); err != nil {
+		return "", err
+	}
+
+	if err := r.Create(ctx, desired); err != nil {
+		return "", fmt.Errorf("create secret %q: %w", desired.Name, err)
+	}
+	r.recordEvent(server, corev1.EventTypeNormal, "Created",
+		fmt.Sprintf("Created Secret %q", desired.Name))
+	return password, nil
+}
+
 func (r *FactorioServerReconciler) reconcileDeployment(
 	ctx context.Context,
 	server *gamesv1alpha1.FactorioServer,
 	files factorioresources.ConfigFiles,
+	rconPassword string,
 ) error {
 	logger := logf.FromContext(ctx)
 
-	desired := factorioresources.BuildDeployment(server, files)
+	desired := factorioresources.BuildDeployment(server, files, rconPassword)
 	key := types.NamespacedName{Namespace: desired.Namespace, Name: desired.Name}
 
 	var existing appsv1.Deployment

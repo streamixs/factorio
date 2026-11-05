@@ -49,6 +49,7 @@ func labelsFor(server *gamesv1alpha1.FactorioServer) map[string]string {
 func BuildDeployment(
 	server *gamesv1alpha1.FactorioServer,
 	files ConfigFiles,
+	rconPassword string,
 ) appsv1.Deployment {
 	replicas := int32(1)
 	if server.Spec.Suspended {
@@ -56,11 +57,11 @@ func BuildDeployment(
 	}
 	labels := labelsFor(server)
 	volumes, mounts := configVolumes(server, files)
-	volumes = append(volumes, dataVolumeFor(server))
+	volumes = append(volumes, dataVolumeFor(server), rconVolumeFor(server))
 	mounts = append(mounts, corev1.VolumeMount{
 		Name:      dataVolume,
 		MountPath: dataDir,
-	})
+	}, rconMount())
 
 	initMounts := []corev1.VolumeMount{
 		{Name: dataVolume, MountPath: dataDir},
@@ -84,6 +85,11 @@ func BuildDeployment(
 					Name:          "game",
 					ContainerPort: gamePort,
 					Protocol:      corev1.ProtocolUDP,
+				},
+				{
+					Name:          "rcon",
+					ContainerPort: rconPort,
+					Protocol:      corev1.ProtocolTCP,
 				},
 			},
 			Env: []corev1.EnvVar{
@@ -125,6 +131,10 @@ func BuildDeployment(
 			Volumes:    volumes,
 			Containers: containers,
 		},
+	}
+	if rconPassword != "" {
+		template.Annotations[RconPasswordHashAnnotation] =
+			rconPasswordHash(rconPassword)
 	}
 	template.Annotations[PodTemplateHashAnnotation] = podTemplateHash(template, files)
 

@@ -91,6 +91,11 @@ var _ = Describe("FactorioServer Controller", func() {
 		Namespace: resourceNamespace,
 	}
 
+	rconSecretKey := types.NamespacedName{
+		Name:      resourceName + "-rcon",
+		Namespace: resourceNamespace,
+	}
+
 	var reconciler *FactorioServerReconciler
 	var recorder *record.FakeRecorder
 
@@ -180,6 +185,12 @@ var _ = Describe("FactorioServer Controller", func() {
 					Namespace: resourceNamespace,
 				},
 			},
+			&corev1.Secret{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      rconSecretKey.Name,
+					Namespace: resourceNamespace,
+				},
+			},
 			&corev1.ConfigMap{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      mapGenSettingsKey.Name,
@@ -239,10 +250,12 @@ var _ = Describe("FactorioServer Controller", func() {
 		Expect(deployment.Spec.Strategy.Type).To(
 			Equal(appsv1.RecreateDeploymentStrategyType))
 		Expect(deployment.Spec.Template.Spec.InitContainers).To(HaveLen(1))
-		Expect(deployment.Spec.Template.Spec.Volumes).To(HaveLen(3))
+		Expect(deployment.Spec.Template.Spec.Volumes).To(HaveLen(4))
 		Expect(deployment.Spec.Template.Spec.Containers).To(HaveLen(2))
-		Expect(deployment.Spec.Template.Spec.Containers[0].VolumeMounts).To(HaveLen(3))
+		Expect(deployment.Spec.Template.Spec.Containers[0].VolumeMounts).To(HaveLen(4))
 		Expect(deployment.Spec.Template.Spec.Containers[1].Name).To(Equal("saves"))
+		Expect(deployment.Spec.Template.Annotations).To(
+			HaveKey(factorioresources.RconPasswordHashAnnotation))
 
 		server := &gamesv1alpha1.FactorioServer{}
 		Expect(k8sClient.Get(ctx, key, server)).To(Succeed())
@@ -302,6 +315,12 @@ var _ = Describe("FactorioServer Controller", func() {
 		Expect(k8sClient.Get(ctx, claimKey, &claim)).To(Succeed())
 		Expect(metav1.IsControlledBy(&claim, server)).To(BeTrue())
 		Expect(claim.Spec.AccessModes).To(ContainElement(corev1.ReadWriteOnce))
+
+		var rconSecret corev1.Secret
+		Expect(k8sClient.Get(ctx, rconSecretKey, &rconSecret)).To(Succeed())
+		Expect(metav1.IsControlledBy(&rconSecret, server)).To(BeTrue())
+		Expect(rconSecret.Data).To(HaveKey(factorioresources.RconPasswordKey))
+		Expect(rconSecret.Data[factorioresources.RconPasswordKey]).NotTo(BeEmpty())
 
 		var service corev1.Service
 		Expect(k8sClient.Get(ctx, key, &service)).To(Succeed())
