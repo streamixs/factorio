@@ -27,6 +27,7 @@ import { serverStatusBadge } from "@/lib/server-status";
 
 import { BackupsPanel } from "./backups";
 import { ConnectionPanel } from "./connection";
+import { ConsolePanel } from "./console";
 import { EventsPanel, LogsPanel } from "./diagnostics";
 import { SettingsForm } from "./settings-form";
 
@@ -35,6 +36,7 @@ const VIEWS = [
   { id: "connection", label: "Connexion" },
   { id: "logs", label: "Logs" },
   { id: "events", label: "Events" },
+  { id: "console", label: "Console" },
   { id: "backups", label: "Sauvegardes" },
 ] as const;
 
@@ -309,6 +311,10 @@ function ServerDetail() {
 
         <TabsContent value="events" className="mt-4">
           <EventsPanel name={server.metadata.name} />
+        </TabsContent>
+
+        <TabsContent value="console" className="mt-4">
+          <ConsolePanel name={server.metadata.name} suspended={suspended} />
         </TabsContent>
 
         <TabsContent value="backups" className="mt-4">

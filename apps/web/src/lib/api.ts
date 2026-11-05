@@ -151,3 +151,13 @@ export function importSave(
     body: file,
   });
 }
+
+export function runRconCommand(
+  name: string,
+  command: string,
+): Promise<{ output: string }> {
+  return request<{ output: string }>(`/${encodeURIComponent(name)}/rcon`, {
+    method: "POST",
+    body: JSON.stringify({ command }),
+  });
+}
