@@ -3,16 +3,19 @@ import {
   Controller,
   Delete,
   Get,
+  Headers,
   HttpCode,
   HttpStatus,
   Param,
   Patch,
   Post,
   Query,
+  Req,
   Res,
   StreamableFile,
 } from '@nestjs/common';
-import type { Response } from 'express';
+import { createReadStream } from 'node:fs';
+import type { Request, Response } from 'express';
 import type {
   CreateFactorioServerInput,
   EffectiveSettings,
@@ -101,6 +104,31 @@ export class ServersController {
     @Param('file') file: string,
   ): Promise<{ save: string; job: string }> {
     return this.servers.restoreBackup(name, file);
+  }
+
+  @Post(':name/import')
+  @HttpCode(HttpStatus.OK)
+  importSave(
+    @Param('name') name: string,
+    @Req() request: Request,
+    @Headers('content-length') contentLength?: string,
+  ): Promise<{ job: string }> {
+    return this.servers.importSave(name, request, contentLength);
+  }
+
+  @Get(':name/imports/:token')
+  async downloadImport(
+    @Param('name') name: string,
+    @Param('token') token: string,
+    @Res({ passthrough: true }) response: Response,
+  ): Promise<StreamableFile> {
+    const imported = this.servers.claimImport(name, token);
+    response.set({
+      'Content-Type': 'application/zip',
+      'Content-Disposition': `attachment; filename="${imported.filename}"`,
+    });
+
+    return new StreamableFile(createReadStream(imported.path));
   }
 
   @Post()

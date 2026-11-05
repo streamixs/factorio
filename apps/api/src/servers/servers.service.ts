@@ -5,6 +5,7 @@ import {
   InternalServerErrorException,
   Logger,
   NotFoundException,
+  PayloadTooLargeException,
 } from '@nestjs/common';
 import { ApiException } from '@kubernetes/client-node';
 import type {
@@ -15,6 +16,13 @@ import type {
   V1Secret,
   V1Service,
 } from '@kubernetes/client-node';
+import { randomBytes } from 'node:crypto';
+import { createWriteStream } from 'node:fs';
+import { mkdir, open, unlink } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { Transform, type Readable } from 'node:stream';
+import { pipeline } from 'node:stream/promises';
 import {
   createFactorioServerSchema,
   updateFactorioServerSchema,
@@ -56,6 +64,12 @@ const CREDENTIAL_KEYS = {
 const SAVES_HTTP_PORT = 8080;
 const BACKUP_FILE_PATTERN = /^[A-Za-z0-9_][A-Za-z0-9._-]*\.zip$/;
 const PRIMARY_SAVE_NAME = '_autosave1.zip';
+const IMPORT_DIR = join(tmpdir(), 'factorio-imports');
+const MAX_IMPORT_BYTES = 1024 * 1024 * 1024;
+const IMPORT_TTL_MS = 10 * 60 * 1000;
+const API_INTERNAL_URL =
+  process.env.API_INTERNAL_URL ??
+  'http://factorio-api.factorio-system.svc.cluster.local:3001';
 const RESTORE_SCRIPT = `set -eu
 mkdir -p /factorio/saves
 if [ -f "/factorio/saves/$TARGET_SAVE" ]; then
@@ -66,10 +80,29 @@ if [ "$SAVE_FILE" != "$TARGET_SAVE" ]; then
 fi
 touch "/factorio/saves/$TARGET_SAVE"
 `;
+const IMPORT_SCRIPT = `set -eu
+mkdir -p /factorio/saves
+target="/factorio/saves/$TARGET_SAVE"
+tmp="/factorio/saves/.import.tmp.zip"
+trap 'rm -f "$tmp"' EXIT
+if [ -f "$target" ]; then
+  cp -p "$target" "/factorio/saves/pre-import-$(date -u +%Y%m%dT%H%M%SZ)-$TARGET_SAVE"
+fi
+wget -q -O "$tmp" "$IMPORT_URL"
+mv "$tmp" "$target"
+touch "$target"
+`;
+
+interface PendingImport {
+  name: string;
+  path: string;
+  expiresAt: number;
+}
 
 @Injectable()
 export class ServersService {
   private readonly logger = new Logger(ServersService.name);
+  private readonly imports = new Map<string, PendingImport>();
 
   constructor(private readonly kubernetes: KubernetesService) {}
 
@@ -489,6 +522,143 @@ export class ServersService {
     return { save, job: jobName };
   }
 
+  /**
+   * Stores an uploaded save and starts a Job that installs it as the world of
+   * the server. The file is streamed to a temporary file on the API pod and
+   * fetched by the Job from the API over the pod network, so the API never
+   * needs to mount the data volume.
+   */
+  async importSave(
+    name: string,
+    body: Readable,
+    contentLength?: string,
+  ): Promise<{ job: string }> {
+    this.assertName(name);
+
+    const declared = Number(contentLength ?? '0');
+    if (Number.isFinite(declared) && declared > MAX_IMPORT_BYTES) {
+      throw new PayloadTooLargeException('Save file is larger than 1 GiB');
+    }
+
+    const server = await this.get(name);
+    const token = randomBytes(24).toString('base64url');
+    const filePath = join(IMPORT_DIR, `${token}.zip`);
+
+    await mkdir(IMPORT_DIR, { recursive: true });
+
+    try {
+      await writeLimited(body, filePath);
+    } catch (error) {
+      await unlink(filePath).catch(() => undefined);
+      throw error;
+    }
+
+    if (!(await hasZipMagic(filePath))) {
+      await unlink(filePath).catch(() => undefined);
+      throw new BadRequestException(
+        'The uploaded file is not a Factorio save (.zip)',
+      );
+    }
+
+    this.pruneImports();
+    this.imports.set(token, {
+      name,
+      path: filePath,
+      expiresAt: Date.now() + IMPORT_TTL_MS,
+    });
+
+    const jobName = importJobName(name);
+    void this.runImport(
+      server,
+      name,
+      filePath,
+      token,
+      jobName,
+      server.spec.suspended === true,
+    );
+
+    return { job: jobName };
+  }
+
+  /**
+   * Resolves the one-time URL the import Job uses to fetch the uploaded save.
+   * The token is scoped to the server and expires after a few minutes.
+   */
+  claimImport(name: string, token: string): { path: string; filename: string } {
+    this.assertName(name);
+
+    const entry = this.imports.get(token);
+    if (
+      entry === undefined ||
+      entry.name !== name ||
+      entry.expiresAt <= Date.now()
+    ) {
+      this.imports.delete(token);
+      throw new NotFoundException('Import not found');
+    }
+
+    return { path: entry.path, filename: `${name}.zip` };
+  }
+
+  private async runImport(
+    server: FactorioServer,
+    name: string,
+    filePath: string,
+    token: string,
+    jobName: string,
+    wasSuspended: boolean,
+  ): Promise<void> {
+    try {
+      if (!wasSuspended) {
+        await this.setSuspended(name, true);
+      }
+
+      await this.waitForPodsGone(name);
+
+      const job = buildImportJob(
+        server,
+        importUrl(name, token),
+        jobName,
+        this.ownerReference(server),
+      );
+      await this.kubernetes.batch.createNamespacedJob({
+        namespace: this.kubernetes.namespace,
+        body: job,
+      });
+      await this.waitForJob(jobName);
+    } catch (error) {
+      this.logger.error(
+        `Import of the save for ${name} failed`,
+        error instanceof Error ? error.stack : String(error),
+      );
+    } finally {
+      this.imports.delete(token);
+      await unlink(filePath).catch(() => undefined);
+      await this.deleteJobQuietly(jobName);
+
+      if (!wasSuspended) {
+        try {
+          await this.setSuspended(name, false);
+        } catch (error) {
+          this.logger.error(
+            'Import completed but the server could not be restarted',
+            error instanceof Error ? error.stack : String(error),
+          );
+        }
+      }
+    }
+  }
+
+  private pruneImports(): void {
+    const now = Date.now();
+    for (const [token, entry] of this.imports) {
+      if (entry.expiresAt <= now) {
+        this.imports.delete(token);
+        void unlink(entry.path).catch(() => undefined);
+      }
+    }
+  }
+
   private async runRestore(
     server: FactorioServer,
     name: string,
@@ -843,6 +1013,55 @@ function restoreJobName(serverName: string): string {
   return `${serverName.slice(0, 40)}-restore-${suffix}`;
 }
 
+async function writeLimited(body: Readable, path: string): Promise<void> {
+  let total = 0;
+  const limiter = new Transform({
+    transform(chunk, _encoding, callback) {
+      total += chunk.length;
+      if (total > MAX_IMPORT_BYTES) {
+        callback(new PayloadTooLargeException('Save file is larger than 1 GiB'));
+        return;
+      }
+      callback(null, chunk);
+    },
+  });
+
+  try {
+    await pipeline(body, limiter, createWriteStream(path));
+  } catch (error) {
+    if (error instanceof PayloadTooLargeException) {
+      throw error;
+    }
+    throw new BadRequestException('Could not read the uploaded save');
+  }
+}
+
+async function hasZipMagic(path: string): Promise<boolean> {
+  const handle = await open(path, 'r');
+  try {
+    const header = Buffer.alloc(4);
+    const { bytesRead } = await handle.read(header, 0, 4, 0);
+    return (
+      bytesRead === 4 &&
+      header[0] === 0x50 &&
+      header[1] === 0x4b &&
+      header[2] === 0x03 &&
+      header[3] === 0x04
+    );
+  } finally {
+    await handle.close();
+  }
+}
+
+function importJobName(serverName: string): string {
+  const suffix = Date.now().toString(36).slice(-6);
+  return `${serverName.slice(0, 40)}-import-${suffix}`;
+}
+
+function importUrl(serverName: string, token: string): string {
+  return `${API_INTERNAL_URL}/api/servers/${encodeURIComponent(serverName)}/imports/${encodeURIComponent(token)}`;
+}
+
 function parseBackupLine(line: string): ServerBackup | undefined {
   const [name, size, mtime] = line.trim().split(/\s+/);
   if (name === undefined || !name.endsWith('.zip')) {
@@ -953,6 +1172,73 @@ function buildRestoreJob(
               env: [
                 { name: 'SAVE_FILE', value: file },
                 { name: 'TARGET_SAVE', value: save },
+              ],
+              volumeMounts: [
+                { name: 'data', mountPath: '/factorio' },
+              ],
+              securityContext: {
+                allowPrivilegeEscalation: false,
+                readOnlyRootFilesystem: true,
+                capabilities: { drop: ['ALL'] },
+              },
+            },
+          ],
+          volumes: [
+            {
+              name: 'data',
+              persistentVolumeClaim: {
+                claimName: `${server.metadata.name}-data`,
+              },
+            },
+          ],
+        },
+      },
+    },
+  } as V1Job;
+}
+
+function buildImportJob(
+  server: FactorioServer,
+  importURL: string,
+  jobName: string,
+  ownerReference: V1OwnerReference,
+): V1Job {
+  const namespace = server.metadata.namespace ?? 'default';
+  const labels = {
+    app: 'factorio-import',
+    'factorio.dev/server': server.metadata.name,
+  };
+
+  return {
+    apiVersion: 'batch/v1',
+    kind: 'Job',
+    metadata: {
+      name: jobName,
+      namespace,
+      labels,
+      ownerReferences: [ownerReference],
+    },
+    spec: {
+      backoffLimit: 1,
+      ttlSecondsAfterFinished: 300,
+      template: {
+        metadata: { labels },
+        spec: {
+          restartPolicy: 'Never',
+          securityContext: {
+            runAsNonRoot: true,
+            runAsUser: 845,
+            runAsGroup: 845,
+            seccompProfile: { type: 'RuntimeDefault' },
+          },
+          containers: [
+            {
+              name: 'import',
+              image: 'busybox:1.36',
+              command: ['sh', '-c', IMPORT_SCRIPT],
+              env: [
+                { name: 'IMPORT_URL', value: importURL },
+                { name: 'TARGET_SAVE', value: PRIMARY_SAVE_NAME },
               ],
               volumeMounts: [
                 { name: 'data', mountPath: '/factorio' },

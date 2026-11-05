@@ -1,7 +1,12 @@
-import { BadRequestException, NotFoundException } from '@nestjs/common';
+import {
+  BadRequestException,
+  NotFoundException,
+  PayloadTooLargeException,
+} from '@nestjs/common';
 import { Test, type TestingModule } from '@nestjs/testing';
 import { ApiException } from '@kubernetes/client-node';
 import type { FactorioServer } from '@factorio/shared';
+import { Readable } from 'node:stream';
 
 import { KubernetesService } from '../kubernetes/kubernetes.service.js';
 import { ServersService } from './servers.service.js';
@@ -538,6 +543,106 @@ describe('ServersService', () => {
         }),
       }),
     );
+  });
+
+  it('imports a save through a Job and restarts the server', async () => {
+    const server = {
+      apiVersion: 'games.dev.streamixs.com/v1alpha1',
+      kind: 'FactorioServer',
+      metadata: {
+        name: 'my-server',
+        namespace: 'games',
+        uid: 'uid-1',
+      },
+      spec: {
+        version: '2.1.24',
+        suspended: false,
+      },
+    };
+    getNamespacedCustomObject.mockResolvedValue(server);
+    replaceNamespacedCustomObject.mockImplementation(
+      (request: { body: FactorioServer }) => Promise.resolve(request.body),
+    );
+    listNamespacedPod.mockResolvedValue({ items: [] });
+    createNamespacedJob.mockResolvedValue({});
+    readNamespacedJob.mockResolvedValue({ status: { succeeded: 1 } });
+    deleteNamespacedJob.mockResolvedValue({});
+
+    const result = await service.importSave(
+      'my-server',
+      Readable.from([Buffer.from([0x50, 0x4b, 0x03, 0x04, 0, 0, 0, 0])]),
+      '8',
+    );
+
+    expect(result.job).toContain('my-server-import-');
+
+    await vi.waitFor(() => {
+      expect(createNamespacedJob).toHaveBeenCalled();
+      expect(replaceNamespacedCustomObject).toHaveBeenCalledTimes(2);
+      expect(deleteNamespacedJob).toHaveBeenCalled();
+    });
+
+    expect(createNamespacedJob).toHaveBeenCalledWith(
+      expect.objectContaining({
+        namespace: 'games',
+        body: expect.objectContaining({
+          spec: expect.objectContaining({
+            template: expect.objectContaining({
+              spec: expect.objectContaining({
+                containers: [
+                  expect.objectContaining({
+                    env: [
+                      expect.objectContaining({
+                        name: 'IMPORT_URL',
+                        value: expect.stringContaining(
+                          '/api/servers/my-server/imports/',
+                        ),
+                      }),
+                      { name: 'TARGET_SAVE', value: '_autosave1.zip' },
+                    ],
+                  }),
+                ],
+                volumes: [
+                  {
+                    name: 'data',
+                    persistentVolumeClaim: { claimName: 'my-server-data' },
+                  },
+                ],
+              }),
+            }),
+          }),
+        }),
+      }),
+    );
+  });
+
+  it('rejects an import that is not a zip', async () => {
+    getNamespacedCustomObject.mockResolvedValue({
+      metadata: { name: 'my-server', namespace: 'games' },
+      spec: { version: '2.1.24' },
+    });
+
+    await expect(
+      service.importSave(
+        'my-server',
+        Readable.from([Buffer.from('not a zip')]),
+        '9',
+      ),
+    ).rejects.toBeInstanceOf(BadRequestException);
+
+    expect(createNamespacedJob).not.toHaveBeenCalled();
+  });
+
+  it('rejects a save larger than the import limit', async () => {
+    await expect(
+      service.importSave(
+        'my-server',
+        Readable.from([]),
+        String(2 * 1024 * 1024 * 1024),
+      ),
+    ).rejects.toBeInstanceOf(PayloadTooLargeException);
+
+    expect(getNamespacedCustomObject).not.toHaveBeenCalled();
   });
 
   it('returns the service connection details', async () => {
