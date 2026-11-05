@@ -214,6 +214,18 @@ export interface CreateFactorioServerInput {
   mapSettings?: MapSettings;
   storage?: StorageSettings;
   service?: ServiceSettings;
+  credentials?: CredentialsInput;
+}
+
+export interface CredentialsInput {
+  gamePassword?: string | null;
+  password?: string | null;
+  token?: string | null;
+}
+
+export interface UpdateFactorioServerInput {
+  spec: FactorioServerSpec;
+  credentials?: CredentialsInput;
 }
 
 export function findCondition(
@@ -229,3 +241,5 @@ export function conditionStatus(
 ): ConditionStatus | undefined {
   return findCondition(server, type)?.status;
 }
+
+export * from "./schemas.js";
