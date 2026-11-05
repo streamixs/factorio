@@ -157,13 +157,6 @@ export const storageSettingsSchema = z.strictObject({
   storageClassName: z.string().min(1).optional(),
 });
 
-export const backupSettingsSchema = z.strictObject({
-  enabled: optionalBoolean,
-  size: z.string().regex(quantityPattern, "must be a Kubernetes quantity").optional(),
-  intervalMinutes: z.number().int().min(1).optional(),
-  retention: z.number().int().min(1).optional(),
-});
-
 export const serviceSettingsSchema = z.strictObject({
   type: z.enum(["ClusterIP", "NodePort", "LoadBalancer"]).optional(),
 });
@@ -175,7 +168,6 @@ export const factorioServerSpecSchema = z.strictObject({
   mapGenSettings: mapGenSettingsSchema.optional(),
   mapSettings: mapSettingsSchema.optional(),
   storage: storageSettingsSchema.optional(),
-  backup: backupSettingsSchema.optional(),
   service: serviceSettingsSchema.optional(),
 });
 
