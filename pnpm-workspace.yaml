@@ -4,3 +4,5 @@ packages:
 allowBuilds:
   sharp: false
   unrs-resolver: true
+minimumReleaseAgeExclude:
+  - '@hookform/resolvers@7.0.3'
