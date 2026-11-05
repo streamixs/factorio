@@ -44,6 +44,7 @@ The Role in the target namespace allows:
 - `configmaps` get (effective settings)
 - `pods` list and `pods/log` get (logs)
 - `events` list (diagnostics)
+- `jobs` create/get/delete (backup restore)
 
 The API does not need `services`, `deployments` or pod write access; the agent
 owns those resources.
