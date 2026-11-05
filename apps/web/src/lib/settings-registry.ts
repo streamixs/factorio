@@ -185,7 +185,7 @@ export const SETTINGS_SECTIONS: SettingsSection[] = [
   },
   {
     id: "autosave",
-    title: "Sauvegarde",
+    title: "Sauvegarde automatique",
     badge: "Redémarre le serveur",
     groups: [
       {
@@ -624,10 +624,10 @@ export const SETTINGS_SECTIONS: SettingsSection[] = [
   },
   {
     id: "backup",
-    title: "Sauvegardes",
+    title: "Sauvegardes du serveur",
     badge: "Redémarre le serveur",
     description:
-      "Copies automatiques des saves sur un volume dédié. La première copie est créée au démarrage du sidecar.",
+      "Copies automatiques des saves sur un volume dédié. La première copie est créée au démarrage du sidecar, puis à chaque intervalle.",
     groups: [
       {
         fields: [

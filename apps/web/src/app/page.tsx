@@ -301,7 +301,7 @@ export default function Home() {
                             ).toLocaleDateString()}
                       </span>
                       <Separator className="col-span-2" />
-                      <div className="col-span-2 flex items-center justify-between gap-3 rounded-md bg-muted/50 px-3 py-2">
+                      <div className="col-span-2 flex items-center justify-between gap-3 pt-1">
                         <span className="text-xs text-muted-foreground">
                           Connexion
                         </span>

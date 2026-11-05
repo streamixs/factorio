@@ -108,6 +108,12 @@ function ServerDetail() {
     // this render, but the rule only sees the call chain into it.
     // eslint-disable-next-line react-hooks/set-state-in-effect
     void load();
+
+    const interval = setInterval(() => {
+      void load();
+    }, 30000);
+
+    return () => clearInterval(interval);
   }, [load]);
 
   async function handleToggle() {

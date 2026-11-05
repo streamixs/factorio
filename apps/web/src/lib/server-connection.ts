@@ -38,7 +38,10 @@ export function primaryGameAddress(
     port.nodePort !== undefined &&
     connection.nodeAddresses.length > 0
   ) {
-    return `${connection.nodeAddresses[0]}:${port.nodePort}/UDP`;
+    const nodeAddress =
+      connection.nodeAddresses.find((address) => !address.includes(":")) ??
+      connection.nodeAddresses[0];
+    return `${nodeAddress}:${port.nodePort}/UDP`;
   }
 
   if (connection.clusterIP !== undefined) {

@@ -51,6 +51,12 @@ export function BackupsPanel({
   useEffect(() => {
     // eslint-disable-next-line react-hooks/set-state-in-effect
     void load();
+
+    const interval = setInterval(() => {
+      void load();
+    }, 30000);
+
+    return () => clearInterval(interval);
   }, [load]);
 
   async function handleRestore(backup: ServerBackup) {
