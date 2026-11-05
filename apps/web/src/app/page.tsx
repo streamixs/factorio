@@ -1,7 +1,8 @@
 "use client";
 
+import Link from "next/link";
+import { useRouter } from "next/navigation";
 import {
-  conditionStatus,
   findCondition,
   type FactorioServer,
   type ServiceType,
@@ -14,6 +15,7 @@ import {
 } from "react";
 
 import { createServer, deleteServer, listServers, startServer, stopServer } from "@/lib/api";
+import { serverStatusBadge } from "@/lib/server-status";
 
 const SERVICE_TYPES: ServiceType[] = ["ClusterIP", "NodePort", "LoadBalancer"];
 
@@ -23,49 +25,8 @@ const inputClass =
 const labelClass =
   "flex flex-col gap-1 text-sm font-medium text-zinc-700 dark:text-zinc-300";
 
-function statusBadge(server: FactorioServer): {
-  label: string;
-  className: string;
-} {
-  if (server.spec.suspended === true) {
-    return {
-      label: "Stopped",
-      className:
-        "bg-sky-100 text-sky-700 dark:bg-sky-950 dark:text-sky-300",
-    };
-  }
-
-  if (conditionStatus(server, "Degraded") === "True") {
-    return {
-      label: "Degraded",
-      className:
-        "bg-red-100 text-red-700 dark:bg-red-950 dark:text-red-300",
-    };
-  }
-
-  if (conditionStatus(server, "Available") === "True") {
-    return {
-      label: "Available",
-      className:
-        "bg-emerald-100 text-emerald-700 dark:bg-emerald-950 dark:text-emerald-300",
-    };
-  }
-
-  if (conditionStatus(server, "Progressing") === "True") {
-    return {
-      label: "Starting",
-      className:
-        "bg-amber-100 text-amber-700 dark:bg-amber-950 dark:text-amber-300",
-    };
-  }
-
-  return {
-    label: "Unknown",
-    className: "bg-zinc-100 text-zinc-600 dark:bg-zinc-800 dark:text-zinc-300",
-  };
-}
-
 export default function Home() {
+  const router = useRouter();
   const [servers, setServers] = useState<FactorioServer[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -79,6 +40,7 @@ export default function Home() {
   const [seed, setSeed] = useState("");
   const [storageSize, setStorageSize] = useState("10Gi");
   const [serviceType, setServiceType] = useState<ServiceType>("ClusterIP");
+  const [gamePassword, setGamePassword] = useState("");
   const [creating, setCreating] = useState(false);
 
   const refresh = useCallback(async () => {
@@ -105,7 +67,7 @@ export default function Home() {
     setError(null);
 
     try {
-      await createServer({
+      const created = await createServer({
         name: name.trim(),
         version: version.trim() === "" ? undefined : version.trim(),
         server: {
@@ -121,12 +83,15 @@ export default function Home() {
           seed.trim() === "" ? undefined : { seed: Number(seed) },
         storage: { size: storageSize.trim() === "" ? undefined : storageSize },
         service: { type: serviceType },
+        credentials:
+          gamePassword === "" ? undefined : { gamePassword },
       });
 
       setName("");
       setDisplayName("");
       setSeed("");
-      await refresh();
+      setGamePassword("");
+      router.push(`/servers/${encodeURIComponent(created.metadata.name)}`);
     } catch (err) {
       setError(
         err instanceof Error ? err.message : "Unable to create the server",
@@ -222,7 +187,7 @@ export default function Home() {
           )}
 
           {servers.map((server) => {
-            const badge = statusBadge(server);
+            const badge = serverStatusBadge(server);
             const degraded = findCondition(server, "Degraded");
             const suspended = server.spec.suspended === true;
             const storage = server.spec.storage?.size ?? "10Gi";
@@ -238,9 +203,12 @@ export default function Home() {
               >
                 <div className="flex items-start justify-between gap-4">
                   <div className="min-w-0">
-                    <h3 className="truncate font-mono text-base font-medium">
+                    <Link
+                      href={`/servers/${encodeURIComponent(server.metadata.name)}`}
+                      className="block truncate font-mono text-base font-medium hover:underline"
+                    >
                       {server.metadata.name}
-                    </h3>
+                    </Link>
                     <p className="truncate text-sm text-zinc-500 dark:text-zinc-400">
                       {display} · v{server.spec.version ?? "unknown"}
                     </p>
@@ -408,6 +376,17 @@ export default function Home() {
                 </option>
               ))}
             </select>
+          </label>
+
+          <label className={labelClass}>
+            Game password (optional)
+            <input
+              className={inputClass}
+              type="password"
+              value={gamePassword}
+              onChange={(event) => setGamePassword(event.target.value)}
+              placeholder="Leave empty for no password"
+            />
           </label>
 
           <button

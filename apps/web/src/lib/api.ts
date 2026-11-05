@@ -1,6 +1,7 @@
 import type {
   CreateFactorioServerInput,
   FactorioServer,
+  UpdateFactorioServerInput,
 } from "@factorio/shared";
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:3001";
@@ -40,6 +41,20 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
 
 export function listServers(): Promise<FactorioServer[]> {
   return request<FactorioServer[]>("");
+}
+
+export function getServer(name: string): Promise<FactorioServer> {
+  return request<FactorioServer>(`/${encodeURIComponent(name)}`);
+}
+
+export function updateServer(
+  name: string,
+  input: UpdateFactorioServerInput,
+): Promise<FactorioServer> {
+  return request<FactorioServer>(`/${encodeURIComponent(name)}`, {
+    method: "PATCH",
+    body: JSON.stringify(input),
+  });
 }
 
 export function createServer(
