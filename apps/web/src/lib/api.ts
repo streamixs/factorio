@@ -1,6 +1,8 @@
 import type {
   CreateFactorioServerInput,
   FactorioServer,
+  ServerEvent,
+  ServerLogs,
   UpdateFactorioServerInput,
 } from "@factorio/shared";
 
@@ -80,4 +82,25 @@ export function stopServer(name: string): Promise<FactorioServer> {
   return request<FactorioServer>(`/${encodeURIComponent(name)}/stop`, {
     method: "POST",
   });
+}
+
+export function getServerLogs(
+  name: string,
+  options: { tailLines: number; previous: boolean },
+): Promise<ServerLogs> {
+  const params = new URLSearchParams({
+    tailLines: String(options.tailLines),
+  });
+
+  if (options.previous) {
+    params.set("previous", "true");
+  }
+
+  return request<ServerLogs>(
+    `/${encodeURIComponent(name)}/logs?${params.toString()}`,
+  );
+}
+
+export function getServerEvents(name: string): Promise<ServerEvent[]> {
+  return request<ServerEvent[]>(`/${encodeURIComponent(name)}/events`);
 }

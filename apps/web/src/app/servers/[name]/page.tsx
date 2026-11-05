@@ -8,7 +8,16 @@ import { Suspense, useCallback, useEffect, useState } from "react";
 import { deleteServer, getServer, startServer, stopServer } from "@/lib/api";
 import { serverStatusBadge } from "@/lib/server-status";
 
+import { EventsPanel, LogsPanel } from "./diagnostics";
 import { SettingsForm } from "./settings-form";
+
+const VIEWS = [
+  { id: "config", label: "Configuration" },
+  { id: "logs", label: "Logs" },
+  { id: "events", label: "Events" },
+] as const;
+
+type ViewId = (typeof VIEWS)[number]["id"];
 
 export default function ServerDetailPage() {
   return (
@@ -33,6 +42,7 @@ function ServerDetail() {
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [pending, setPending] = useState(false);
+  const [view, setView] = useState<ViewId>("config");
 
   const refresh = useCallback(async () => {
     if (name === "") {
@@ -200,10 +210,32 @@ function ServerDetail() {
         </div>
       )}
 
-      <SettingsForm
-        server={server}
-        onSaved={(updated) => setServer(updated)}
-      />
+      <div className="flex flex-wrap gap-1 rounded-xl border border-zinc-200 bg-white p-1 dark:border-zinc-800 dark:bg-zinc-900">
+        {VIEWS.map((item) => (
+          <button
+            key={item.id}
+            type="button"
+            onClick={() => setView(item.id)}
+            className={
+              view === item.id
+                ? "rounded-lg bg-zinc-900 px-3 py-1.5 text-sm font-medium text-white dark:bg-zinc-100 dark:text-zinc-900"
+                : "rounded-lg px-3 py-1.5 text-sm font-medium text-zinc-600 hover:bg-zinc-100 dark:text-zinc-300 dark:hover:bg-zinc-800"
+            }
+          >
+            {item.label}
+          </button>
+        ))}
+      </div>
+
+      <div className={view === "config" ? "" : "hidden"}>
+        <SettingsForm
+          server={server}
+          onSaved={(updated) => setServer(updated)}
+        />
+      </div>
+
+      {view === "logs" && <LogsPanel name={server.metadata.name} />}
+      {view === "events" && <EventsPanel name={server.metadata.name} />}
     </main>
   );
 }
