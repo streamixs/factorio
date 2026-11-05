@@ -2,6 +2,7 @@ import type {
   CreateFactorioServerInput,
   EffectiveSettings,
   FactorioServer,
+  ServerBackups,
   ServerEvent,
   ServerLogs,
   UpdateFactorioServerInput,
@@ -110,4 +111,22 @@ export function getServerEvents(name: string): Promise<ServerEvent[]> {
 
 export function getEffectiveSettings(name: string): Promise<EffectiveSettings> {
   return request<EffectiveSettings>(`/${encodeURIComponent(name)}/effective`);
+}
+
+export function getServerBackups(name: string): Promise<ServerBackups> {
+  return request<ServerBackups>(`/${encodeURIComponent(name)}/backups`);
+}
+
+export function backupDownloadUrl(name: string, file: string): string {
+  return `${API_URL}/api/servers/${encodeURIComponent(name)}/backups/${encodeURIComponent(file)}`;
+}
+
+export function restoreBackup(
+  name: string,
+  file: string,
+): Promise<{ save: string; job: string }> {
+  return request<{ save: string; job: string }>(
+    `/${encodeURIComponent(name)}/backups/${encodeURIComponent(file)}/restore`,
+    { method: "POST" },
+  );
 }

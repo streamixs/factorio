@@ -24,6 +24,7 @@ import {
 } from "@/lib/api";
 import { serverStatusBadge } from "@/lib/server-status";
 
+import { BackupsPanel } from "./backups";
 import { EventsPanel, LogsPanel } from "./diagnostics";
 import { SettingsForm } from "./settings-form";
 
@@ -31,6 +32,7 @@ const VIEWS = [
   { id: "config", label: "Configuration" },
   { id: "logs", label: "Logs" },
   { id: "events", label: "Events" },
+  { id: "backups", label: "Backups" },
 ] as const;
 
 export default function ServerDetailPage() {
@@ -288,6 +290,17 @@ function ServerDetail() {
 
         <TabsContent value="events" className="mt-4">
           <EventsPanel name={server.metadata.name} />
+        </TabsContent>
+
+        <TabsContent value="backups" className="mt-4">
+          <BackupsPanel
+            name={server.metadata.name}
+            onRestoreStarted={() => {
+              window.setTimeout(() => {
+                void load();
+              }, 15000);
+            }}
+          />
         </TabsContent>
       </Tabs>
     </main>
