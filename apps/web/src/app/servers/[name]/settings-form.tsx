@@ -7,7 +7,7 @@ import {
   type FactorioServer,
   type FactorioServerSpec,
 } from "@factorio/shared";
-import { useState } from "react";
+import { useState, useMemo } from "react";
 import {
   Controller,
   FormProvider,
@@ -55,6 +55,7 @@ import {
   RESOURCES,
   RESOURCE_FIELDS,
   SETTINGS_SECTIONS,
+  buildSections,
   diffAgainstDefaults,
   emptyCredentials,
   mergeWithDefaults,
@@ -62,6 +63,12 @@ import {
   type FormValues,
   type SettingsSection,
 } from "@/lib/settings-registry";
+import {
+  describeBounds,
+  MAP_GEN_SIZE_VALUES,
+  type JsonSchemaNode,
+  type SettingsSchema,
+} from "@/lib/settings-schema";
 
 const DEFAULT_SELECT_VALUE = "__default__";
 
@@ -129,13 +136,19 @@ export function SettingsForm({
   server,
   defaults,
   effective,
+  schema,
   onSaved,
 }: {
   server: FactorioServer;
   defaults: FactorioServerSpec;
   effective: FactorioServerSpec;
+  schema: SettingsSchema | null;
   onSaved: (server: FactorioServer, effective: FactorioServerSpec) => void;
 }) {
+  const sections = useMemo(
+    () => buildSections(schema, defaults),
+    [schema, defaults],
+  );
   const form = useForm<FormValues>({
     resolver: zodResolver(formSchema),
     defaultValues: {
@@ -146,8 +159,7 @@ export function SettingsForm({
   });
   const { handleSubmit, reset, formState } = form;
 
-  const [tab, setTab] = useState<string>(SETTINGS_SECTIONS[0].id);
-  const [rawEditors, setRawEditors] = useState<RawEditors>(() =>
+  const [tab, setTab] = useState<string>(SETTINGS_SECTIONS[0].id);  const [rawEditors, setRawEditors] = useState<RawEditors>(() =>
     rawEditorsFrom(effective),
   );
   const [initialRaw, setInitialRaw] = useState<RawEditors>(() =>
@@ -282,14 +294,14 @@ export function SettingsForm({
           className="flex-col"
         >
           <TabsList className="flex h-auto w-full flex-wrap justify-start">
-            {SETTINGS_SECTIONS.map((section) => (
+            {sections.map((section) => (
               <TabsTrigger key={section.id} value={section.id}>
                 {section.title}
               </TabsTrigger>
             ))}
           </TabsList>
 
-          {SETTINGS_SECTIONS.map((section) => (
+          {sections.map((section) => (
             <TabsContent
               key={section.id}
               value={section.id}
@@ -420,6 +432,7 @@ function FieldRenderer({
       name={path}
       render={({ field, fieldState }) => {
         const error = fieldState.error?.message;
+        const bounds = describeBounds(definition.schema);
         const content = (
           <>
             {definition.kind === "switch" ? (
@@ -448,6 +461,9 @@ function FieldRenderer({
                 {definition.help !== undefined && (
                   <FieldDescription>{definition.help}</FieldDescription>
                 )}
+                {bounds !== undefined && (
+                  <FieldDescription>{bounds}</FieldDescription>
+                )}
                 {error !== undefined && <FieldError>{error}</FieldError>}
               </Field>
             )}
@@ -464,6 +480,84 @@ function FieldRenderer({
   );
 }
 
+function isIntegerNode(node?: JsonSchemaNode): boolean {
+  return (
+    node?.type === "integer" ||
+    node?.format === "int32" ||
+    node?.format === "int64"
+  );
+}
+
+function clampNumber(
+  value: unknown,
+  node?: JsonSchemaNode,
+): number | undefined {
+  const number = typeof value === "number" ? value : Number(value);
+  if (!Number.isFinite(number)) {
+    return undefined;
+  }
+
+  let next = number;
+  if (node?.minimum !== undefined) {
+    next = Math.max(next, node.minimum);
+  }
+  if (node?.maximum !== undefined) {
+    next = Math.min(next, node.maximum);
+  }
+  if (isIntegerNode(node)) {
+    next = Math.round(next);
+  }
+  return next;
+}
+
+function smallRangeOptions(
+  node?: JsonSchemaNode,
+): { value: string; label: string }[] | undefined {
+  if (
+    node?.minimum === undefined ||
+    node.maximum === undefined ||
+    !isIntegerNode(node)
+  ) {
+    return undefined;
+  }
+
+  const min = Math.ceil(node.minimum);
+  const max = Math.floor(node.maximum);
+  if (max < min || max - min > 12) {
+    return undefined;
+  }
+
+  return Array.from({ length: max - min + 1 }, (_, index) => {
+    const value = min + index;
+    return { value: String(value), label: String(value) };
+  });
+}
+
+function selectOptions(
+  definition: FieldDefinition,
+  node?: JsonSchemaNode,
+): { value: string; label: string }[] {
+  if (definition.options !== undefined) {
+    return definition.options;
+  }
+  if (node?.enum !== undefined) {
+    return [
+      { value: "", label: "Défaut" },
+      ...node.enum.map((value) => ({
+        value: String(value),
+        label: String(value),
+      })),
+    ];
+  }
+
+  const range = smallRangeOptions(node);
+  if (range !== undefined) {
+    return [{ value: "", label: "Défaut" }, ...range];
+  }
+
+  return [];
+}
+
 function renderControl(
   definition: FieldDefinition,
   field: {
@@ -473,13 +567,44 @@ function renderControl(
   },
   invalid: boolean,
 ) {
-  switch (definition.kind) {
-    case "number":
-      return (
+  const node = definition.schema;
+  const listId = `suggestions-${definition.path.replace(/[^a-zA-Z0-9]/g, "-")}`;
+  const suggestions = definition.suggestions ?? [];
+  const datalist =
+    suggestions.length === 0 ? null : (
+      <datalist id={listId}>
+        {suggestions.map((value) => (
+          <option key={value} value={value} />
+        ))}
+      </datalist>
+    );
+
+  const isNumber = definition.kind === "number" ||
+    node?.type === "integer" ||
+    node?.type === "number";
+  if (isNumber) {
+    const options = definition.options === undefined
+      ? smallRangeOptions(node)
+      : undefined;
+    const hasEnum = node?.enum !== undefined;
+    const useSelect =
+      hasEnum ||
+      (definition.kind === "select" && definition.options !== undefined) ||
+      options !== undefined;
+
+    if (useSelect) {
+      return renderSelect(definition, field, invalid, node);
+    }
+
+    return (
+      <>
         <Input
           id={definition.path}
           type="number"
-          step={definition.step ?? "1"}
+          min={node?.minimum}
+          max={node?.maximum}
+          step={definition.step ?? (isIntegerNode(node) ? "1" : "any")}
+          list={suggestions.length > 0 ? listId : undefined}
           placeholder={definition.placeholder}
           value={
             typeof field.value === "number" || typeof field.value === "string"
@@ -489,98 +614,140 @@ function renderControl(
           onChange={(event) =>
             field.onChange(numberOrUndefined(event.target.value))
           }
-          onBlur={field.onBlur}
+          onBlur={() => {
+            const clamped = clampNumber(field.value, node);
+            if (clamped !== field.value) {
+              field.onChange(clamped);
+            }
+            field.onBlur();
+          }}
           aria-invalid={invalid}
         />
-      );
-    case "textarea":
-      return (
-        <Textarea
-          id={definition.path}
-          placeholder={definition.placeholder}
-          value={typeof field.value === "string" ? field.value : ""}
-          onChange={(event) => field.onChange(event.target.value)}
-          onBlur={field.onBlur}
-          aria-invalid={invalid}
-        />
-      );
-    case "tags":
-      return (
-        <Input
-          id={definition.path}
-          placeholder={definition.placeholder}
-          value={
-            Array.isArray(field.value) ? field.value.join(", ") : ""
-          }
-          onChange={(event) =>
-            field.onChange(
-              event.target.value
-                .split(",")
-                .map((tag) => tag.trim())
-                .filter((tag) => tag !== ""),
-            )
-          }
-          onBlur={field.onBlur}
-          aria-invalid={invalid}
-        />
-      );
-    case "select": {
-      const options = (definition.options ?? []).map((option) => ({
-        ...option,
-        value: option.value === "" ? DEFAULT_SELECT_VALUE : option.value,
-      }));
-      const current =
-        field.value === undefined ||
-        field.value === null ||
-        field.value === ""
-          ? DEFAULT_SELECT_VALUE
-          : String(field.value);
-
-      return (
-        <Select
-          items={options}
-          value={current}
-          onValueChange={(value) =>
-            field.onChange(
-              value === DEFAULT_SELECT_VALUE
-                ? undefined
-                : definition.numeric
-                  ? Number(value)
-                  : value,
-            )
-          }
-        >
-          <SelectTrigger id={definition.path} aria-invalid={invalid}>
-            <SelectValue />
-          </SelectTrigger>
-          <SelectContent>
-            {options.map((option) => (
-              <SelectItem key={option.value} value={option.value}>
-                {option.label}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
-      );
-    }
-    default:
-      return (
-        <Input
-          id={definition.path}
-          placeholder={definition.placeholder}
-          value={typeof field.value === "string" ? field.value : ""}
-          onChange={(event) =>
-            field.onChange(
-              definition.emptyAsUndefined && event.target.value === ""
-                ? undefined
-                : event.target.value,
-            )
-          }
-          onBlur={field.onBlur}
-          aria-invalid={invalid}
-        />
-      );
+        {datalist}
+      </>
+    );
   }
+
+  if (definition.kind === "select") {
+    return renderSelect(definition, field, invalid, node);
+  }
+
+  if (definition.kind === "textarea") {
+    return (
+      <Textarea
+        id={definition.path}
+        placeholder={definition.placeholder}
+        value={typeof field.value === "string" ? field.value : ""}
+        onChange={(event) => field.onChange(event.target.value)}
+        onBlur={field.onBlur}
+        aria-invalid={invalid}
+      />
+    );
+  }
+
+  if (definition.kind === "tags") {
+    return (
+      <Input
+        id={definition.path}
+        placeholder={definition.placeholder}
+        value={Array.isArray(field.value) ? field.value.join(", ") : ""}
+        onChange={(event) =>
+          field.onChange(
+            event.target.value
+              .split(",")
+              .map((tag) => tag.trim())
+              .filter((tag) => tag !== ""),
+          )
+        }
+        onBlur={field.onBlur}
+        aria-invalid={invalid}
+      />
+    );
+  }
+
+  return (
+    <>
+      <Input
+        id={definition.path}
+        list={suggestions.length > 0 ? listId : undefined}
+        placeholder={definition.placeholder}
+        value={typeof field.value === "string" ? field.value : ""}
+        onChange={(event) =>
+          field.onChange(
+            definition.emptyAsUndefined && event.target.value === ""
+              ? undefined
+              : event.target.value,
+          )
+        }
+        onBlur={field.onBlur}
+        aria-invalid={invalid}
+      />
+      {datalist}
+    </>
+  );
+}
+
+function renderSelect(
+  definition: FieldDefinition,
+  field: {
+    value: unknown;
+    onChange: (value: unknown) => void;
+    onBlur: () => void;
+  },
+  invalid: boolean,
+  node?: JsonSchemaNode,
+) {
+  const options = selectOptions(definition, node);
+  const normalized = options.map((option) => ({
+    ...option,
+    value: option.value === "" ? DEFAULT_SELECT_VALUE : option.value,
+  }));
+  if (!normalized.some((option) => option.value === DEFAULT_SELECT_VALUE)) {
+    normalized.unshift({ value: DEFAULT_SELECT_VALUE, label: "Défaut" });
+  }
+  const current =
+    field.value === undefined || field.value === null || field.value === ""
+      ? DEFAULT_SELECT_VALUE
+      : String(field.value);
+
+  if (
+    current !== DEFAULT_SELECT_VALUE &&
+    !normalized.some((option) => option.value === current)
+  ) {
+    normalized.push({
+      value: current,
+      label: `Personnalisé (${current})`,
+    });
+  }
+
+  const numeric = definition.numeric === true ||
+    node?.type === "integer" ||
+    node?.type === "number";
+
+  return (
+    <Select
+      items={normalized}
+      value={current}
+      onValueChange={(value) => {
+        if (value === DEFAULT_SELECT_VALUE) {
+          field.onChange(definition.defaultValue);
+          return;
+        }
+        field.onChange(numeric ? Number(value) : value);
+      }}
+    >
+      <SelectTrigger id={definition.path} aria-invalid={invalid}>
+        <SelectValue />
+      </SelectTrigger>
+      <SelectContent>
+        {normalized.map((option) => (
+          <SelectItem key={option.value} value={option.value}>
+            {option.label}
+          </SelectItem>
+        ))}
+      </SelectContent>
+    </Select>
+  );
 }
 
 function SecretField({
@@ -636,8 +803,17 @@ function SecretField({
   );
 }
 
+const RICHNESS_RESOURCES = new Set([
+  "coal",
+  "stone",
+  "copper-ore",
+  "iron-ore",
+  "uranium-ore",
+  "crude-oil",
+]);
+
 function AutoplaceTable() {
-  const { register } = useFormContext<FormValues>();
+  const { control } = useFormContext<FormValues>();
 
   return (
     <div className="flex flex-col gap-3">
@@ -645,6 +821,10 @@ function AutoplaceTable() {
         <h3 className="text-sm font-semibold">Ressources (autoplace)</h3>
         <Separator className="flex-1" />
       </div>
+      <p className="text-xs text-muted-foreground">
+        Valeurs du générateur Factorio (0 à 6). La richesse n&apos;est pas
+        utilisée par l&apos;eau, les arbres ni les bases ennemies.
+      </p>
       <div className="overflow-x-auto">
         <table className="w-full min-w-[520px] text-sm">
           <thead>
@@ -659,28 +839,84 @@ function AutoplaceTable() {
             {RESOURCES.map((resource) => (
               <tr key={resource}>
                 <td className="py-1 pr-3 font-mono text-xs">{resource}</td>
-                {RESOURCE_FIELDS.map((field) => (
-                  <td key={field} className="p-1">
-                    <Input
-                      type="number"
-                      step="0.1"
-                      className="h-8"
-                      {...register(
-                        `spec.mapGenSettings.autoplaceControls.${resource}.${field}` as FieldPath<FormValues>,
-                        {
-                          setValueAs: (value: unknown) =>
-                            value === "" ? undefined : Number(value),
-                        },
-                      )}
-                    />
-                  </td>
-                ))}
+                {RESOURCE_FIELDS.map((field) => {
+                  if (field === "richness" && !RICHNESS_RESOURCES.has(resource)) {
+                    return (
+                      <td
+                        key={field}
+                        className="p-1 text-center text-xs text-muted-foreground"
+                      >
+                        —
+                      </td>
+                    );
+                  }
+
+                  const path =
+                    `spec.mapGenSettings.autoplaceControls.${resource}.${field}` as FieldPath<FormValues>;
+
+                  return (
+                    <td key={field} className="p-1">
+                      <Controller
+                        control={control}
+                        name={path}
+                        render={({ field: controller }) => (
+                          <AutoplaceSelect
+                            value={controller.value}
+                            onChange={controller.onChange}
+                            onBlur={controller.onBlur}
+                          />
+                        )}
+                      />
+                    </td>
+                  );
+                })}
               </tr>
             ))}
           </tbody>
         </table>
       </div>
     </div>
+  );
+}
+
+function AutoplaceSelect({
+  value,
+  onChange,
+  onBlur,
+}: {
+  value: unknown;
+  onChange: (value: unknown) => void;
+  onBlur: () => void;
+}) {
+  const current =
+    value === undefined || value === null || value === ""
+      ? ""
+      : String(value);
+  const hasCurrent = MAP_GEN_SIZE_VALUES.some(
+    (item) => String(item.value) === current,
+  );
+
+  return (
+    <select
+      value={current}
+      onChange={(event) =>
+        onChange(
+          event.target.value === "" ? undefined : Number(event.target.value),
+        )
+      }
+      onBlur={onBlur}
+      className="h-8 w-full rounded-md border border-input bg-background px-2 text-xs shadow-xs outline-none focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50"
+    >
+      <option value="">Défaut</option>
+      {MAP_GEN_SIZE_VALUES.map((item) => (
+        <option key={item.value} value={String(item.value)}>
+          {item.label}
+        </option>
+      ))}
+      {current !== "" && !hasCurrent && (
+        <option value={current}>Personnalisé ({current})</option>
+      )}
+    </select>
   );
 }
 

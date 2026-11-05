@@ -11,6 +11,8 @@ import type {
   UpdateFactorioServerInput,
 } from "@factorio/shared";
 
+import type { SettingsSchema } from "./settings-schema";
+
 // Empty by default: in the cluster the Next server proxies /api to the API
 // Service. In local development .env.local points at http://localhost:3001.
 const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "";
@@ -114,6 +116,10 @@ export function getServerEvents(name: string): Promise<ServerEvent[]> {
 
 export function getEffectiveSettings(name: string): Promise<EffectiveSettings> {
   return request<EffectiveSettings>(`/${encodeURIComponent(name)}/effective`);
+}
+
+export function getSettingsSchema(): Promise<SettingsSchema> {
+  return request<SettingsSchema>("/schema");
 }
 
 export function getServerConnection(name: string): Promise<ServerConnection> {

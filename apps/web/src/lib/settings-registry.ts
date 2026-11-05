@@ -1,5 +1,14 @@
 import type { FactorioServerSpec } from "@factorio/shared";
 
+import {
+  humanizeName,
+  MAP_GEN_SIZE_VALUES,
+  schemaAt,
+  type JsonSchemaNode,
+  type SettingsSchema,
+  valueAtPath,
+} from "./settings-schema";
+
 export type FieldKind =
   | "text"
   | "number"
@@ -26,6 +35,12 @@ export interface FieldDefinition {
   options?: SelectOption[];
   wide?: boolean;
   clearPath?: string;
+  /** Autocomplete values shown in the field's datalist. */
+  suggestions?: string[];
+  /** OpenAPI schema node resolved from the CRD. */
+  schema?: JsonSchemaNode;
+  /** Factorio default, used by the "Défaut" option and suggestions. */
+  defaultValue?: unknown;
 }
 
 export interface FieldGroup {
@@ -68,6 +83,87 @@ const DIFFICULTY_OPTIONS: SelectOption[] = [
   { value: "0", label: "Normal" },
   { value: "1", label: "Coûteux" },
 ];
+
+/** Factorio GUI positions for MapGenSize (0 or 1/6..6). */
+export const MAP_GEN_SIZE_OPTIONS: SelectOption[] = MAP_GEN_SIZE_VALUES.map(
+  (item) => ({ value: String(item.value), label: item.label }),
+);
+
+/**
+ * Autocomplete values for fields where Factorio has no documented hard
+ * maximum. The values are the defaults, GUI positions or common presets.
+ */
+const SUGGESTIONS: Record<string, string[]> = {
+  "spec.version": ["2.1.24"],
+  "spec.server.access.maxPlayers": ["0", "4", "8", "16", "32", "64"],
+  "spec.server.autoSave.interval": ["0", "5", "10", "15", "20", "30", "60"],
+  "spec.server.autoSave.slots": ["1", "3", "5", "10"],
+  "spec.server.playerManagement.afkAutokickInterval": [
+    "0",
+    "5",
+    "10",
+    "30",
+    "60",
+  ],
+  "spec.server.playerManagement.maxUploadSlots": ["0", "4", "8", "16"],
+  "spec.server.playerManagement.maxUploadKilobytesPerSecond": [
+    "0",
+    "128",
+    "256",
+    "512",
+    "1024",
+  ],
+  "spec.server.playerManagement.minimumLatencyInTicks": ["0", "2", "5", "10"],
+  "spec.server.playerManagement.maxHeartbeatsPerSecond": [
+    "6",
+    "30",
+    "60",
+    "90",
+    "120",
+    "180",
+    "240",
+  ],
+  "spec.mapGenSettings.width": ["0", "128", "256", "512", "1024", "2048"],
+  "spec.mapGenSettings.height": ["0", "128", "256", "512", "1024", "2048"],
+  "spec.mapGenSettings.cliffSettings.cliffElevation0": ["0", "10", "20", "40"],
+  "spec.mapGenSettings.cliffSettings.cliffElevationInterval": [
+    "10",
+    "20",
+    "40",
+    "80",
+  ],
+  "spec.mapGenSettings.cliffSettings.richness": ["0", "1", "5", "10"],
+  "spec.mapSettings.pollution.diffusionRatio": ["0", "0.02", "0.05", "0.1"],
+  "spec.mapSettings.pollution.minToDiffuse": ["0", "15", "30", "50"],
+  "spec.mapSettings.pollution.ageing": ["0", "0.5", "1", "2"],
+  "spec.mapSettings.pollution.expectedMaxPerChunk": ["50", "150", "300"],
+  "spec.mapSettings.pollution.minToShowPerChunk": ["0", "50", "100"],
+  "spec.mapSettings.enemyEvolution.timeFactor": [
+    "0",
+    "0.000002",
+    "0.000004",
+    "0.00001",
+    "0.00002",
+  ],
+  "spec.mapSettings.difficultySettings.technologyPriceMultiplier": [
+    "1",
+    "2",
+    "4",
+    "10",
+  ],
+  "spec.mapSettings.difficultySettings.spoilTimeModifier": [
+    "0.5",
+    "1",
+    "2",
+    "4",
+  ],
+  "spec.mapSettings.maxFailedBehaviorCount": ["0", "1", "3", "5", "10"],
+  "spec.resources.cpuRequest": ["250m", "500m", "1", "2"],
+  "spec.resources.cpuLimit": ["1", "2", "4", "8"],
+  "spec.resources.memoryRequest": ["512Mi", "1Gi", "2Gi", "4Gi"],
+  "spec.resources.memoryLimit": ["2Gi", "4Gi", "8Gi", "16Gi"],
+  "spec.storage.size": ["5Gi", "10Gi", "20Gi", "50Gi", "100Gi"],
+};
 
 export const SETTINGS_SECTIONS: SettingsSection[] = [
   {
@@ -281,23 +377,26 @@ export const SETTINGS_SECTIONS: SettingsSection[] = [
           {
             path: "spec.mapGenSettings.terrainSegmentation",
             label: "Terrain",
-            kind: "number",
-            step: "0.1",
-            placeholder: "1",
+            kind: "select",
+            numeric: true,
+            options: MAP_GEN_SIZE_OPTIONS,
+            help: "Échelle du générateur Factorio (0 à 6).",
           },
           {
             path: "spec.mapGenSettings.water",
             label: "Eau",
-            kind: "number",
-            step: "0.1",
-            placeholder: "1",
+            kind: "select",
+            numeric: true,
+            options: MAP_GEN_SIZE_OPTIONS,
+            help: "Échelle du générateur Factorio (0 à 6).",
           },
           {
             path: "spec.mapGenSettings.startingArea",
             label: "Zone de départ",
-            kind: "number",
-            step: "0.1",
-            placeholder: "1",
+            kind: "select",
+            numeric: true,
+            options: MAP_GEN_SIZE_OPTIONS,
+            help: "Échelle du générateur Factorio (0 à 6).",
           },
           {
             path: "spec.mapGenSettings.width",
@@ -665,6 +764,156 @@ export const SETTINGS_SECTIONS: SettingsSection[] = [
     groups: [],
   },
 ];
+
+function unique(values: string[]): string[] {
+  return [...new Set(values.filter((value) => value !== ""))];
+}
+
+function autoKind(node: JsonSchemaNode): FieldKind {
+  if (node.enum !== undefined) {
+    return "select";
+  }
+  if (node.type === "boolean") {
+    return "switch";
+  }
+  if (node.type === "integer" || node.type === "number") {
+    return "number";
+  }
+  return "text";
+}
+
+function collectLeaves(
+  node: JsonSchemaNode,
+  prefix: string,
+  out: { path: string; key: string; node: JsonSchemaNode }[],
+): void {
+  if (node.properties === undefined) {
+    return;
+  }
+
+  for (const [key, child] of Object.entries(node.properties)) {
+    if (key === "raw" || /[Rr]ef$/.test(key)) {
+      continue;
+    }
+
+    const path = `${prefix}.${key}`;
+    if (child.properties !== undefined) {
+      collectLeaves(child, path, out);
+      continue;
+    }
+    if (child.type === "array" || child.items !== undefined) {
+      continue;
+    }
+    if (child.additionalProperties !== undefined &&
+        child.additionalProperties !== false) {
+      continue;
+    }
+    if (child.type === undefined && child.enum === undefined) {
+      continue;
+    }
+
+    out.push({ path, key, node: child });
+  }
+}
+
+function buildAutoSection(
+  schema: SettingsSchema | null,
+  defaults: FactorioServerSpec,
+  sections: SettingsSection[],
+): SettingsSection | null {
+  if (schema === null) {
+    return null;
+  }
+
+  const known = new Set(
+    sections.flatMap((section) =>
+      section.groups.flatMap((group) => group.fields.map((field) => field.path)),
+    ),
+  );
+  const leaves: { path: string; key: string; node: JsonSchemaNode }[] = [];
+  collectLeaves(schema, "spec", leaves);
+
+  const groups = new Map<string, FieldDefinition[]>();
+  for (const leaf of leaves) {
+    if (known.has(leaf.path) || leaf.path === "spec.suspended") {
+      continue;
+    }
+
+    const defaultValue = valueAtPath(defaults, leaf.path);
+    const field: FieldDefinition = {
+      path: leaf.path,
+      label: humanizeName(leaf.key),
+      kind: autoKind(leaf.node),
+      help: leaf.node.description,
+      schema: leaf.node,
+      defaultValue,
+      suggestions: unique([
+        ...(SUGGESTIONS[leaf.path] ?? []),
+        ...(defaultValue === undefined ? [] : [String(defaultValue)]),
+      ]),
+      numeric:
+        leaf.node.type === "integer" || leaf.node.type === "number",
+    };
+
+    const parent = leaf.path.split(".").slice(0, -1).join(".");
+    const group = groups.get(parent) ?? [];
+    group.push(field);
+    groups.set(parent, group);
+  }
+
+  if (groups.size === 0) {
+    return null;
+  }
+
+  return {
+    id: "auto",
+    title: "Autres paramètres",
+    badge: "Généré depuis le CRD",
+    description:
+      "Champs présents dans le schéma du CRD mais pas encore dans le catalogue. Ils sont rendus automatiquement.",
+    groups: [...groups.entries()].map(([parent, fields]) => ({
+      title: humanizeName(parent.split(".").slice(-1)[0] ?? parent),
+      fields,
+    })),
+  };
+}
+
+/**
+ * Builds the visible sections from the curated catalog and the CRD schema.
+ * Fields keep their curated labels/groups; types, bounds, enums and defaults
+ * come from the schema. Unknown schema fields are appended automatically.
+ */
+export function buildSections(
+  schema: SettingsSchema | null,
+  defaults: FactorioServerSpec,
+): SettingsSection[] {
+  const sections: SettingsSection[] = SETTINGS_SECTIONS.map((section) => ({
+    ...section,
+    groups: section.groups.map((group) => ({
+      ...group,
+      fields: group.fields.map((field) => {
+        const node = schemaAt(schema, field.path);
+        const defaultValue = valueAtPath(defaults, field.path);
+        return {
+          ...field,
+          schema: node,
+          defaultValue,
+          suggestions: unique([
+            ...(SUGGESTIONS[field.path] ?? []),
+            ...(defaultValue === undefined ? [] : [String(defaultValue)]),
+            ...(node?.enum === undefined ? [] : node.enum.map(String)),
+          ]),
+        };
+      }),
+    })),
+  }));
+
+  const auto = buildAutoSection(schema, defaults, sections);
+  if (auto !== null) {
+    sections.push(auto);
+  }
+  return sections;
+}
 
 export const RESOURCES = [
   "coal",

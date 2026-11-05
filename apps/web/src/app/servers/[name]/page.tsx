@@ -20,10 +20,12 @@ import {
   deleteServer,
   getEffectiveSettings,
   getServer,
+  getSettingsSchema,
   startServer,
   stopServer,
 } from "@/lib/api";
 import { serverStatusBadge } from "@/lib/server-status";
+import type { SettingsSchema } from "@/lib/settings-schema";
 
 import { BackupsPanel } from "./backups";
 import { ConnectionPanel } from "./connection";
@@ -65,6 +67,7 @@ function ServerDetail() {
 
   const [server, setServer] = useState<FactorioServer | null>(null);
   const [settings, setSettings] = useState<EffectiveSettings | null>(null);
+  const [schema, setSchema] = useState<SettingsSchema | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [warning, setWarning] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
@@ -104,6 +107,24 @@ function ServerDetail() {
       setLoading(false);
     }
   }, [name]);
+
+  useEffect(() => {
+    let active = true;
+
+    getSettingsSchema()
+      .then((value) => {
+        if (active) {
+          setSchema(value);
+        }
+      })
+      .catch(() => {
+        // The form falls back to the curated catalog without bounds.
+      });
+
+    return () => {
+      active = false;
+    };
+  }, []);
 
   useEffect(() => {
     // Initial load. refresh() sets state from an async response, not during
@@ -288,6 +309,7 @@ function ServerDetail() {
             server={server}
             defaults={settings.defaults}
             effective={settings.effective}
+            schema={schema}
             onSaved={(updated, merged) => {
               setServer(updated);
               setSettings({
