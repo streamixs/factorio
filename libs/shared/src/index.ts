@@ -244,6 +244,11 @@ export interface ServerEvent {
   lastTimestamp: string;
 }
 
+export interface EffectiveSettings {
+  defaults: FactorioServerSpec;
+  effective: FactorioServerSpec;
+}
+
 export function findCondition(
   server: FactorioServer,
   type: string,
