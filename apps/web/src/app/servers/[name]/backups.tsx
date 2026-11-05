@@ -1,6 +1,10 @@
 "use client";
 
-import type { ServerBackup, ServerBackups } from "@factorio/shared";
+import type {
+  ServerBackup,
+  ServerBackups,
+  ServerOperation,
+} from "@factorio/shared";
 import {
   type ChangeEvent,
   useCallback,
@@ -24,9 +28,12 @@ import { Skeleton } from "@/components/ui/skeleton";
 import {
   backupDownloadUrl,
   getServerBackups,
+  getServerOperations,
   importSave,
   restoreBackup,
 } from "@/lib/api";
+
+const ACTIVE_PHASES = new Set(["Pending", "Suspending", "Running"]);
 
 export function BackupsPanel({
   name,
@@ -40,6 +47,8 @@ export function BackupsPanel({
   const [loading, setLoading] = useState(true);
   const [restoring, setRestoring] = useState<string | null>(null);
   const [importing, setImporting] = useState(false);
+  const [operation, setOperation] = useState<ServerOperation | null>(null);
+  const previousPhase = useRef<string | null>(null);
   const fileInput = useRef<HTMLInputElement>(null);
 
   const load = useCallback(async () => {
@@ -57,16 +66,53 @@ export function BackupsPanel({
     }
   }, [name]);
 
+  const refreshOperations = useCallback(async () => {
+    try {
+      const operations = await getServerOperations(name);
+      const latest = operations[0] ?? null;
+      const previous = previousPhase.current;
+      previousPhase.current = latest?.phase ?? null;
+      setOperation(latest);
+
+      if (
+        latest !== null &&
+        previous !== null &&
+        previous !== latest.phase &&
+        (latest.phase === "Completed" || latest.phase === "Failed")
+      ) {
+        if (latest.phase === "Completed") {
+          toast.success("Opération terminée");
+        } else {
+          toast.error(latest.message ?? "Opération échouée");
+        }
+        void load();
+        onRestoreStarted?.();
+      }
+    } catch {
+      // The operation polling must not hide the saves error.
+    }
+  }, [name, load, onRestoreStarted]);
+
+  const operationActive =
+    operation !== null && ACTIVE_PHASES.has(operation.phase);
+
   useEffect(() => {
     // eslint-disable-next-line react-hooks/set-state-in-effect
     void load();
+    void refreshOperations();
 
-    const interval = setInterval(() => {
+    const savesInterval = setInterval(() => {
       void load();
     }, 30000);
+    const operationsInterval = setInterval(() => {
+      void refreshOperations();
+    }, 5000);
 
-    return () => clearInterval(interval);
-  }, [load]);
+    return () => {
+      clearInterval(savesInterval);
+      clearInterval(operationsInterval);
+    };
+  }, [load, refreshOperations]);
 
   async function handleRestore(backup: ServerBackup) {
     if (
@@ -82,17 +128,15 @@ export function BackupsPanel({
 
     try {
       await restoreBackup(name, backup.name);
-      toast.success("Restauration lancée. Le serveur va redémarrer.");
+      toast.success("Restauration lancée.");
       onRestoreStarted?.();
-      window.setTimeout(() => {
-        setRestoring(null);
-        void load();
-      }, 15000);
+      await refreshOperations();
     } catch (err) {
       const message =
         err instanceof Error ? err.message : "Impossible de restaurer la save";
       setError(message);
       toast.error(message);
+    } finally {
       setRestoring(null);
     }
   }
@@ -124,19 +168,15 @@ export function BackupsPanel({
 
     try {
       await importSave(name, file);
-      toast.success(
-        "Importation lancée. Le serveur redémarre s'il était démarré.",
-      );
+      toast.success("Importation lancée.");
       onRestoreStarted?.();
-      window.setTimeout(() => {
-        setImporting(false);
-        void load();
-      }, 15000);
+      await refreshOperations();
     } catch (err) {
       const message =
         err instanceof Error ? err.message : "Impossible d'importer la save";
       setError(message);
       toast.error(message);
+    } finally {
       setImporting(false);
     }
   }
@@ -174,7 +214,7 @@ export function BackupsPanel({
             variant="secondary"
             size="sm"
             onClick={() => fileInput.current?.click()}
-            disabled={importing || restoring !== null}
+            disabled={importing || restoring !== null || operationActive}
           >
             {importing ? "Importation…" : "Importer une save"}
           </Button>
@@ -192,18 +232,38 @@ export function BackupsPanel({
           </Alert>
         )}
 
+        {operationActive && operation !== null && (
+          <Alert>
+            <AlertDescription>
+              {operationLabel(operation)}
+              {operation.message !== undefined ? ` — ${operation.message}` : ""}
+            </AlertDescription>
+          </Alert>
+        )}
+
+        {operation?.phase === "Failed" && (
+          <Alert variant="destructive">
+            <AlertDescription>
+              {operationLabel(operation)}
+              {operation.message !== undefined ? ` : ${operation.message}` : ""}
+            </AlertDescription>
+          </Alert>
+        )}
+
         {loading && data === null ? (
           <div className="flex flex-col gap-2">
             <Skeleton className="h-14 w-full" />
             <Skeleton className="h-14 w-full" />
           </div>
         ) : data === null || !data.available ? (
-          <Alert>
-            <AlertDescription>
-              Les sauvegardes sont indisponibles. Le serveur doit être démarré
-              pour lire /factorio/saves.
-            </AlertDescription>
-          </Alert>
+          operationActive ? null : (
+            <Alert>
+              <AlertDescription>
+                Les sauvegardes sont indisponibles. Le serveur doit être
+                démarré pour lire /factorio/saves.
+              </AlertDescription>
+            </Alert>
+          )
         ) : data.backups.length === 0 ? (
           <p className="text-sm text-muted-foreground">
             Aucune autosave pour l&apos;instant. Factorio en crée une à chaque
@@ -239,7 +299,7 @@ export function BackupsPanel({
                     variant="secondary"
                     size="sm"
                     onClick={() => void handleRestore(backup)}
-                    disabled={restoring !== null || importing}
+                    disabled={restoring !== null || importing || operationActive}
                   >
                     {restoring === backup.name ? "Restauration…" : "Restaurer"}
                   </Button>
@@ -251,6 +311,23 @@ export function BackupsPanel({
       </CardContent>
     </Card>
   );
+}
+
+function operationLabel(operation: ServerOperation): string {
+  const type = operation.type === "Import" ? "Importation" : "Restauration";
+
+  switch (operation.phase) {
+    case "Pending":
+      return `${type} en préparation`;
+    case "Suspending":
+      return `${type} : arrêt du serveur`;
+    case "Running":
+      return `${type} : installation de la save`;
+    case "Completed":
+      return `${type} terminée`;
+    case "Failed":
+      return `${type} échouée`;
+  }
 }
 
 function formatBytes(value: number): string {

@@ -6,6 +6,7 @@ import type {
   ServerConnection,
   ServerEvent,
   ServerLogs,
+  ServerOperation,
   ServerUsage,
   UpdateFactorioServerInput,
 } from "@factorio/shared";
@@ -134,8 +135,8 @@ export function backupDownloadUrl(name: string, file: string): string {
 export function restoreBackup(
   name: string,
   file: string,
-): Promise<{ save: string; job: string }> {
-  return request<{ save: string; job: string }>(
+): Promise<{ operation: string }> {
+  return request<{ operation: string }>(
     `/${encodeURIComponent(name)}/backups/${encodeURIComponent(file)}/restore`,
     { method: "POST" },
   );
@@ -144,12 +145,20 @@ export function restoreBackup(
 export function importSave(
   name: string,
   file: File,
-): Promise<{ job: string }> {
-  return request<{ job: string }>(`/${encodeURIComponent(name)}/import`, {
+): Promise<{ operation: string }> {
+  return request<{ operation: string }>(`/${encodeURIComponent(name)}/import`, {
     method: "POST",
     headers: { "Content-Type": "application/zip" },
     body: file,
   });
+}
+
+export function getServerOperations(
+  name: string,
+): Promise<ServerOperation[]> {
+  return request<ServerOperation[]>(
+    `/${encodeURIComponent(name)}/operations`,
+  );
 }
 
 export function runRconCommand(

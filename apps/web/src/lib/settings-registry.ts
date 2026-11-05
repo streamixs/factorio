@@ -588,11 +588,45 @@ export const SETTINGS_SECTIONS: SettingsSection[] = [
   },
   {
     id: "infra",
-    title: "Stockage & réseau",
-    badge: "Service immédiat",
+    title: "Ressources, stockage & réseau",
+    badge: "Redémarre le serveur",
+    description:
+      "Limites CPU/RAM du conteneur Factorio, volume de données et exposition du port de jeu.",
     groups: [
       {
         fields: [
+          {
+            path: "spec.resources.cpuRequest",
+            label: "CPU — request",
+            kind: "text",
+            placeholder: "500m",
+            help: "Défaut : 500m. Réservé au serveur.",
+            emptyAsUndefined: true,
+          },
+          {
+            path: "spec.resources.cpuLimit",
+            label: "CPU — limit",
+            kind: "text",
+            placeholder: "2",
+            help: "Défaut : 2 cœurs.",
+            emptyAsUndefined: true,
+          },
+          {
+            path: "spec.resources.memoryRequest",
+            label: "Mémoire — request",
+            kind: "text",
+            placeholder: "1Gi",
+            help: "Défaut : 1Gi.",
+            emptyAsUndefined: true,
+          },
+          {
+            path: "spec.resources.memoryLimit",
+            label: "Mémoire — limit",
+            kind: "text",
+            placeholder: "4Gi",
+            help: "Défaut : 4Gi. Une grosse usine ou des mods peuvent nécessiter plus.",
+            emptyAsUndefined: true,
+          },
           {
             path: "spec.storage.size",
             label: "Taille du volume",
