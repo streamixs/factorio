@@ -254,7 +254,11 @@ function ServerDetail() {
         </Alert>
       )}
 
-      <Tabs value={view} onValueChange={(value) => setView(String(value))}>
+      <Tabs
+        value={view}
+        onValueChange={(value) => setView(String(value))}
+        className="flex-col"
+      >
         <TabsList className="h-auto flex-wrap">
           {VIEWS.map((item) => (
             <TabsTrigger key={item.id} value={item.id}>

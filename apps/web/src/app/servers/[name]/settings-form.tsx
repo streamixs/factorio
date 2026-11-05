@@ -276,7 +276,11 @@ export function SettingsForm({
         onSubmit={(event) => void handleSubmit(onSubmit)(event)}
         className="flex flex-col gap-4"
       >
-        <Tabs value={tab} onValueChange={(value) => setTab(String(value))}>
+        <Tabs
+          value={tab}
+          onValueChange={(value) => setTab(String(value))}
+          className="flex-col"
+        >
           <TabsList className="flex h-auto w-full flex-wrap justify-start">
             {SETTINGS_SECTIONS.map((section) => (
               <TabsTrigger key={section.id} value={section.id}>
