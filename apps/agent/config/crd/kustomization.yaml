@@ -3,6 +3,7 @@
 # It should be run by config/default
 resources:
 - bases/games.dev.streamixs.com_factorioservers.yaml
+- bases/games.dev.streamixs.com_factoriooperations.yaml
 # +kubebuilder:scaffold:crdkustomizeresource
 
 patches:

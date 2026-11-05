@@ -1,0 +1,427 @@
+/*
+Copyright 2026.
+
+Licensed under the Apache License, Version 2.0 (the "License");
+you may not use this file except in compliance with the License.
+You may obtain a copy of the License at
+
+    http://www.apache.org/licenses/LICENSE-2.0
+
+Unless required by applicable law or agreed to in writing, software
+distributed under the License is distributed on an "AS IS" BASIS,
+WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+See the License for the specific language governing permissions and
+limitations under the License.
+*/
+
+package controller
+
+import (
+	"context"
+	"fmt"
+	"time"
+
+	batchv1 "k8s.io/api/batch/v1"
+	corev1 "k8s.io/api/core/v1"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
+	"k8s.io/apimachinery/pkg/api/meta"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/apimachinery/pkg/types"
+	"k8s.io/client-go/tools/record"
+	ctrl "sigs.k8s.io/controller-runtime"
+	"sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
+	logf "sigs.k8s.io/controller-runtime/pkg/log"
+
+	gamesv1alpha1 "github.com/streamixs/factorio/apps/agent/api/v1alpha1"
+	factorioresources "github.com/streamixs/factorio/apps/agent/internal/controller/resources"
+)
+
+const (
+	operationFinalizer = "games.dev.streamixs.com/operation-cleanup"
+	operationTimeout   = 20 * time.Minute
+	operationPoll      = 2 * time.Second
+)
+
+// FactorioOperationReconciler runs restore and import operations on the data
+// volume. It owns the suspend/Job/resume state machine, so an API restart does
+// not leave a server stopped or an operation half-done.
+type FactorioOperationReconciler struct {
+	client.Client
+	Recorder record.EventRecorder
+	Scheme   *runtime.Scheme
+}
+
+// +kubebuilder:rbac:groups=games.dev.streamixs.com,resources=factoriooperations,verbs=get;list;watch;create;update;patch;delete
+// +kubebuilder:rbac:groups=games.dev.streamixs.com,resources=factoriooperations/status,verbs=get;update;patch
+// +kubebuilder:rbac:groups=games.dev.streamixs.com,resources=factoriooperations/finalizers,verbs=update
+// +kubebuilder:rbac:groups=batch,resources=jobs,verbs=get;list;watch;create;update;patch;delete
+// +kubebuilder:rbac:groups="",resources=pods,verbs=get;list;watch
+
+// Reconcile drives one FactorioOperation to a terminal phase.
+func (r *FactorioOperationReconciler) Reconcile(
+	ctx context.Context,
+	req ctrl.Request,
+) (ctrl.Result, error) {
+	logger := logf.FromContext(ctx)
+
+	var operation gamesv1alpha1.FactorioOperation
+	if err := r.Get(ctx, req.NamespacedName, &operation); err != nil {
+		return ctrl.Result{}, client.IgnoreNotFound(err)
+	}
+
+	if !operation.DeletionTimestamp.IsZero() {
+		return r.finalize(ctx, &operation)
+	}
+
+	if !controllerutil.ContainsFinalizer(&operation, operationFinalizer) {
+		controllerutil.AddFinalizer(&operation, operationFinalizer)
+		if err := r.Update(ctx, &operation); err != nil {
+			return ctrl.Result{}, err
+		}
+	}
+
+	var server gamesv1alpha1.FactorioServer
+	if err := r.Get(ctx, types.NamespacedName{
+		Namespace: operation.Namespace,
+		Name:      operation.Spec.ServerName,
+	}, &server); err != nil {
+		if apierrors.IsNotFound(err) {
+			return r.fail(ctx, &operation, nil,
+				fmt.Sprintf("FactorioServer %q was not found", operation.Spec.ServerName))
+		}
+		return ctrl.Result{}, err
+	}
+
+	if !metav1.IsControlledBy(&operation, &server) {
+		if err := controllerutil.SetControllerReference(&server, &operation,
+			r.Scheme); err != nil {
+			return ctrl.Result{}, err
+		}
+		if err := r.Update(ctx, &operation); err != nil {
+			return ctrl.Result{}, err
+		}
+	}
+
+	logger.Info("Reconciling FactorioOperation",
+		"name", operation.Name, "server", server.Name,
+		"phase", operation.Status.Phase)
+
+	switch operation.Status.Phase {
+	case "", gamesv1alpha1.OperationPhasePending:
+		return r.begin(ctx, &operation, &server)
+	case gamesv1alpha1.OperationPhaseSuspending:
+		return r.suspendAndRun(ctx, &operation, &server)
+	case gamesv1alpha1.OperationPhaseRunning:
+		return r.observeJob(ctx, &operation, &server)
+	case gamesv1alpha1.OperationPhaseCompleted, gamesv1alpha1.OperationPhaseFailed:
+		// A stale reconcile can recreate the Job after completion. Keep
+		// terminal operations clean on every observation.
+		r.deleteJob(ctx, &operation)
+		return ctrl.Result{}, nil
+	default:
+		return r.fail(ctx, &operation, &server,
+			fmt.Sprintf("Unknown operation phase %q", operation.Status.Phase))
+	}
+}
+
+// begin records whether the server was already stopped before suspending it.
+// Persisting that decision first makes the suspend step idempotent: a crash
+// after scaling the server down cannot make it look like the user had stopped
+// it.
+func (r *FactorioOperationReconciler) begin(
+	ctx context.Context,
+	operation *gamesv1alpha1.FactorioOperation,
+	server *gamesv1alpha1.FactorioServer,
+) (ctrl.Result, error) {
+	now := metav1.Now()
+	operation.Status.StartedAt = &now
+	operation.Status.WasSuspended = server.Spec.Suspended
+	operation.Status.Phase = gamesv1alpha1.OperationPhaseSuspending
+	operation.Status.Message = "Preparing the operation"
+
+	r.recordEvent(operation, corev1.EventTypeNormal, "Started",
+		fmt.Sprintf("Starting %s operation for %q",
+			operation.Spec.Type, server.Name))
+
+	if err := r.Status().Update(ctx, operation); err != nil {
+		return ctrl.Result{}, err
+	}
+
+	return ctrl.Result{RequeueAfter: operationPoll}, nil
+}
+
+// suspendAndRun stops the server when it was running, waits for its pod to
+// release the data volume, then creates the operation Job.
+func (r *FactorioOperationReconciler) suspendAndRun(
+	ctx context.Context,
+	operation *gamesv1alpha1.FactorioOperation,
+	server *gamesv1alpha1.FactorioServer,
+) (ctrl.Result, error) {
+	if !operation.Status.WasSuspended && !server.Spec.Suspended {
+		server.Spec.Suspended = true
+		if err := r.Update(ctx, server); err != nil {
+			return ctrl.Result{}, err
+		}
+		r.recordEvent(operation, corev1.EventTypeNormal, "Suspending",
+			fmt.Sprintf("Stopping FactorioServer %q", server.Name))
+	}
+
+	var pods corev1.PodList
+	if err := r.List(ctx, &pods,
+		client.InNamespace(server.Namespace),
+		client.MatchingLabels{"app.kubernetes.io/instance": server.Name},
+	); err != nil {
+		return ctrl.Result{}, err
+	}
+	if len(pods.Items) > 0 {
+		operation.Status.Message = "Waiting for the server pod to stop"
+		if err := r.Status().Update(ctx, operation); err != nil {
+			return ctrl.Result{}, err
+		}
+		return ctrl.Result{RequeueAfter: operationPoll}, nil
+	}
+
+	desired := factorioresources.BuildOperationJob(operation, server)
+	if err := controllerutil.SetControllerReference(operation, desired,
+		r.Scheme); err != nil {
+		return ctrl.Result{}, err
+	}
+
+	if err := r.Create(ctx, desired); err != nil && !apierrors.IsAlreadyExists(err) {
+		return ctrl.Result{}, fmt.Errorf("create operation job %q: %w",
+			desired.Name, err)
+	}
+
+	operation.Status.Phase = gamesv1alpha1.OperationPhaseRunning
+	operation.Status.JobName = desired.Name
+	operation.Status.Message = "Installing the save"
+	if err := r.Status().Update(ctx, operation); err != nil {
+		return ctrl.Result{}, err
+	}
+
+	r.recordEvent(operation, corev1.EventTypeNormal, "Running",
+		fmt.Sprintf("Started Job %q", desired.Name))
+	return ctrl.Result{RequeueAfter: operationPoll}, nil
+}
+
+// observeJob waits for the Job to finish, then resumes the server when the
+// operation is the one that stopped it.
+func (r *FactorioOperationReconciler) observeJob(
+	ctx context.Context,
+	operation *gamesv1alpha1.FactorioOperation,
+	server *gamesv1alpha1.FactorioServer,
+) (ctrl.Result, error) {
+	job := &batchv1.Job{}
+	key := types.NamespacedName{
+		Namespace: operation.Namespace,
+		Name:      operation.Status.JobName,
+	}
+
+	if err := r.Get(ctx, key, job); err != nil {
+		if !apierrors.IsNotFound(err) {
+			return ctrl.Result{}, err
+		}
+
+		// The Job may have been removed after completion. Recreating it is
+		// safe for both operations: the scripts overwrite the same target
+		// save.
+		desired := factorioresources.BuildOperationJob(operation, server)
+		if err := controllerutil.SetControllerReference(operation, desired,
+			r.Scheme); err != nil {
+			return ctrl.Result{}, err
+		}
+		if err := r.Create(ctx, desired); err != nil && !apierrors.IsAlreadyExists(err) {
+			return ctrl.Result{}, fmt.Errorf("recreate operation job %q: %w",
+				desired.Name, err)
+		}
+		return ctrl.Result{RequeueAfter: operationPoll}, nil
+	}
+
+	if job.Status.Succeeded > 0 {
+		return r.complete(ctx, operation, server, "Save installed")
+	}
+
+	if jobFailed(job) {
+		return r.fail(ctx, operation, server, "The operation Job failed")
+	}
+
+	if operation.Status.StartedAt != nil &&
+		time.Since(operation.Status.StartedAt.Time) > operationTimeout {
+		return r.fail(ctx, operation, server, "The operation timed out")
+	}
+
+	return ctrl.Result{RequeueAfter: operationPoll}, nil
+}
+
+func (r *FactorioOperationReconciler) complete(
+	ctx context.Context,
+	operation *gamesv1alpha1.FactorioOperation,
+	server *gamesv1alpha1.FactorioServer,
+	message string,
+) (ctrl.Result, error) {
+	if err := r.resumeIfNeeded(ctx, operation, server); err != nil {
+		return ctrl.Result{}, err
+	}
+
+	r.finish(operation, gamesv1alpha1.OperationPhaseCompleted, message)
+	if err := r.Status().Update(ctx, operation); err != nil {
+		return ctrl.Result{}, err
+	}
+
+	// Delete only after the terminal phase is persisted. If the status write
+	// fails, the Job stays and the next reconcile retries without running the
+	// operation a second time.
+	r.deleteJob(ctx, operation)
+	r.recordEvent(operation, corev1.EventTypeNormal, "Completed", message)
+	return ctrl.Result{}, nil
+}
+
+// fail stops the operation and restores the server state. It is also used when
+// the target server no longer exists, in which case there is nothing to resume.
+func (r *FactorioOperationReconciler) fail(
+	ctx context.Context,
+	operation *gamesv1alpha1.FactorioOperation,
+	server *gamesv1alpha1.FactorioServer,
+	message string,
+) (ctrl.Result, error) {
+	if server != nil {
+		if err := r.resumeIfNeeded(ctx, operation, server); err != nil {
+			return ctrl.Result{}, err
+		}
+	}
+
+	r.finish(operation, gamesv1alpha1.OperationPhaseFailed, message)
+	if err := r.Status().Update(ctx, operation); err != nil {
+		return ctrl.Result{}, err
+	}
+
+	r.deleteJob(ctx, operation)
+	r.recordEvent(operation, corev1.EventTypeWarning, "Failed", message)
+	return ctrl.Result{}, nil
+}
+
+func (r *FactorioOperationReconciler) resumeIfNeeded(
+	ctx context.Context,
+	operation *gamesv1alpha1.FactorioOperation,
+	server *gamesv1alpha1.FactorioServer,
+) error {
+	if operation.Status.WasSuspended || !server.Spec.Suspended {
+		return nil
+	}
+
+	server.Spec.Suspended = false
+	if err := r.Update(ctx, server); err != nil {
+		return fmt.Errorf("resume FactorioServer %q: %w", server.Name, err)
+	}
+
+	r.recordEvent(operation, corev1.EventTypeNormal, "Resumed",
+		fmt.Sprintf("Restarted FactorioServer %q", server.Name))
+	return nil
+}
+
+func (r *FactorioOperationReconciler) finish(
+	operation *gamesv1alpha1.FactorioOperation,
+	phase string,
+	message string,
+) {
+	now := metav1.Now()
+	operation.Status.Phase = phase
+	operation.Status.Message = message
+	operation.Status.CompletedAt = &now
+
+	condition := metav1.Condition{
+		Type:               "Completed",
+		Status:             metav1.ConditionFalse,
+		Reason:             phase,
+		Message:            message,
+		ObservedGeneration: operation.Generation,
+	}
+	if phase == gamesv1alpha1.OperationPhaseCompleted {
+		condition.Status = metav1.ConditionTrue
+	}
+	meta.SetStatusCondition(&operation.Status.Conditions, condition)
+}
+
+func (r *FactorioOperationReconciler) deleteJob(
+	ctx context.Context,
+	operation *gamesv1alpha1.FactorioOperation,
+) {
+	if operation.Status.JobName == "" {
+		return
+	}
+
+	job := &batchv1.Job{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      operation.Status.JobName,
+			Namespace: operation.Namespace,
+		},
+	}
+	if err := r.Delete(ctx, job, client.PropagationPolicy(
+		metav1.DeletePropagationBackground)); err != nil &&
+		!apierrors.IsNotFound(err) {
+		logf.FromContext(ctx).Error(err, "Failed to delete operation Job",
+			"name", operation.Status.JobName)
+	}
+}
+
+// finalize releases a server that an operation stopped, then lets the
+// operation be deleted.
+func (r *FactorioOperationReconciler) finalize(
+	ctx context.Context,
+	operation *gamesv1alpha1.FactorioOperation,
+) (ctrl.Result, error) {
+	var server gamesv1alpha1.FactorioServer
+	err := r.Get(ctx, types.NamespacedName{
+		Namespace: operation.Namespace,
+		Name:      operation.Spec.ServerName,
+	}, &server)
+	if err == nil {
+		if !operation.Status.WasSuspended && operation.Status.Phase !=
+			gamesv1alpha1.OperationPhaseCompleted {
+			if err := r.resumeIfNeeded(ctx, operation, &server); err != nil {
+				return ctrl.Result{}, err
+			}
+		}
+	} else if !apierrors.IsNotFound(err) {
+		return ctrl.Result{}, err
+	}
+
+	r.deleteJob(ctx, operation)
+
+	controllerutil.RemoveFinalizer(operation, operationFinalizer)
+	if err := r.Update(ctx, operation); err != nil {
+		return ctrl.Result{}, err
+	}
+	return ctrl.Result{}, nil
+}
+
+func jobFailed(job *batchv1.Job) bool {
+	for _, condition := range job.Status.Conditions {
+		if condition.Type == batchv1.JobFailed &&
+			condition.Status == corev1.ConditionTrue {
+			return true
+		}
+	}
+	return false
+}
+
+func (r *FactorioOperationReconciler) recordEvent(
+	operation *gamesv1alpha1.FactorioOperation,
+	eventType, reason, message string,
+) {
+	if r.Recorder == nil {
+		return
+	}
+	r.Recorder.Event(operation, eventType, reason, message)
+}
+
+// SetupWithManager sets up the operation controller with the Manager.
+func (r *FactorioOperationReconciler) SetupWithManager(mgr ctrl.Manager) error {
+	return ctrl.NewControllerManagedBy(mgr).
+		For(&gamesv1alpha1.FactorioOperation{}).
+		Owns(&batchv1.Job{}).
+		Named("factoriooperation").
+		Complete(r)
+}

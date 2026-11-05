@@ -25,6 +25,8 @@ const (
 	prepareImage   = "busybox:1.36"
 	serverUserID   = 845
 
+	terminationGracePeriodSeconds = int64(120)
+
 	dataVolume           = "data"
 	serverSettingsVolume = "server-settings"
 	mapGenSettingsVolume = "map-gen-settings"
@@ -50,6 +52,7 @@ func BuildDeployment(
 	server *gamesv1alpha1.FactorioServer,
 	files ConfigFiles,
 	rconPassword string,
+	resources corev1.ResourceRequirements,
 ) appsv1.Deployment {
 	replicas := int32(1)
 	if server.Spec.Suspended {
@@ -75,6 +78,7 @@ func BuildDeployment(
 	runAsUser := int64(serverUserID)
 	runAsGroup := int64(serverUserID)
 	runAsNonRoot := true
+	terminationGrace := terminationGracePeriodSeconds
 
 	containers := []corev1.Container{
 		{
@@ -109,6 +113,7 @@ func BuildDeployment(
 			StartupProbe:   healthProbe(10, 60),
 			ReadinessProbe: healthProbe(30, 3),
 			LivenessProbe:  healthProbe(60, 3),
+			Resources:      resources,
 			VolumeMounts:   mounts,
 		},
 		savesContainerFileServer(),
@@ -130,6 +135,9 @@ func BuildDeployment(
 			},
 			Volumes:    volumes,
 			Containers: containers,
+			// Factorio saves the world on SIGTERM. The default 30s is
+			// too short for a large save during a rollout or operation.
+			TerminationGracePeriodSeconds: &terminationGrace,
 		},
 	}
 	if rconPassword != "" {
@@ -293,6 +301,8 @@ func UpdateDeployment(existing, desired *appsv1.Deployment) {
 	existing.Spec.Template.Spec.InitContainers = desired.Spec.Template.Spec.InitContainers
 	existing.Spec.Template.Spec.Containers = desired.Spec.Template.Spec.Containers
 	existing.Spec.Template.Spec.Volumes = desired.Spec.Template.Spec.Volumes
+	existing.Spec.Template.Spec.TerminationGracePeriodSeconds =
+		desired.Spec.Template.Spec.TerminationGracePeriodSeconds
 
 	if existing.Spec.Template.Annotations == nil {
 		existing.Spec.Template.Annotations = map[string]string{}

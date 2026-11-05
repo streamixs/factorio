@@ -256,6 +256,10 @@ var _ = Describe("FactorioServer Controller", func() {
 		Expect(deployment.Spec.Template.Spec.Containers[1].Name).To(Equal("saves"))
 		Expect(deployment.Spec.Template.Annotations).To(
 			HaveKey(factorioresources.RconPasswordHashAnnotation))
+		Expect(deployment.Spec.Template.Spec.Containers[0].Resources.Requests.Cpu().String()).To(Equal("500m"))
+		Expect(deployment.Spec.Template.Spec.Containers[0].Resources.Limits.Memory().String()).To(Equal("4Gi"))
+		Expect(deployment.Spec.Template.Spec.TerminationGracePeriodSeconds).NotTo(BeNil())
+		Expect(*deployment.Spec.Template.Spec.TerminationGracePeriodSeconds).To(BeEquivalentTo(120))
 
 		server := &gamesv1alpha1.FactorioServer{}
 		Expect(k8sClient.Get(ctx, key, server)).To(Succeed())
@@ -310,6 +314,9 @@ var _ = Describe("FactorioServer Controller", func() {
 		storage := effectiveSpec["storage"].(map[string]any)
 		Expect(storage["size"]).To(Equal("10Gi"))
 		Expect(effectiveSpec).NotTo(HaveKey("backup"))
+		resources := effectiveSpec["resources"].(map[string]any)
+		Expect(resources["cpuRequest"]).To(Equal("500m"))
+		Expect(resources["memoryLimit"]).To(Equal("4Gi"))
 
 		var claim corev1.PersistentVolumeClaim
 		Expect(k8sClient.Get(ctx, claimKey, &claim)).To(Succeed())

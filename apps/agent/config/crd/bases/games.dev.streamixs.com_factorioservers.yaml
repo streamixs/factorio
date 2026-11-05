@@ -391,6 +391,33 @@ spec:
                       ambiguity.
                     x-kubernetes-preserve-unknown-fields: true
                 type: object
+              resources:
+                description: |-
+                  resources defines CPU and memory requests and limits for the Factorio
+                  container. When omitted, 500m/1Gi requests and 2/4Gi limits apply.
+                properties:
+                  cpuLimit:
+                    default: "2"
+                    description: cpuLimit is the CPU limit, for example "2".
+                    pattern: ^(\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))(([KMGTPE]i)|[numkMGTPE]|([eE](\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))))?$
+                    type: string
+                  cpuRequest:
+                    default: 500m
+                    description: cpuRequest is the CPU request, for example "500m".
+                    pattern: ^(\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))(([KMGTPE]i)|[numkMGTPE]|([eE](\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))))?$
+                    type: string
+                  memoryLimit:
+                    default: 4Gi
+                    description: memoryLimit is the memory limit, for example "4Gi".
+                    pattern: ^(\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))(([KMGTPE]i)|[numkMGTPE]|([eE](\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))))?$
+                    type: string
+                  memoryRequest:
+                    default: 1Gi
+                    description: memoryRequest is the memory request, for example
+                      "1Gi".
+                    pattern: ^(\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))(([KMGTPE]i)|[numkMGTPE]|([eE](\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))))?$
+                    type: string
+                type: object
               server:
                 description: |-
                   server defines the Factorio server settings rendered into

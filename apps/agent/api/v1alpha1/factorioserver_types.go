@@ -58,6 +58,11 @@ type FactorioServerSpec struct {
 	// +optional
 	Storage *StorageSpec `json:"storage,omitempty"`
 
+	// resources defines CPU and memory requests and limits for the Factorio
+	// container. When omitted, 500m/1Gi requests and 2/4Gi limits apply.
+	// +optional
+	Resources *ResourcesSpec `json:"resources,omitempty"`
+
 	// service defines how the game port is exposed.
 	// +optional
 	Service *ServiceSpec `json:"service,omitempty"`
@@ -75,6 +80,34 @@ type StorageSpec struct {
 	// omitted, the cluster default StorageClass is used.
 	// +optional
 	StorageClassName *string `json:"storageClassName,omitempty"`
+}
+
+// ResourcesSpec defines the CPU and memory resources of the Factorio
+// container.
+type ResourcesSpec struct {
+	// cpuRequest is the CPU request, for example "500m".
+	// +optional
+	// +kubebuilder:default="500m"
+	// +kubebuilder:validation:Pattern=`^(\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))(([KMGTPE]i)|[numkMGTPE]|([eE](\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))))?$`
+	CPURequest string `json:"cpuRequest,omitempty"`
+
+	// cpuLimit is the CPU limit, for example "2".
+	// +optional
+	// +kubebuilder:default="2"
+	// +kubebuilder:validation:Pattern=`^(\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))(([KMGTPE]i)|[numkMGTPE]|([eE](\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))))?$`
+	CPULimit string `json:"cpuLimit,omitempty"`
+
+	// memoryRequest is the memory request, for example "1Gi".
+	// +optional
+	// +kubebuilder:default="1Gi"
+	// +kubebuilder:validation:Pattern=`^(\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))(([KMGTPE]i)|[numkMGTPE]|([eE](\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))))?$`
+	MemoryRequest string `json:"memoryRequest,omitempty"`
+
+	// memoryLimit is the memory limit, for example "4Gi".
+	// +optional
+	// +kubebuilder:default="4Gi"
+	// +kubebuilder:validation:Pattern=`^(\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))(([KMGTPE]i)|[numkMGTPE]|([eE](\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))))?$`
+	MemoryLimit string `json:"memoryLimit,omitempty"`
 }
 
 // ServiceSpec defines how the FactorioServer game port is exposed.

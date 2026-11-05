@@ -143,7 +143,13 @@ func (r *FactorioServerReconciler) reconcileResources(
 		return fmt.Errorf("reconcile rcon secret: %w", err)
 	}
 
-	if err := r.reconcileDeployment(ctx, server, files, rconPassword); err != nil {
+	resources, err := factorioresources.BuildResources(server)
+	if err != nil {
+		return fmt.Errorf("resolve server resources: %w", err)
+	}
+
+	if err := r.reconcileDeployment(ctx, server, files, rconPassword,
+		resources); err != nil {
 		return fmt.Errorf("reconcile deployment: %w", err)
 	}
 
@@ -517,10 +523,12 @@ func (r *FactorioServerReconciler) reconcileDeployment(
 	server *gamesv1alpha1.FactorioServer,
 	files factorioresources.ConfigFiles,
 	rconPassword string,
+	resources corev1.ResourceRequirements,
 ) error {
 	logger := logf.FromContext(ctx)
 
-	desired := factorioresources.BuildDeployment(server, files, rconPassword)
+	desired := factorioresources.BuildDeployment(server, files, rconPassword,
+		resources)
 	key := types.NamespacedName{Namespace: desired.Namespace, Name: desired.Name}
 
 	var existing appsv1.Deployment

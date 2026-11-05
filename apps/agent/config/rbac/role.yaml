@@ -28,6 +28,14 @@ rules:
 - apiGroups:
   - ""
   resources:
+  - pods
+  verbs:
+  - get
+  - list
+  - watch
+- apiGroups:
+  - ""
+  resources:
   - secrets
   verbs:
   - create
@@ -48,8 +56,21 @@ rules:
   - update
   - watch
 - apiGroups:
+  - batch
+  resources:
+  - jobs
+  verbs:
+  - create
+  - delete
+  - get
+  - list
+  - patch
+  - update
+  - watch
+- apiGroups:
   - games.dev.streamixs.com
   resources:
+  - factoriooperations
   - factorioservers
   verbs:
   - create
@@ -62,12 +83,14 @@ rules:
 - apiGroups:
   - games.dev.streamixs.com
   resources:
+  - factoriooperations/finalizers
   - factorioservers/finalizers
   verbs:
   - update
 - apiGroups:
   - games.dev.streamixs.com
   resources:
+  - factoriooperations/status
   - factorioservers/status
   verbs:
   - get

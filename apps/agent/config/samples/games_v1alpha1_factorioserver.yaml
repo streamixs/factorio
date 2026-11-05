@@ -27,5 +27,10 @@ spec:
       timeFactor: 0.000004
   storage:
     size: 10Gi
+  resources:
+    cpuRequest: 500m
+    cpuLimit: "2"
+    memoryRequest: 1Gi
+    memoryLimit: 4Gi
   service:
     type: ClusterIP

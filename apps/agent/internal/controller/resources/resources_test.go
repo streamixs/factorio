@@ -7,6 +7,7 @@ import (
 
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
 	gamesv1alpha1 "github.com/streamixs/factorio/apps/agent/api/v1alpha1"
@@ -26,13 +27,26 @@ func testServer() *gamesv1alpha1.FactorioServer {
 	}
 }
 
+func testResourceRequirements() corev1.ResourceRequirements {
+	return corev1.ResourceRequirements{
+		Requests: corev1.ResourceList{
+			corev1.ResourceCPU:    resource.MustParse("500m"),
+			corev1.ResourceMemory: resource.MustParse("1Gi"),
+		},
+		Limits: corev1.ResourceList{
+			corev1.ResourceCPU:    resource.MustParse("2"),
+			corev1.ResourceMemory: resource.MustParse("4Gi"),
+		},
+	}
+}
+
 func TestBuildDeploymentMountsConfiguredFiles(t *testing.T) {
 	files := ConfigFiles{
 		ServerSettings: []byte(`{"name":"demo"}`),
 		MapGenSettings: []byte(`{"seed":42}`),
 	}
 
-	deployment := BuildDeployment(testServer(), files, testRconPassword)
+	deployment := BuildDeployment(testServer(), files, testRconPassword, testResourceRequirements())
 	container := deployment.Spec.Template.Spec.Containers[0]
 
 	if got := deployment.Spec.Template.Annotations[PodTemplateHashAnnotation]; got == "" {
@@ -81,7 +95,7 @@ func TestBuildDeploymentMountsConfiguredFiles(t *testing.T) {
 }
 
 func TestBuildDeploymentUsesRecreateAndPreparesData(t *testing.T) {
-	deployment := BuildDeployment(testServer(), ConfigFiles{}, testRconPassword)
+	deployment := BuildDeployment(testServer(), ConfigFiles{}, testRconPassword, testResourceRequirements())
 
 	if got := deployment.Spec.Strategy.Type; got != appsv1.RecreateDeploymentStrategyType {
 		t.Errorf("got strategy %q, want Recreate", got)
@@ -104,7 +118,7 @@ func TestBuildDeploymentUsesRecreateAndPreparesData(t *testing.T) {
 }
 
 func TestBuildDeploymentConfiguresHealthProbes(t *testing.T) {
-	container := BuildDeployment(testServer(), ConfigFiles{}, testRconPassword).
+	container := BuildDeployment(testServer(), ConfigFiles{}, testRconPassword, testResourceRequirements()).
 		Spec.Template.Spec.Containers[0]
 
 	probes := map[string]*corev1.Probe{
@@ -146,7 +160,7 @@ func TestBuildDeploymentConfiguresHealthProbes(t *testing.T) {
 }
 
 func TestBuildDeploymentRunsAsFactorioUser(t *testing.T) {
-	deployment := BuildDeployment(testServer(), ConfigFiles{}, testRconPassword)
+	deployment := BuildDeployment(testServer(), ConfigFiles{}, testRconPassword, testResourceRequirements())
 	container := deployment.Spec.Template.Spec.Containers[0]
 
 	if container.SecurityContext == nil {
@@ -173,7 +187,7 @@ func TestBuildDeploymentRunsAsFactorioUser(t *testing.T) {
 
 func TestPodTemplateHashChangesWithTemplate(t *testing.T) {
 	files := ConfigFiles{}
-	deployment := BuildDeployment(testServer(), files, testRconPassword)
+	deployment := BuildDeployment(testServer(), files, testRconPassword, testResourceRequirements())
 	baseHash := deployment.Spec.Template.Annotations[PodTemplateHashAnnotation]
 
 	template := deployment.Spec.Template.DeepCopy()
@@ -188,14 +202,14 @@ func TestBuildDeploymentScalesToZeroWhenSuspended(t *testing.T) {
 	server := testServer()
 	server.Spec.Suspended = true
 
-	deployment := BuildDeployment(server, ConfigFiles{}, testRconPassword)
+	deployment := BuildDeployment(server, ConfigFiles{}, testRconPassword, testResourceRequirements())
 
 	if deployment.Spec.Replicas == nil || *deployment.Spec.Replicas != 0 {
 		t.Errorf("replicas are %v, want 0", deployment.Spec.Replicas)
 	}
 
 	server.Spec.Suspended = false
-	deployment = BuildDeployment(server, ConfigFiles{}, testRconPassword)
+	deployment = BuildDeployment(server, ConfigFiles{}, testRconPassword, testResourceRequirements())
 
 	if deployment.Spec.Replicas == nil || *deployment.Spec.Replicas != 1 {
 		t.Errorf("replicas are %v, want 1", deployment.Spec.Replicas)
@@ -206,7 +220,7 @@ func TestBuildDeploymentWithoutSettings(t *testing.T) {
 	server := testServer()
 	server.Spec.Version = ""
 
-	deployment := BuildDeployment(server, ConfigFiles{}, testRconPassword)
+	deployment := BuildDeployment(server, ConfigFiles{}, testRconPassword, testResourceRequirements())
 	container := deployment.Spec.Template.Spec.Containers[0]
 
 	if len(deployment.Spec.Template.Spec.Volumes) != 2 {
@@ -273,23 +287,23 @@ func TestConfigFilesHash(t *testing.T) {
 
 func TestNeedsUpdate(t *testing.T) {
 	server := testServer()
-	existing := BuildDeployment(server, ConfigFiles{}, testRconPassword)
+	existing := BuildDeployment(server, ConfigFiles{}, testRconPassword, testResourceRequirements())
 
-	same := BuildDeployment(server, ConfigFiles{}, testRconPassword)
+	same := BuildDeployment(server, ConfigFiles{}, testRconPassword, testResourceRequirements())
 	if NeedsUpdate(&existing, &same) {
 		t.Error("identical deployments need an update")
 	}
 
 	changedConfig := BuildDeployment(server, ConfigFiles{
 		MapSettings: []byte("{}"),
-	}, testRconPassword)
+	}, testRconPassword, testResourceRequirements())
 	if !NeedsUpdate(&existing, &changedConfig) {
 		t.Error("config change was not detected")
 	}
 
 	otherVersion := testServer()
 	otherVersion.Spec.Version = "2.0.0"
-	changedImage := BuildDeployment(otherVersion, ConfigFiles{}, testRconPassword)
+	changedImage := BuildDeployment(otherVersion, ConfigFiles{}, testRconPassword, testResourceRequirements())
 	if !NeedsUpdate(&existing, &changedImage) {
 		t.Error("image change was not detected")
 	}
@@ -297,12 +311,12 @@ func TestNeedsUpdate(t *testing.T) {
 
 func TestUpdateDeploymentCopiesConfigAndKeepsAnnotations(t *testing.T) {
 	server := testServer()
-	existing := BuildDeployment(server, ConfigFiles{}, testRconPassword)
+	existing := BuildDeployment(server, ConfigFiles{}, testRconPassword, testResourceRequirements())
 	existing.Spec.Template.Annotations["example.com/restarted"] = "true"
 
 	desired := BuildDeployment(server, ConfigFiles{
 		ServerSettings: []byte("{}"),
-	}, testRconPassword)
+	}, testRconPassword, testResourceRequirements())
 
 	UpdateDeployment(&existing, &desired)
 
@@ -347,7 +361,7 @@ func TestBuildEffectiveSettingsConfigMap(t *testing.T) {
 }
 
 func TestBuildDeploymentServesSaves(t *testing.T) {
-	deployment := BuildDeployment(testServer(), ConfigFiles{}, testRconPassword)
+	deployment := BuildDeployment(testServer(), ConfigFiles{}, testRconPassword, testResourceRequirements())
 
 	if len(deployment.Spec.Template.Spec.Containers) != 2 {
 		t.Fatalf("got %d containers, want 2",
@@ -395,7 +409,7 @@ func TestBuildDeploymentServesSaves(t *testing.T) {
 }
 
 func TestBuildDeploymentIncludesRcon(t *testing.T) {
-	deployment := BuildDeployment(testServer(), ConfigFiles{}, testRconPassword)
+	deployment := BuildDeployment(testServer(), ConfigFiles{}, testRconPassword, testResourceRequirements())
 	container := deployment.Spec.Template.Spec.Containers[0]
 
 	var volume *corev1.Volume
@@ -432,8 +446,8 @@ func TestBuildDeploymentIncludesRcon(t *testing.T) {
 }
 
 func TestBuildDeploymentChangesHashWithRconPassword(t *testing.T) {
-	base := BuildDeployment(testServer(), ConfigFiles{}, "first-password")
-	changed := BuildDeployment(testServer(), ConfigFiles{}, "second-password")
+	base := BuildDeployment(testServer(), ConfigFiles{}, "first-password", testResourceRequirements())
+	changed := BuildDeployment(testServer(), ConfigFiles{}, "second-password", testResourceRequirements())
 
 	if base.Spec.Template.Annotations[PodTemplateHashAnnotation] ==
 		changed.Spec.Template.Annotations[PodTemplateHashAnnotation] {
@@ -471,6 +485,183 @@ func TestGenerateRconPassword(t *testing.T) {
 	if len(first) < 16 {
 		t.Errorf("password is too short: %q", first)
 	}
+}
+
+func TestBuildResourcesUsesDefaults(t *testing.T) {
+	resources, err := BuildResources(testServer())
+	if err != nil {
+		t.Fatalf("build resources: %v", err)
+	}
+
+	assertQuantity(t, resources.Requests, corev1.ResourceCPU, defaultCPURequest)
+	assertQuantity(t, resources.Requests, corev1.ResourceMemory, defaultMemoryRequest)
+	assertQuantity(t, resources.Limits, corev1.ResourceCPU, defaultCPULimit)
+	assertQuantity(t, resources.Limits, corev1.ResourceMemory, defaultMemoryLimit)
+}
+
+func TestBuildResourcesUsesSpec(t *testing.T) {
+	server := testServer()
+	server.Spec.Resources = &gamesv1alpha1.ResourcesSpec{
+		CPURequest:    "250m",
+		CPULimit:      "1",
+		MemoryRequest: "512Mi",
+		MemoryLimit:   "2Gi",
+	}
+
+	resources, err := BuildResources(server)
+	if err != nil {
+		t.Fatalf("build resources: %v", err)
+	}
+
+	assertQuantity(t, resources.Requests, corev1.ResourceCPU, "250m")
+	assertQuantity(t, resources.Limits, corev1.ResourceCPU, "1")
+	assertQuantity(t, resources.Requests, corev1.ResourceMemory, "512Mi")
+	assertQuantity(t, resources.Limits, corev1.ResourceMemory, "2Gi")
+}
+
+func TestBuildResourcesRejectsInvalidQuantity(t *testing.T) {
+	server := testServer()
+	server.Spec.Resources = &gamesv1alpha1.ResourcesSpec{CPURequest: "nope"}
+
+	if _, err := BuildResources(server); err == nil {
+		t.Fatal("expected an error, got nil")
+	}
+}
+
+func TestBuildResourcesRejectsLimitBelowRequest(t *testing.T) {
+	server := testServer()
+	server.Spec.Resources = &gamesv1alpha1.ResourcesSpec{
+		CPURequest: "2",
+		CPULimit:   "1",
+	}
+
+	if _, err := BuildResources(server); err == nil {
+		t.Fatal("expected an error, got nil")
+	}
+}
+
+func TestBuildDeploymentUsesResources(t *testing.T) {
+	deployment := BuildDeployment(testServer(), ConfigFiles{},
+		testRconPassword, testResourceRequirements())
+	container := deployment.Spec.Template.Spec.Containers[0]
+
+	assertQuantity(t, container.Resources.Requests, corev1.ResourceCPU,
+		defaultCPURequest)
+	assertQuantity(t, container.Resources.Limits, corev1.ResourceMemory,
+		defaultMemoryLimit)
+}
+
+func TestBuildDeploymentSetsTerminationGracePeriod(t *testing.T) {
+	deployment := BuildDeployment(testServer(), ConfigFiles{},
+		testRconPassword, testResourceRequirements())
+
+	grace := deployment.Spec.Template.Spec.TerminationGracePeriodSeconds
+	if grace == nil || *grace != terminationGracePeriodSeconds {
+		t.Errorf("termination grace period is %v, want %d", grace,
+			terminationGracePeriodSeconds)
+	}
+}
+
+func assertQuantity(
+	t *testing.T,
+	list corev1.ResourceList,
+	name corev1.ResourceName,
+	want string,
+) {
+	t.Helper()
+	quantity, ok := list[name]
+	if !ok {
+		t.Errorf("%s is missing", name)
+		return
+	}
+	if got := quantity.String(); got != want {
+		t.Errorf("%s is %q, want %q", name, got, want)
+	}
+}
+
+func TestBuildOperationJobRestore(t *testing.T) {
+	operation := &gamesv1alpha1.FactorioOperation{
+		ObjectMeta: metav1.ObjectMeta{Name: "demo-restore", Namespace: "games"},
+		Spec: gamesv1alpha1.FactorioOperationSpec{
+			ServerName: "demo",
+			Type:       gamesv1alpha1.OperationRestore,
+			SaveFile:   "_autosave2.zip",
+		},
+	}
+
+	job := BuildOperationJob(operation, testServer())
+
+	if got, want := job.Name, "demo-restore-job"; got != want {
+		t.Errorf("job name is %q, want %q", got, want)
+	}
+	if job.Namespace != "games" {
+		t.Errorf("job namespace is %q", job.Namespace)
+	}
+
+	container := job.Spec.Template.Spec.Containers[0]
+	env := envMap(container.Env)
+	if env["SAVE_FILE"] != "_autosave2.zip" {
+		t.Errorf("SAVE_FILE is %q", env["SAVE_FILE"])
+	}
+	if env["TARGET_SAVE"] != targetSaveName {
+		t.Errorf("TARGET_SAVE is %q", env["TARGET_SAVE"])
+	}
+	if !strings.Contains(container.Command[2], "pre-restore-") ||
+		!strings.Contains(container.Command[2], `cp "/factorio/saves/$SAVE_FILE"`) {
+		t.Errorf("restore script is %q", container.Command[2])
+	}
+
+	claim := job.Spec.Template.Spec.Volumes[0].PersistentVolumeClaim
+	if claim == nil || claim.ClaimName != "demo-data" {
+		t.Errorf("operation job does not mount the data claim: %+v", claim)
+	}
+	if job.Spec.ActiveDeadlineSeconds == nil ||
+		*job.Spec.ActiveDeadlineSeconds != operationDeadline {
+		t.Errorf("active deadline is %v", job.Spec.ActiveDeadlineSeconds)
+	}
+}
+
+func TestBuildOperationJobImport(t *testing.T) {
+	operation := &gamesv1alpha1.FactorioOperation{
+		ObjectMeta: metav1.ObjectMeta{Name: "demo-import", Namespace: "games"},
+		Spec: gamesv1alpha1.FactorioOperationSpec{
+			ServerName: "demo",
+			Type:       gamesv1alpha1.OperationImport,
+			ImportURL:  "http://factorio-api/api/imports/token",
+		},
+	}
+
+	job := BuildOperationJob(operation, testServer())
+	container := job.Spec.Template.Spec.Containers[0]
+	env := envMap(container.Env)
+
+	if env["IMPORT_URL"] != "http://factorio-api/api/imports/token" {
+		t.Errorf("IMPORT_URL is %q", env["IMPORT_URL"])
+	}
+	if !strings.Contains(container.Command[2], "wget -q -O") ||
+		!strings.Contains(container.Command[2], "pre-import-") {
+		t.Errorf("import script is %q", container.Command[2])
+	}
+}
+
+func TestOperationJobNameTruncates(t *testing.T) {
+	operation := &gamesv1alpha1.FactorioOperation{
+		ObjectMeta: metav1.ObjectMeta{Name: strings.Repeat("a", 70)},
+	}
+
+	name := OperationJobName(operation)
+	if len(name) > maxJobNameLength {
+		t.Errorf("job name is %d characters, want at most %d",
+			len(name), maxJobNameLength)
+	}
+}
+
+func envMap(values []corev1.EnvVar) map[string]string {
+	result := make(map[string]string, len(values))
+	for _, value := range values {
+		result[value.Name] = value.Value
+	}
+	return result
 }
 
 func TestBuildSettingsObjects(t *testing.T) {
