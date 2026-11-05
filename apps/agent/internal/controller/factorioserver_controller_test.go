@@ -221,7 +221,7 @@ var _ = Describe("FactorioServer Controller", func() {
 		var deployment appsv1.Deployment
 		Expect(k8sClient.Get(ctx, key, &deployment)).To(Succeed())
 		Expect(deployment.Spec.Template.Annotations).To(
-			HaveKey(factorioresources.ConfigHashAnnotation))
+			HaveKey(factorioresources.PodTemplateHashAnnotation))
 		Expect(deployment.Spec.Strategy.Type).To(
 			Equal(appsv1.RecreateDeploymentStrategyType))
 		Expect(deployment.Spec.Template.Spec.InitContainers).To(HaveLen(1))
@@ -309,7 +309,7 @@ var _ = Describe("FactorioServer Controller", func() {
 
 		var first appsv1.Deployment
 		Expect(k8sClient.Get(ctx, key, &first)).To(Succeed())
-		firstHash := first.Spec.Template.Annotations[factorioresources.ConfigHashAnnotation]
+		firstHash := first.Spec.Template.Annotations[factorioresources.PodTemplateHashAnnotation]
 
 		var stored gamesv1alpha1.FactorioServer
 		Expect(k8sClient.Get(ctx, key, &stored)).To(Succeed())
@@ -323,7 +323,7 @@ var _ = Describe("FactorioServer Controller", func() {
 
 		var second appsv1.Deployment
 		Expect(k8sClient.Get(ctx, key, &second)).To(Succeed())
-		secondHash := second.Spec.Template.Annotations[factorioresources.ConfigHashAnnotation]
+		secondHash := second.Spec.Template.Annotations[factorioresources.PodTemplateHashAnnotation]
 		Expect(secondHash).NotTo(Equal(firstHash))
 
 		var mapGenSettings corev1.ConfigMap

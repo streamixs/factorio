@@ -1,6 +1,9 @@
 package resources
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
+	"encoding/json"
 	"path"
 	"strconv"
 
@@ -20,14 +23,16 @@ const (
 	gamePort       = 34197
 	saveName       = "_autosave1"
 	prepareImage   = "busybox:1.36"
+	serverUserID   = 845
 
 	dataVolume           = "data"
 	serverSettingsVolume = "server-settings"
 	mapGenSettingsVolume = "map-gen-settings"
 	mapSettingsVolume    = "map-settings"
 
-	prepareDataCommand = "mkdir -p /factorio/config /factorio/saves /factorio/mods"
-	healthcheckPath    = "/docker-healthcheck.sh"
+	prepareDataCommand = "mkdir -p /factorio/config /factorio/saves /factorio/mods && " +
+		"chown -R 845:845 /factorio"
+	healthcheckPath = "/docker-healthcheck.sh"
 )
 
 func labelsFor(server *gamesv1alpha1.FactorioServer) map[string]string {
@@ -62,6 +67,62 @@ func BuildDeployment(
 		version = defaultVersion
 	}
 
+	runAsUser := int64(serverUserID)
+	runAsGroup := int64(serverUserID)
+	runAsNonRoot := true
+
+	template := corev1.PodTemplateSpec{
+		ObjectMeta: metav1.ObjectMeta{
+			Labels:      labels,
+			Annotations: map[string]string{},
+		},
+		Spec: corev1.PodSpec{
+			InitContainers: []corev1.Container{
+				{
+					Name:    "prepare-data",
+					Image:   prepareImage,
+					Command: []string{"sh", "-c", prepareDataCommand},
+					VolumeMounts: []corev1.VolumeMount{
+						{Name: dataVolume, MountPath: dataDir},
+					},
+				},
+			},
+			Volumes: volumes,
+			Containers: []corev1.Container{
+				{
+					Name:  "factorio",
+					Image: "factoriotools/factorio:" + version,
+					Ports: []corev1.ContainerPort{
+						{
+							Name:          "game",
+							ContainerPort: gamePort,
+							Protocol:      corev1.ProtocolUDP,
+						},
+					},
+					Env: []corev1.EnvVar{
+						{Name: "GENERATE_NEW_SAVE", Value: "true"},
+						{Name: "SAVE_NAME", Value: saveName},
+						{Name: "PORT", Value: strconv.Itoa(gamePort)},
+					},
+					// The image entrypoint chowns /factorio when it runs as
+					// root, which fails on the read-only config mounts. The
+					// init container owns that step, so the server runs as the
+					// factorio user and skips it.
+					SecurityContext: &corev1.SecurityContext{
+						RunAsUser:    &runAsUser,
+						RunAsGroup:   &runAsGroup,
+						RunAsNonRoot: &runAsNonRoot,
+					},
+					StartupProbe:   healthProbe(10, 60),
+					ReadinessProbe: healthProbe(10, 3),
+					LivenessProbe:  healthProbe(30, 3),
+					VolumeMounts:   mounts,
+				},
+			},
+		},
+	}
+	template.Annotations[PodTemplateHashAnnotation] = podTemplateHash(template, files)
+
 	deployment := appsv1.Deployment{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      server.Name,
@@ -76,53 +137,26 @@ func BuildDeployment(
 			Selector: &metav1.LabelSelector{
 				MatchLabels: labels,
 			},
-			Template: corev1.PodTemplateSpec{
-				ObjectMeta: metav1.ObjectMeta{
-					Labels: labels,
-					Annotations: map[string]string{
-						ConfigHashAnnotation: files.Hash(),
-					},
-				},
-				Spec: corev1.PodSpec{
-					InitContainers: []corev1.Container{
-						{
-							Name:    "prepare-data",
-							Image:   prepareImage,
-							Command: []string{"sh", "-c", prepareDataCommand},
-							VolumeMounts: []corev1.VolumeMount{
-								{Name: dataVolume, MountPath: dataDir},
-							},
-						},
-					},
-					Volumes: volumes,
-					Containers: []corev1.Container{
-						{
-							Name:  "factorio",
-							Image: "factoriotools/factorio:" + version,
-							Ports: []corev1.ContainerPort{
-								{
-									Name:          "game",
-									ContainerPort: gamePort,
-									Protocol:      corev1.ProtocolUDP,
-								},
-							},
-							Env: []corev1.EnvVar{
-								{Name: "GENERATE_NEW_SAVE", Value: "true"},
-								{Name: "SAVE_NAME", Value: saveName},
-								{Name: "PORT", Value: strconv.Itoa(gamePort)},
-							},
-							StartupProbe:   healthProbe(10, 60),
-							ReadinessProbe: healthProbe(10, 3),
-							LivenessProbe:  healthProbe(30, 3),
-							VolumeMounts:   mounts,
-						},
-					},
-				},
-			},
+			Template: template,
 		},
 	}
 
 	return deployment
+}
+
+// podTemplateHash returns a digest of the desired pod template and the
+// rendered settings. It changes whenever a managed field changes, including
+// fields such as securityContext that the API server defaults differently on
+// an existing object.
+func podTemplateHash(template corev1.PodTemplateSpec, files ConfigFiles) string {
+	copied := template.DeepCopy()
+	if copied.Annotations != nil {
+		delete(copied.Annotations, PodTemplateHashAnnotation)
+	}
+
+	data, _ := json.Marshal(copied)
+	sum := sha256.Sum256(append([]byte(files.Hash()), data...))
+	return hex.EncodeToString(sum[:])
 }
 
 func dataVolumeFor(server *gamesv1alpha1.FactorioServer) corev1.Volume {
@@ -218,9 +252,9 @@ func configMount(volumeName, fileName string) corev1.VolumeMount {
 }
 
 // NeedsUpdate reports whether existing differs from desired on a field the
-// controller manages. The pod template is compared through the config hash
-// rather than field by field, because the API server defaults many fields
-// that are absent from the desired template.
+// controller manages. The pod template is compared through its hash rather
+// than field by field, because the API server defaults many fields that are
+// absent from the desired template.
 func NeedsUpdate(existing, desired *appsv1.Deployment) bool {
 	if !equality.Semantic.DeepEqual(existing.Spec.Replicas, desired.Spec.Replicas) {
 		return true
@@ -230,47 +264,9 @@ func NeedsUpdate(existing, desired *appsv1.Deployment) bool {
 		return true
 	}
 
-	existingInitContainers := existing.Spec.Template.Spec.InitContainers
-	desiredInitContainers := desired.Spec.Template.Spec.InitContainers
-
-	if len(existingInitContainers) != len(desiredInitContainers) {
-		return true
-	}
-
-	for i := range desiredInitContainers {
-		if existingInitContainers[i].Name != desiredInitContainers[i].Name {
-			return true
-		}
-
-		if existingInitContainers[i].Image != desiredInitContainers[i].Image {
-			return true
-		}
-	}
-
-	existingHash := existing.Spec.Template.Annotations[ConfigHashAnnotation]
-	desiredHash := desired.Spec.Template.Annotations[ConfigHashAnnotation]
-	if existingHash != desiredHash {
-		return true
-	}
-
-	existingContainers := existing.Spec.Template.Spec.Containers
-	desiredContainers := desired.Spec.Template.Spec.Containers
-
-	if len(existingContainers) != len(desiredContainers) {
-		return true
-	}
-
-	for i := range desiredContainers {
-		if existingContainers[i].Name != desiredContainers[i].Name {
-			return true
-		}
-
-		if existingContainers[i].Image != desiredContainers[i].Image {
-			return true
-		}
-	}
-
-	return false
+	existingHash := existing.Spec.Template.Annotations[PodTemplateHashAnnotation]
+	desiredHash := desired.Spec.Template.Annotations[PodTemplateHashAnnotation]
+	return existingHash != desiredHash
 }
 
 // UpdateDeployment applies the mutable parts of desired to existing. Other

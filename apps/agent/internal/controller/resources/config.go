@@ -12,9 +12,9 @@ import (
 	"github.com/streamixs/factorio/apps/agent/internal/config"
 )
 
-// ConfigHashAnnotation records a hash of the rendered settings on the pod
-// template so that changing a setting triggers a rollout.
-const ConfigHashAnnotation = "games.dev.streamixs.com/config-hash"
+// PodTemplateHashAnnotation records a hash of the desired pod template and the
+// rendered settings, so that any managed change triggers a rollout.
+const PodTemplateHashAnnotation = "games.dev.streamixs.com/pod-template-hash"
 
 // ConfigFiles holds the rendered settings files. A nil field means the
 // corresponding section is not set in the custom resource, so no object is

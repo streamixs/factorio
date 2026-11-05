@@ -2,6 +2,7 @@ package resources
 
 import (
 	"path"
+	"strings"
 	"testing"
 
 	appsv1 "k8s.io/api/apps/v1"
@@ -32,7 +33,7 @@ func TestBuildDeploymentMountsConfiguredFiles(t *testing.T) {
 	deployment := BuildDeployment(testServer(), files)
 	container := deployment.Spec.Template.Spec.Containers[0]
 
-	if got := deployment.Spec.Template.Annotations[ConfigHashAnnotation]; got == "" {
+	if got := deployment.Spec.Template.Annotations[PodTemplateHashAnnotation]; got == "" {
 		t.Fatal("config hash annotation is empty")
 	}
 
@@ -139,6 +140,45 @@ func TestBuildDeploymentConfiguresHealthProbes(t *testing.T) {
 	if container.LivenessProbe.PeriodSeconds != 30 ||
 		container.LivenessProbe.FailureThreshold != 3 {
 		t.Error("unexpected liveness probe timing")
+	}
+}
+
+func TestBuildDeploymentRunsAsFactorioUser(t *testing.T) {
+	deployment := BuildDeployment(testServer(), ConfigFiles{})
+	container := deployment.Spec.Template.Spec.Containers[0]
+
+	if container.SecurityContext == nil {
+		t.Fatal("container security context is nil")
+	}
+
+	if container.SecurityContext.RunAsUser == nil ||
+		*container.SecurityContext.RunAsUser != serverUserID {
+		t.Errorf("runAsUser is %v, want %d",
+			container.SecurityContext.RunAsUser, serverUserID)
+	}
+
+	if container.SecurityContext.RunAsNonRoot == nil ||
+		!*container.SecurityContext.RunAsNonRoot {
+		t.Error("runAsNonRoot is not enabled")
+	}
+
+	initContainer := deployment.Spec.Template.Spec.InitContainers[0]
+	if len(initContainer.Command) != 3 ||
+		!strings.Contains(initContainer.Command[2], "chown -R 845:845 /factorio") {
+		t.Errorf("prepare-data command is %v", initContainer.Command)
+	}
+}
+
+func TestPodTemplateHashChangesWithTemplate(t *testing.T) {
+	files := ConfigFiles{}
+	deployment := BuildDeployment(testServer(), files)
+	baseHash := deployment.Spec.Template.Annotations[PodTemplateHashAnnotation]
+
+	template := deployment.Spec.Template.DeepCopy()
+	template.Spec.Containers[0].SecurityContext = nil
+
+	if podTemplateHash(*template, files) == baseHash {
+		t.Error("template change does not change the hash")
 	}
 }
 
@@ -264,8 +304,8 @@ func TestUpdateDeploymentCopiesConfigAndKeepsAnnotations(t *testing.T) {
 
 	UpdateDeployment(&existing, &desired)
 
-	if got, want := existing.Spec.Template.Annotations[ConfigHashAnnotation],
-		desired.Spec.Template.Annotations[ConfigHashAnnotation]; got != want {
+	if got, want := existing.Spec.Template.Annotations[PodTemplateHashAnnotation],
+		desired.Spec.Template.Annotations[PodTemplateHashAnnotation]; got != want {
 		t.Errorf("config hash is %q, want %q", got, want)
 	}
 
