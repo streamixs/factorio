@@ -132,12 +132,12 @@ func TestBuildDeploymentConfiguresHealthProbes(t *testing.T) {
 		t.Error("startup probe does not allow ten minutes of startup")
 	}
 
-	if container.ReadinessProbe.PeriodSeconds != 10 ||
+	if container.ReadinessProbe.PeriodSeconds != 30 ||
 		container.ReadinessProbe.FailureThreshold != 3 {
 		t.Error("unexpected readiness probe timing")
 	}
 
-	if container.LivenessProbe.PeriodSeconds != 30 ||
+	if container.LivenessProbe.PeriodSeconds != 60 ||
 		container.LivenessProbe.FailureThreshold != 3 {
 		t.Error("unexpected liveness probe timing")
 	}
