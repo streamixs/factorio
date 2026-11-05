@@ -19,6 +19,7 @@ describe('ServersService', () => {
   const listNamespacedPod = vi.fn();
   const readNamespacedPodLog = vi.fn();
   const listNamespacedEvent = vi.fn();
+  const readNamespacedConfigMap = vi.fn();
 
   let service: ServersService;
 
@@ -47,6 +48,7 @@ describe('ServersService', () => {
               listNamespacedPod,
               readNamespacedPodLog,
               listNamespacedEvent,
+              readNamespacedConfigMap,
             },
           },
         },
@@ -358,6 +360,34 @@ describe('ServersService', () => {
     expect(events[0].lastTimestamp).toBe('2026-01-03T00:00:00.000Z');
     expect(events[1].reason).toBe('Created');
     expect(events[1].objectName).toBe('my-server-abc');
+  });
+
+  it('returns default and effective specifications', async () => {
+    readNamespacedConfigMap.mockResolvedValue({
+      data: {
+        'defaults.json': JSON.stringify({ storage: { size: '10Gi' } }),
+        'effective.json': JSON.stringify({ storage: { size: '5Gi' } }),
+      },
+    });
+
+    const settings = await service.effective('my-server');
+
+    expect(settings.defaults.storage?.size).toBe('10Gi');
+    expect(settings.effective.storage?.size).toBe('5Gi');
+    expect(readNamespacedConfigMap).toHaveBeenCalledWith({
+      name: 'my-server-effective-settings',
+      namespace: 'games',
+    });
+  });
+
+  it('maps a missing effective ConfigMap to NotFoundException', async () => {
+    readNamespacedConfigMap.mockRejectedValue(
+      new ApiException(404, 'Not Found', undefined, {}),
+    );
+
+    await expect(service.effective('my-server')).rejects.toBeInstanceOf(
+      NotFoundException,
+    );
   });
 
   it('maps a 404 to NotFoundException', async () => {

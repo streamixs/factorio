@@ -12,6 +12,7 @@ import {
 } from '@nestjs/common';
 import type {
   CreateFactorioServerInput,
+  EffectiveSettings,
   FactorioServer,
   ServerEvent,
   ServerLogs,
@@ -50,6 +51,11 @@ export class ServersController {
   @Get(':name/events')
   events(@Param('name') name: string): Promise<ServerEvent[]> {
     return this.servers.events(name);
+  }
+
+  @Get(':name/effective')
+  effective(@Param('name') name: string): Promise<EffectiveSettings> {
+    return this.servers.effective(name);
   }
 
   @Post()

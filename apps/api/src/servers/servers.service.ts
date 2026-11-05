@@ -2,6 +2,7 @@ import {
   BadRequestException,
   ConflictException,
   Injectable,
+  InternalServerErrorException,
   NotFoundException,
 } from '@nestjs/common';
 import { ApiException } from '@kubernetes/client-node';
@@ -14,6 +15,7 @@ import {
 import type {
   CreateFactorioServerInput,
   CredentialsInput,
+  EffectiveSettings,
   FactorioServer,
   FactorioServerList,
   FactorioServerSpec,
@@ -223,6 +225,41 @@ export class ServersService {
           Date.parse(right.lastTimestamp) - Date.parse(left.lastTimestamp),
       )
       .slice(0, 100);
+  }
+
+  async effective(name: string): Promise<EffectiveSettings> {
+    this.assertName(name);
+
+    let configMap;
+    try {
+      configMap = await this.kubernetes.core.readNamespacedConfigMap({
+        name: `${name}-effective-settings`,
+        namespace: this.kubernetes.namespace,
+      });
+    } catch (error) {
+      if (error instanceof ApiException && error.code === 404) {
+        throw new NotFoundException('Effective settings are not available yet');
+      }
+      throw error;
+    }
+
+    const defaults = configMap.data?.['defaults.json'];
+    const effective = configMap.data?.['effective.json'];
+
+    if (defaults === undefined || effective === undefined) {
+      throw new NotFoundException('Effective settings are not available yet');
+    }
+
+    try {
+      return {
+        defaults: JSON.parse(defaults) as FactorioServerSpec,
+        effective: JSON.parse(effective) as FactorioServerSpec,
+      };
+    } catch {
+      throw new InternalServerErrorException(
+        'Effective settings are not valid JSON',
+      );
+    }
   }
 
   private async replace(
