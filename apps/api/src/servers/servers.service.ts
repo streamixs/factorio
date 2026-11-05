@@ -3,10 +3,17 @@ import {
   ConflictException,
   Injectable,
   InternalServerErrorException,
+  Logger,
   NotFoundException,
 } from '@nestjs/common';
 import { ApiException } from '@kubernetes/client-node';
-import type { CoreV1Event, V1Pod, V1Secret } from '@kubernetes/client-node';
+import type {
+  CoreV1Event,
+  V1Job,
+  V1OwnerReference,
+  V1Pod,
+  V1Secret,
+} from '@kubernetes/client-node';
 import {
   createFactorioServerSchema,
   updateFactorioServerSchema,
@@ -19,6 +26,8 @@ import type {
   FactorioServer,
   FactorioServerList,
   FactorioServerSpec,
+  ServerBackup,
+  ServerBackups,
   ServerEvent,
   ServerLogs,
   UpdateFactorioServerInput,
@@ -40,8 +49,20 @@ const CREDENTIAL_KEYS = {
   token: 'token',
 } as const;
 
+const BACKUP_HTTP_PORT = 8080;
+const BACKUP_FILE_PATTERN = /^[A-Za-z0-9_][A-Za-z0-9._-]*\.zip$/;
+const RESTORE_SCRIPT = `set -eu
+if [ -f "/factorio/saves/$TARGET_SAVE" ]; then
+  cp "/factorio/saves/$TARGET_SAVE" "/backups/pre-restore-$(date -u +%Y%m%dT%H%M%SZ)-$TARGET_SAVE"
+fi
+mkdir -p /factorio/saves
+cp "/backups/$BACKUP_FILE" "/factorio/saves/$TARGET_SAVE"
+`;
+
 @Injectable()
 export class ServersService {
+  private readonly logger = new Logger(ServersService.name);
+
   constructor(private readonly kubernetes: KubernetesService) {}
 
   async list(): Promise<FactorioServer[]> {
@@ -259,6 +280,201 @@ export class ServersService {
       throw new InternalServerErrorException(
         'Effective settings are not valid JSON',
       );
+    }
+  }
+
+  async backups(name: string): Promise<ServerBackups> {
+    this.assertName(name);
+
+    const pod = await this.findServerPod(name);
+    const podIP = pod?.status?.podIP;
+
+    if (podIP === undefined) {
+      return { available: false, backups: [] };
+    }
+
+    try {
+      const response = await this.fetchFromPod(podIP, '/index.txt');
+      if (!response.ok) {
+        return { available: false, backups: [] };
+      }
+
+      const backups = (await response.text())
+        .split('\n')
+        .map(parseBackupLine)
+        .filter((backup): backup is ServerBackup => backup !== undefined)
+        .sort(
+          (left, right) =>
+            Date.parse(right.createdAt) - Date.parse(left.createdAt),
+        );
+
+      return { available: true, backups };
+    } catch {
+      return { available: false, backups: [] };
+    }
+  }
+
+  async downloadBackup(
+    name: string,
+    file: string,
+  ): Promise<{ data: Buffer; filename: string }> {
+    this.assertName(name);
+    assertBackupFile(file);
+
+    const pod = await this.findServerPod(name);
+    const podIP = pod?.status?.podIP;
+
+    if (podIP === undefined) {
+      throw new NotFoundException('Server is not running');
+    }
+
+    const response = await this.fetchFromPod(
+      podIP,
+      `/${encodeURIComponent(file)}`,
+    );
+
+    if (!response.ok) {
+      throw new NotFoundException('Backup not found');
+    }
+
+    return {
+      data: Buffer.from(await response.arrayBuffer()),
+      filename: file,
+    };
+  }
+
+  async restoreBackup(
+    name: string,
+    file: string,
+  ): Promise<{ save: string; job: string }> {
+    this.assertName(name);
+    assertBackupFile(file);
+
+    const server = await this.get(name);
+    if (server.spec.backup?.enabled === false) {
+      throw new BadRequestException('Backups are disabled for this server');
+    }
+
+    const wasSuspended = server.spec.suspended === true;
+    const save = restoredSaveName(file);
+    const jobName = restoreJobName(name);
+
+    void this.runRestore(server, name, file, save, jobName, wasSuspended);
+
+    return { save, job: jobName };
+  }
+
+  private async runRestore(
+    server: FactorioServer,
+    name: string,
+    file: string,
+    save: string,
+    jobName: string,
+    wasSuspended: boolean,
+  ): Promise<void> {
+    try {
+      if (!wasSuspended) {
+        await this.setSuspended(name, true);
+      }
+
+      await this.waitForPodsGone(name);
+
+      const job = buildRestoreJob(
+        server,
+        file,
+        save,
+        jobName,
+        this.ownerReference(server),
+      );
+      await this.kubernetes.batch.createNamespacedJob({
+        namespace: this.kubernetes.namespace,
+        body: job,
+      });
+      await this.waitForJob(jobName);
+    } catch (error) {
+      this.logger.error(
+        `Restore of ${file} failed`,
+        error instanceof Error ? error.stack : String(error),
+      );
+    } finally {
+      await this.deleteJobQuietly(jobName);
+
+      if (!wasSuspended) {
+        try {
+          await this.setSuspended(name, false);
+        } catch (error) {
+          this.logger.error(
+            'Restore completed but the server could not be restarted',
+            error instanceof Error ? error.stack : String(error),
+          );
+        }
+      }
+    }
+  }
+
+  private async findServerPod(name: string): Promise<V1Pod | undefined> {
+    const pods = await this.kubernetes.core.listNamespacedPod({
+      namespace: this.kubernetes.namespace,
+      labelSelector: `app.kubernetes.io/instance=${name}`,
+    });
+
+    return selectPod(pods.items ?? []);
+  }
+
+  private async fetchFromPod(podIP: string, path: string): Promise<Response> {
+    const host = podIP.includes(':') ? `[${podIP}]` : podIP;
+    return fetch(`http://${host}:${BACKUP_HTTP_PORT}${path}`, {
+      signal: AbortSignal.timeout(5000),
+    });
+  }
+
+  private async waitForPodsGone(name: string): Promise<void> {
+    for (let attempt = 0; attempt < 60; attempt++) {
+      const pods = await this.kubernetes.core.listNamespacedPod({
+        namespace: this.kubernetes.namespace,
+        labelSelector: `app.kubernetes.io/instance=${name}`,
+      });
+
+      if ((pods.items ?? []).length === 0) {
+        return;
+      }
+
+      await delay(2000);
+    }
+
+    throw new ConflictException('Server pod did not terminate');
+  }
+
+  private async waitForJob(jobName: string): Promise<void> {
+    for (let attempt = 0; attempt < 90; attempt++) {
+      const job = await this.kubernetes.batch.readNamespacedJob({
+        name: jobName,
+        namespace: this.kubernetes.namespace,
+      });
+
+      if ((job.status?.succeeded ?? 0) > 0) {
+        return;
+      }
+
+      if ((job.status?.failed ?? 0) > 0) {
+        throw new InternalServerErrorException('Restore job failed');
+      }
+
+      await delay(2000);
+    }
+
+    throw new InternalServerErrorException('Restore job timed out');
+  }
+
+  private async deleteJobQuietly(jobName: string): Promise<void> {
+    try {
+      await this.kubernetes.batch.deleteNamespacedJob({
+        name: jobName,
+        namespace: this.kubernetes.namespace,
+        propagationPolicy: 'Background',
+      });
+    } catch {
+      // The restore result matters more than a leftover Job.
     }
   }
 
@@ -489,6 +705,119 @@ export class ServersService {
 
 function credentialsSecretName(serverName: string): string {
   return `${serverName}${CREDENTIALS_SUFFIX}`;
+}
+
+function assertBackupFile(file: string): void {
+  if (!BACKUP_FILE_PATTERN.test(file) || file.includes('..')) {
+    throw new BadRequestException('Invalid backup file name');
+  }
+}
+
+function restoredSaveName(file: string): string {
+  return file.replace(/-\d{8}T\d{6}Z\.zip$/, '.zip');
+}
+
+function restoreJobName(serverName: string): string {
+  const suffix = Date.now().toString(36).slice(-6);
+  return `${serverName.slice(0, 40)}-restore-${suffix}`;
+}
+
+function parseBackupLine(line: string): ServerBackup | undefined {
+  const [name, size, mtime] = line.trim().split(/\s+/);
+  if (name === undefined || !name.endsWith('.zip')) {
+    return undefined;
+  }
+
+  const sizeValue = Number(size);
+  const mtimeValue = Number(mtime);
+  if (!Number.isFinite(sizeValue) || !Number.isFinite(mtimeValue)) {
+    return undefined;
+  }
+
+  return {
+    name,
+    size: sizeValue,
+    createdAt: new Date(mtimeValue * 1000).toISOString(),
+  };
+}
+
+function delay(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+function buildRestoreJob(
+  server: FactorioServer,
+  file: string,
+  save: string,
+  jobName: string,
+  ownerReference: V1OwnerReference,
+): V1Job {
+  const namespace = server.metadata.namespace ?? 'default';
+  const labels = {
+    app: 'factorio-restore',
+    'factorio.dev/server': server.metadata.name,
+  };
+
+  return {
+    apiVersion: 'batch/v1',
+    kind: 'Job',
+    metadata: {
+      name: jobName,
+      namespace,
+      labels,
+      ownerReferences: [ownerReference],
+    },
+    spec: {
+      backoffLimit: 1,
+      ttlSecondsAfterFinished: 300,
+      template: {
+        metadata: { labels },
+        spec: {
+          restartPolicy: 'Never',
+          securityContext: {
+            runAsNonRoot: true,
+            runAsUser: 845,
+            runAsGroup: 845,
+            seccompProfile: { type: 'RuntimeDefault' },
+          },
+          containers: [
+            {
+              name: 'restore',
+              image: 'busybox:1.36',
+              command: ['sh', '-c', RESTORE_SCRIPT],
+              env: [
+                { name: 'BACKUP_FILE', value: file },
+                { name: 'TARGET_SAVE', value: save },
+              ],
+              volumeMounts: [
+                { name: 'data', mountPath: '/factorio' },
+                { name: 'backups', mountPath: '/backups' },
+              ],
+              securityContext: {
+                allowPrivilegeEscalation: false,
+                readOnlyRootFilesystem: true,
+                capabilities: { drop: ['ALL'] },
+              },
+            },
+          ],
+          volumes: [
+            {
+              name: 'data',
+              persistentVolumeClaim: {
+                claimName: `${server.metadata.name}-data`,
+              },
+            },
+            {
+              name: 'backups',
+              persistentVolumeClaim: {
+                claimName: `${server.metadata.name}-backups`,
+              },
+            },
+          ],
+        },
+      },
+    },
+  } as V1Job;
 }
 
 function clampTailLines(value?: number): number {

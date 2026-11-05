@@ -20,6 +20,9 @@ describe('ServersService', () => {
   const readNamespacedPodLog = vi.fn();
   const listNamespacedEvent = vi.fn();
   const readNamespacedConfigMap = vi.fn();
+  const createNamespacedJob = vi.fn();
+  const readNamespacedJob = vi.fn();
+  const deleteNamespacedJob = vi.fn();
 
   let service: ServersService;
 
@@ -50,12 +53,21 @@ describe('ServersService', () => {
               listNamespacedEvent,
               readNamespacedConfigMap,
             },
+            batch: {
+              createNamespacedJob,
+              readNamespacedJob,
+              deleteNamespacedJob,
+            },
           },
         },
       ],
     }).compile();
 
     service = module.get<ServersService>(ServersService);
+  });
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
   });
 
   it('lists servers in the configured namespace', async () => {
@@ -387,6 +399,147 @@ describe('ServersService', () => {
 
     await expect(service.effective('my-server')).rejects.toBeInstanceOf(
       NotFoundException,
+    );
+  });
+
+  it('lists backups from the backup sidecar', async () => {
+    listNamespacedPod.mockResolvedValue({
+      items: [
+        {
+          metadata: { name: 'pod' },
+          status: { podIP: '10.0.0.1', containerStatuses: [{ ready: true }] },
+        },
+      ],
+    });
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValue({
+        ok: true,
+        text: async () =>
+          'world-20260101T000000Z.zip 123 1767225600\n_broken.txt 1 1\n',
+      }),
+    );
+
+    const backups = await service.backups('my-server');
+
+    expect(backups.available).toBe(true);
+    expect(backups.backups).toEqual([
+      {
+        name: 'world-20260101T000000Z.zip',
+        size: 123,
+        createdAt: '2026-01-01T00:00:00.000Z',
+      },
+    ]);
+  });
+
+  it('returns unavailable when no pod is running', async () => {
+    listNamespacedPod.mockResolvedValue({ items: [] });
+
+    await expect(service.backups('my-server')).resolves.toEqual({
+      available: false,
+      backups: [],
+    });
+  });
+
+  it('downloads a backup from the sidecar', async () => {
+    listNamespacedPod.mockResolvedValue({
+      items: [
+        {
+          metadata: { name: 'pod' },
+          status: { podIP: '10.0.0.1', containerStatuses: [{ ready: true }] },
+        },
+      ],
+    });
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValue({
+        ok: true,
+        arrayBuffer: async () => new Uint8Array([1, 2, 3]).buffer,
+      }),
+    );
+
+    const backup = await service.downloadBackup(
+      'my-server',
+      '_autosave1-20260101T000000Z.zip',
+    );
+
+    expect(backup.filename).toBe('_autosave1-20260101T000000Z.zip');
+    expect(backup.data).toEqual(Buffer.from([1, 2, 3]));
+  });
+
+  it('restores a backup through a Job and restarts the server', async () => {
+    const server = {
+      apiVersion: 'games.dev.streamixs.com/v1alpha1',
+      kind: 'FactorioServer',
+      metadata: {
+        name: 'my-server',
+        namespace: 'games',
+        uid: 'uid-1',
+      },
+      spec: {
+        version: '2.1.24',
+        suspended: false,
+        backup: { enabled: true },
+      },
+    };
+    getNamespacedCustomObject.mockResolvedValue(server);
+    replaceNamespacedCustomObject.mockImplementation(
+      (request: { body: FactorioServer }) => Promise.resolve(request.body),
+    );
+    listNamespacedPod.mockResolvedValue({ items: [] });
+    createNamespacedJob.mockResolvedValue({});
+    readNamespacedJob.mockResolvedValue({ status: { succeeded: 1 } });
+    deleteNamespacedJob.mockResolvedValue({});
+
+    const result = await service.restoreBackup(
+      'my-server',
+      'world-20260101T000000Z.zip',
+    );
+
+    expect(result.save).toBe('world.zip');
+    expect(result.job).toContain('my-server-restore-');
+
+    await vi.waitFor(() => {
+      expect(createNamespacedJob).toHaveBeenCalled();
+      expect(replaceNamespacedCustomObject).toHaveBeenCalledTimes(2);
+      expect(deleteNamespacedJob).toHaveBeenCalled();
+    });
+
+    expect(createNamespacedJob).toHaveBeenCalledWith(
+      expect.objectContaining({
+        namespace: 'games',
+        body: expect.objectContaining({
+          spec: expect.objectContaining({
+            template: expect.objectContaining({
+              spec: expect.objectContaining({
+                containers: [
+                  expect.objectContaining({
+                    env: [
+                      {
+                        name: 'BACKUP_FILE',
+                        value: 'world-20260101T000000Z.zip',
+                      },
+                      { name: 'TARGET_SAVE', value: 'world.zip' },
+                    ],
+                  }),
+                ],
+                volumes: [
+                  {
+                    name: 'data',
+                    persistentVolumeClaim: { claimName: 'my-server-data' },
+                  },
+                  {
+                    name: 'backups',
+                    persistentVolumeClaim: {
+                      claimName: 'my-server-backups',
+                    },
+                  },
+                ],
+              }),
+            }),
+          }),
+        }),
+      }),
     );
   });
 

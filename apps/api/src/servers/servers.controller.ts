@@ -9,11 +9,15 @@ import {
   Patch,
   Post,
   Query,
+  Res,
+  StreamableFile,
 } from '@nestjs/common';
+import type { Response } from 'express';
 import type {
   CreateFactorioServerInput,
   EffectiveSettings,
   FactorioServer,
+  ServerBackups,
   ServerEvent,
   ServerLogs,
   UpdateFactorioServerInput,
@@ -56,6 +60,35 @@ export class ServersController {
   @Get(':name/effective')
   effective(@Param('name') name: string): Promise<EffectiveSettings> {
     return this.servers.effective(name);
+  }
+
+  @Get(':name/backups')
+  backups(@Param('name') name: string): Promise<ServerBackups> {
+    return this.servers.backups(name);
+  }
+
+  @Get(':name/backups/:file')
+  async downloadBackup(
+    @Param('name') name: string,
+    @Param('file') file: string,
+    @Res({ passthrough: true }) response: Response,
+  ): Promise<StreamableFile> {
+    const backup = await this.servers.downloadBackup(name, file);
+    response.set({
+      'Content-Type': 'application/zip',
+      'Content-Disposition': `attachment; filename="${backup.filename}"`,
+    });
+
+    return new StreamableFile(backup.data);
+  }
+
+  @Post(':name/backups/:file/restore')
+  @HttpCode(HttpStatus.OK)
+  restoreBackup(
+    @Param('name') name: string,
+    @Param('file') file: string,
+  ): Promise<{ save: string; job: string }> {
+    return this.servers.restoreBackup(name, file);
   }
 
   @Post()
