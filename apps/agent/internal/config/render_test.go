@@ -1,6 +1,7 @@
 package config
 
 import (
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"strings"
@@ -52,6 +53,32 @@ func readGolden(t *testing.T, name string) string {
 	return string(data)
 }
 
+func decode(t *testing.T, data []byte) map[string]any {
+	t.Helper()
+
+	var decoded map[string]any
+	if err := json.Unmarshal(data, &decoded); err != nil {
+		t.Fatalf("decode output: %v", err)
+	}
+
+	return decoded
+}
+
+func nested(t *testing.T, root map[string]any, keys ...string) map[string]any {
+	t.Helper()
+
+	current := root
+	for _, key := range keys {
+		next, ok := current[key].(map[string]any)
+		if !ok {
+			t.Fatalf("key %q is not an object", key)
+		}
+		current = next
+	}
+
+	return current
+}
+
 func TestRenderSampleMatchesGoldenFiles(t *testing.T) {
 	spec := loadSampleSpec(t)
 
@@ -90,6 +117,13 @@ func TestRenderSampleMatchesGoldenFiles(t *testing.T) {
 				t.Fatalf("render: %v", err)
 			}
 
+			if os.Getenv("UPDATE_GOLDEN") == "1" {
+				path := filepath.Join("testdata", tt.golden)
+				if err := os.WriteFile(path, got, 0o644); err != nil {
+					t.Fatalf("update golden file %s: %v", path, err)
+				}
+			}
+
 			if want := readGolden(t, tt.golden); string(got) != want {
 				t.Errorf("unexpected output\n--- got ---\n%s\n--- want ---\n%s", got, want)
 			}
@@ -97,70 +131,64 @@ func TestRenderSampleMatchesGoldenFiles(t *testing.T) {
 	}
 }
 
-func TestNilSpecRendersEmptyObject(t *testing.T) {
-	tests := map[string]func() ([]byte, error){
-		"server settings": func() ([]byte, error) {
-			return RenderServerSettings(nil, ServerSecretValues{})
-		},
-		"map generation settings": func() ([]byte, error) {
-			return RenderMapGenSettings(nil)
-		},
-		"map settings": func() ([]byte, error) {
-			return RenderMapSettings(nil)
-		},
+func TestNilSpecRendersDefaults(t *testing.T) {
+	server, err := RenderServerSettings(nil, ServerSecretValues{})
+	if err != nil {
+		t.Fatalf("render server settings: %v", err)
+	}
+	serverSettings := decode(t, server)
+
+	if serverSettings["name"] != "Factorio Server" {
+		t.Errorf("default name is %v", serverSettings["name"])
+	}
+	if _, ok := serverSettings["description"]; !ok {
+		t.Error("default description is missing")
+	}
+	if _, ok := serverSettings["game_password"]; !ok {
+		t.Error("default game_password is missing")
 	}
 
-	for name, render := range tests {
-		t.Run(name, func(t *testing.T) {
-			got, err := render()
-			if err != nil {
-				t.Fatalf("render: %v", err)
-			}
+	mapGen, err := RenderMapGenSettings(nil)
+	if err != nil {
+		t.Fatalf("render map generation settings: %v", err)
+	}
+	if got := decode(t, mapGen)["starting_area"]; got != float64(1) {
+		t.Errorf("default starting_area is %v", got)
+	}
 
-			if want := "{}\n"; string(got) != want {
-				t.Errorf("got %q, want %q", got, want)
-			}
-		})
+	mapSettings, err := RenderMapSettings(nil)
+	if err != nil {
+		t.Fatalf("render map settings: %v", err)
+	}
+	if got := nested(t, decode(t, mapSettings), "pollution")["enabled"]; got != true {
+		t.Errorf("default pollution.enabled is %v", got)
 	}
 }
 
-func TestEmptySectionIsOmitted(t *testing.T) {
-	tests := map[string]func() ([]byte, error){
-		"server settings": func() ([]byte, error) {
-			return RenderServerSettings(
-				&gamesv1alpha1.ServerSettingsSpec{
-					Access: &gamesv1alpha1.AccessControlSpec{},
-				},
-				ServerSecretValues{},
-			)
-		},
-		"map generation settings": func() ([]byte, error) {
-			return RenderMapGenSettings(
-				&gamesv1alpha1.MapGenSettingsSpec{
-					CliffSettings: &gamesv1alpha1.CliffSettingsSpec{},
-				},
-			)
-		},
-		"map settings": func() ([]byte, error) {
-			return RenderMapSettings(
-				&gamesv1alpha1.MapSettingsSpec{
-					Pollution: &gamesv1alpha1.PollutionSpec{},
-				},
-			)
-		},
+func TestEmptySectionUsesDefaults(t *testing.T) {
+	server, err := RenderServerSettings(
+		&gamesv1alpha1.ServerSettingsSpec{},
+		ServerSecretValues{},
+	)
+	if err != nil {
+		t.Fatalf("render server settings: %v", err)
+	}
+	serverSettings := decode(t, server)
+
+	if got := serverSettings["allow_commands"]; got != "admins-only" {
+		t.Errorf("default allow_commands is %v", got)
+	}
+	if got := serverSettings["max_players"]; got != float64(0) {
+		t.Errorf("default max_players is %v", got)
 	}
 
-	for name, render := range tests {
-		t.Run(name, func(t *testing.T) {
-			got, err := render()
-			if err != nil {
-				t.Fatalf("render: %v", err)
-			}
-
-			if want := "{}\n"; string(got) != want {
-				t.Errorf("got %q, want %q", got, want)
-			}
-		})
+	mapGen, err := RenderMapGenSettings(&gamesv1alpha1.MapGenSettingsSpec{})
+	if err != nil {
+		t.Fatalf("render map generation settings: %v", err)
+	}
+	controls := nested(t, decode(t, mapGen), "autoplace_controls")
+	if got := nested(t, controls, "coal")["frequency"]; got != float64(1) {
+		t.Errorf("default coal frequency is %v", got)
 	}
 }
 
@@ -191,17 +219,26 @@ func TestServerSecretsAreResolvedFromSelectors(t *testing.T) {
 	if err != nil {
 		t.Fatalf("render: %v", err)
 	}
+	settings := decode(t, got)
 
-	want := `{
-  "allow_commands": "admins-only",
-  "game_password": "hunter2",
-  "max_players": 4,
-  "token": "api-token",
-  "username": "factorio"
-}
-`
-	if string(got) != want {
-		t.Errorf("unexpected output\n--- got ---\n%s\n--- want ---\n%s", got, want)
+	if settings["game_password"] != "hunter2" {
+		t.Errorf("game_password is %v", settings["game_password"])
+	}
+	if settings["token"] != "api-token" {
+		t.Errorf("token is %v", settings["token"])
+	}
+	if settings["username"] != "factorio" {
+		t.Errorf("username is %v", settings["username"])
+	}
+	if settings["max_players"] != float64(4) {
+		t.Errorf("max_players is %v", settings["max_players"])
+	}
+	if settings["allow_commands"] != "admins-only" {
+		t.Errorf("allow_commands is %v", settings["allow_commands"])
+	}
+	if settings["password"] != "" {
+		t.Errorf("unreferenced password should keep the default, got %v",
+			settings["password"])
 	}
 }
 
@@ -213,7 +250,7 @@ func TestMapGenSettingsMappings(t *testing.T) {
 			{},
 		},
 		CliffSettings: &gamesv1alpha1.CliffSettingsSpec{
-			Name:                   ptr("cliff"),
+			Name:                   ptr("custom-cliff"),
 			CliffElevation0:        ptr(10.0),
 			CliffElevationInterval: ptr(20.0),
 			Richness:               ptr(1.0),
@@ -224,26 +261,32 @@ func TestMapGenSettingsMappings(t *testing.T) {
 	if err != nil {
 		t.Fatalf("render: %v", err)
 	}
+	settings := decode(t, got)
 
-	want := `{
-  "cliff_settings": {
-    "cliff_elevation_0": 10,
-    "cliff_elevation_interval": 20,
-    "name": "cliff",
-    "richness": 1
-  },
-  "starting_points": [
-    {
-      "x": 0.5,
-      "y": -1.5
-    },
-    {}
-  ],
-  "width": 1000
-}
-`
-	if string(got) != want {
-		t.Errorf("unexpected output\n--- got ---\n%s\n--- want ---\n%s", got, want)
+	if settings["width"] != float64(1000) {
+		t.Errorf("width is %v", settings["width"])
+	}
+
+	points, ok := settings["starting_points"].([]any)
+	if !ok || len(points) != 2 {
+		t.Fatalf("starting_points is %v", settings["starting_points"])
+	}
+	first, ok := points[0].(map[string]any)
+	if !ok || first["x"] != 0.5 || first["y"] != -1.5 {
+		t.Errorf("first starting point is %v", points[0])
+	}
+
+	cliffs := nested(t, settings, "cliff_settings")
+	if cliffs["name"] != "custom-cliff" {
+		t.Errorf("cliff name is %v", cliffs["name"])
+	}
+	if cliffs["cliff_elevation_interval"] != float64(20) {
+		t.Errorf("cliff interval is %v", cliffs["cliff_elevation_interval"])
+	}
+
+	controls := nested(t, settings, "autoplace_controls")
+	if got := nested(t, controls, "stone")["frequency"]; got != float64(1) {
+		t.Errorf("untouched stone frequency is %v", got)
 	}
 }
 
@@ -275,32 +318,44 @@ func TestMapSettingsMappings(t *testing.T) {
 	if err != nil {
 		t.Fatalf("render: %v", err)
 	}
+	settings := decode(t, got)
 
-	want := `{
-  "difficulty_settings": {
-    "spoil_time_modifier": 0.25,
-    "technology_price_multiplier": 2
-  },
-  "enemy_evolution": {
-    "destroy_factor": 0.2,
-    "pollution_factor": 0.3
-  },
-  "enemy_expansion": {
-    "building_coefficient": 0.4,
-    "max_colliding_tiles_coefficient": 0.5,
-    "settler_group_max_size": 6
-  },
-  "max_failed_behavior_count": 9,
-  "pollution": {
-    "enabled": true,
-    "enemy_attack_pollution_consumption_modifier": 1.5,
-    "expected_max_per_chunk": 2,
-    "min_to_diffuse": 0.1
-  }
-}
-`
-	if string(got) != want {
-		t.Errorf("unexpected output\n--- got ---\n%s\n--- want ---\n%s", got, want)
+	pollution := nested(t, settings, "pollution")
+	if pollution["min_to_diffuse"] != 0.1 {
+		t.Errorf("min_to_diffuse is %v", pollution["min_to_diffuse"])
+	}
+	if pollution["expected_max_per_chunk"] != float64(2) {
+		t.Errorf("expected_max_per_chunk is %v",
+			pollution["expected_max_per_chunk"])
+	}
+
+	evolution := nested(t, settings, "enemy_evolution")
+	if evolution["destroy_factor"] != 0.2 {
+		t.Errorf("destroy_factor is %v", evolution["destroy_factor"])
+	}
+
+	expansion := nested(t, settings, "enemy_expansion")
+	if expansion["building_coefficient"] != 0.4 {
+		t.Errorf("building_coefficient is %v",
+			expansion["building_coefficient"])
+	}
+	if expansion["max_expansion_distance"] != float64(5) {
+		t.Errorf("untouched max_expansion_distance is %v",
+			expansion["max_expansion_distance"])
+	}
+
+	difficulty := nested(t, settings, "difficulty_settings")
+	if difficulty["spoil_time_modifier"] != 0.25 {
+		t.Errorf("spoil_time_modifier is %v",
+			difficulty["spoil_time_modifier"])
+	}
+
+	if settings["max_failed_behavior_count"] != float64(9) {
+		t.Errorf("max_failed_behavior_count is %v",
+			settings["max_failed_behavior_count"])
+	}
+	if _, ok := settings["unit_group"]; !ok {
+		t.Error("default unit_group is missing")
 	}
 }
 
@@ -314,16 +369,18 @@ func TestRawSettingsAreMerged(t *testing.T) {
 	if err != nil {
 		t.Fatalf("render: %v", err)
 	}
+	settings := decode(t, got)
 
-	want := `{
-  "property_expression_names": {
-    "elevation": "basic"
-  },
-  "seed": 42
-}
-`
-	if string(got) != want {
-		t.Errorf("unexpected output\n--- got ---\n%s\n--- want ---\n%s", got, want)
+	expressions := nested(t, settings, "property_expression_names")
+	if expressions["elevation"] != "basic" {
+		t.Errorf("elevation is %v", expressions["elevation"])
+	}
+	if expressions["control:moisture:bias"] != "0" {
+		t.Errorf("default moisture bias was lost: %v",
+			expressions["control:moisture:bias"])
+	}
+	if settings["seed"] != float64(42) {
+		t.Errorf("seed is %v", settings["seed"])
 	}
 }
 

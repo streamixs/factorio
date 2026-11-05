@@ -137,17 +137,17 @@ func (in *AutoplaceControlSpec) DeepCopyInto(out *AutoplaceControlSpec) {
 	*out = *in
 	if in.Frequency != nil {
 		in, out := &in.Frequency, &out.Frequency
-		*out = new(MapGenSize)
+		*out = new(float64)
 		**out = **in
 	}
 	if in.Size != nil {
 		in, out := &in.Size, &out.Size
-		*out = new(MapGenSize)
+		*out = new(float64)
 		**out = **in
 	}
 	if in.Richness != nil {
 		in, out := &in.Richness, &out.Richness
-		*out = new(MapGenSize)
+		*out = new(float64)
 		**out = **in
 	}
 }
@@ -473,12 +473,12 @@ func (in *MapGenSettingsSpec) DeepCopyInto(out *MapGenSettingsSpec) {
 	*out = *in
 	if in.TerrainSegmentation != nil {
 		in, out := &in.TerrainSegmentation, &out.TerrainSegmentation
-		*out = new(MapGenSize)
+		*out = new(float64)
 		**out = **in
 	}
 	if in.Water != nil {
 		in, out := &in.Water, &out.Water
-		*out = new(MapGenSize)
+		*out = new(float64)
 		**out = **in
 	}
 	if in.Width != nil {
@@ -493,7 +493,7 @@ func (in *MapGenSettingsSpec) DeepCopyInto(out *MapGenSettingsSpec) {
 	}
 	if in.StartingArea != nil {
 		in, out := &in.StartingArea, &out.StartingArea
-		*out = new(MapGenSize)
+		*out = new(float64)
 		**out = **in
 	}
 	if in.PeacefulMode != nil {

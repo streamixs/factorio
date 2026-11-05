@@ -28,11 +28,11 @@ type MapGenSettingsSpec struct {
 	// terrainSegmentation controls how fragmented the terrain is.
 	// Maps to terrain_segmentation.
 	// +optional
-	TerrainSegmentation *MapGenSize `json:"terrainSegmentation,omitempty"`
+	TerrainSegmentation *float64 `json:"terrainSegmentation,omitempty"`
 
 	// water controls the amount of water on the map. Maps to water.
 	// +optional
-	Water *MapGenSize `json:"water,omitempty"`
+	Water *float64 `json:"water,omitempty"`
 
 	// width is the map width in tiles. A value of 0 means an infinite map.
 	// Maps to width.
@@ -49,7 +49,7 @@ type MapGenSettingsSpec struct {
 	// startingArea controls the size of the area cleared around the starting
 	// positions. Maps to starting_area.
 	// +optional
-	StartingArea *MapGenSize `json:"startingArea,omitempty"`
+	StartingArea *float64 `json:"startingArea,omitempty"`
 
 	// peacefulMode prevents enemies from attacking unless provoked.
 	// Maps to peaceful_mode.
@@ -86,30 +86,6 @@ type MapGenSettingsSpec struct {
 	Raw *apiextensionsv1.JSON `json:"raw,omitempty"`
 }
 
-// MapGenSize is a map generation slider value.
-// +kubebuilder:validation:Enum=none;very-low;low;normal;high;very-high
-type MapGenSize string
-
-const (
-	// MapGenSizeNone disables the feature.
-	MapGenSizeNone MapGenSize = "none"
-
-	// MapGenSizeVeryLow sets the slider to its lowest non-zero value.
-	MapGenSizeVeryLow MapGenSize = "very-low"
-
-	// MapGenSizeLow sets the slider below normal.
-	MapGenSizeLow MapGenSize = "low"
-
-	// MapGenSizeNormal sets the default slider value.
-	MapGenSizeNormal MapGenSize = "normal"
-
-	// MapGenSizeHigh sets the slider above normal.
-	MapGenSizeHigh MapGenSize = "high"
-
-	// MapGenSizeVeryHigh sets the slider to its highest value.
-	MapGenSizeVeryHigh MapGenSize = "very-high"
-)
-
 // MapPosition is a position on the map.
 type MapPosition struct {
 
@@ -128,16 +104,16 @@ type AutoplaceControlSpec struct {
 
 	// frequency controls how often the entity appears. Maps to frequency.
 	// +optional
-	Frequency *MapGenSize `json:"frequency,omitempty"`
+	Frequency *float64 `json:"frequency,omitempty"`
 
 	// size controls the size of the generated patches. Maps to size.
 	// +optional
-	Size *MapGenSize `json:"size,omitempty"`
+	Size *float64 `json:"size,omitempty"`
 
 	// richness controls how much resource each patch contains.
 	// Maps to richness.
 	// +optional
-	Richness *MapGenSize `json:"richness,omitempty"`
+	Richness *float64 `json:"richness,omitempty"`
 }
 
 // CliffSettingsSpec controls cliff generation.

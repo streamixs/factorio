@@ -3,28 +3,36 @@ package config
 import (
 	"slices"
 
+	apiextensionsv1 "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1"
+
 	gamesv1alpha1 "github.com/streamixs/factorio/apps/agent/api/v1alpha1"
 )
 
 // RenderServerSettings renders spec into a server-settings.json document.
 // secrets holds the values referenced by the game password, account password
-// and API token selectors.
+// and API token selectors. Unset typed fields keep the Factorio defaults.
 func RenderServerSettings(
 	spec *gamesv1alpha1.ServerSettingsSpec,
 	secrets ServerSecretValues,
 ) ([]byte, error) {
-	settings := map[string]any{}
-	if spec == nil {
-		return render(settings, nil)
+	overrides := map[string]any{}
+	var raw *apiextensionsv1.JSON
+
+	if spec != nil {
+		raw = spec.Raw
+		renderIdentity(overrides, spec.Identity)
+		renderAccess(overrides, spec.Access, secrets)
+		renderAutoSave(overrides, spec.AutoSave)
+		renderPlayerManagement(overrides, spec.PlayerManagement)
+		renderAuthentication(overrides, spec.Authentication, secrets)
 	}
 
-	renderIdentity(settings, spec.Identity)
-	renderAccess(settings, spec.Access, secrets)
-	renderAutoSave(settings, spec.AutoSave)
-	renderPlayerManagement(settings, spec.PlayerManagement)
-	renderAuthentication(settings, spec.Authentication, secrets)
+	defaults, err := defaultSettings(ServerSettingsFile)
+	if err != nil {
+		return nil, err
+	}
 
-	return render(settings, spec.Raw)
+	return render(defaults, overrides, raw)
 }
 
 // renderIdentity writes the identity fields. Factorio stores them at the top

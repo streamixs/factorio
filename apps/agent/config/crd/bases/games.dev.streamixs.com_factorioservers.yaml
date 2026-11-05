@@ -64,37 +64,16 @@ spec:
                         frequency:
                           description: frequency controls how often the entity appears.
                             Maps to frequency.
-                          enum:
-                          - none
-                          - very-low
-                          - low
-                          - normal
-                          - high
-                          - very-high
-                          type: string
+                          type: number
                         richness:
                           description: |-
                             richness controls how much resource each patch contains.
                             Maps to richness.
-                          enum:
-                          - none
-                          - very-low
-                          - low
-                          - normal
-                          - high
-                          - very-high
-                          type: string
+                          type: number
                         size:
                           description: size controls the size of the generated patches.
                             Maps to size.
-                          enum:
-                          - none
-                          - very-low
-                          - low
-                          - normal
-                          - high
-                          - very-high
-                          type: string
+                          type: number
                       type: object
                     description: |-
                       autoplaceControls controls the frequency, size and richness of
@@ -153,14 +132,7 @@ spec:
                     description: |-
                       startingArea controls the size of the area cleared around the starting
                       positions. Maps to starting_area.
-                    enum:
-                    - none
-                    - very-low
-                    - low
-                    - normal
-                    - high
-                    - very-high
-                    type: string
+                    type: number
                   startingPoints:
                     description: |-
                       startingPoints are the positions where players start.
@@ -180,25 +152,11 @@ spec:
                     description: |-
                       terrainSegmentation controls how fragmented the terrain is.
                       Maps to terrain_segmentation.
-                    enum:
-                    - none
-                    - very-low
-                    - low
-                    - normal
-                    - high
-                    - very-high
-                    type: string
+                    type: number
                   water:
                     description: water controls the amount of water on the map. Maps
                       to water.
-                    enum:
-                    - none
-                    - very-low
-                    - low
-                    - normal
-                    - high
-                    - very-high
-                    type: string
+                    type: number
                   width:
                     description: |-
                       width is the map width in tiles. A value of 0 means an infinite map.

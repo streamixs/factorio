@@ -3,14 +3,6 @@ export interface SecretKeySelector {
   key: string;
 }
 
-export type MapGenSize =
-  | "none"
-  | "very-low"
-  | "low"
-  | "normal"
-  | "high"
-  | "very-high";
-
 export type AllowCommands = "true" | "false" | "admins-only";
 
 export type ServiceType = "ClusterIP" | "NodePort" | "LoadBalancer";
@@ -68,9 +60,9 @@ export interface ServerSettings {
 }
 
 export interface AutoplaceControl {
-  frequency?: MapGenSize;
-  size?: MapGenSize;
-  richness?: MapGenSize;
+  frequency?: number;
+  size?: number;
+  richness?: number;
 }
 
 export interface MapPosition {
@@ -86,11 +78,11 @@ export interface CliffSettings {
 }
 
 export interface MapGenSettings {
-  terrainSegmentation?: MapGenSize;
-  water?: MapGenSize;
+  terrainSegmentation?: number;
+  water?: number;
   width?: number;
   height?: number;
-  startingArea?: MapGenSize;
+  startingArea?: number;
   peacefulMode?: boolean;
   seed?: number;
   startingPoints?: MapPosition[];

@@ -3,9 +3,10 @@
 Expected JSON output rendered from the sample custom resource at
 `config/samples/games_v1alpha1_factorioserver.yaml`.
 
-These files are **not** full Factorio default configuration. They contain only
-the keys produced by the typed fields set in the sample. A field left unset
-(`nil` pointer) is omitted so that Factorio applies its own default.
+These files contain the full Factorio defaults plus the values set in the
+sample. The defaults are the 2.1.24 example files shipped with the image
+(`/opt/factorio/data/*.example.json`), with `_comment_*` keys removed and a
+neutral server name. They are embedded from `internal/config/defaults/`.
 
 | File | Source | Mounted as |
 |---|---|---|
@@ -13,23 +14,36 @@ the keys produced by the typed fields set in the sample. A field left unset
 | `map-gen-settings.golden.json` | `spec.mapGenSettings` | ConfigMap `map-gen-settings.json` |
 | `map-settings.golden.json` | `spec.mapSettings` | ConfigMap `map-settings.json` |
 
-## Rendering rules the builder must follow
+## Rendering rules
 
-1. Only non-nil typed fields are written. A `nil` pointer means "leave the key
-   out and let Factorio decide".
-2. API fields are camelCase, Factorio keys are snake_case. The mapping is
+1. Each document starts from the embedded Factorio defaults. Factorio requires
+   the complete property tree and rejects a file that misses keys such as
+   `description`.
+2. Typed fields override the defaults. A field left unset keeps the Factorio
+   default. Nested objects are merged key by key; lists are replaced.
+3. API fields are camelCase, Factorio keys are snake_case. The mapping is
    explicit per field, not reflection-based:
    `maxPlayers` → `max_players`, `terrainSegmentation` →
    `terrain_segmentation`, `autoplaceControls` → `autoplace_controls`,
    `enemyEvolution` → `enemy_evolution`, `timeFactor` → `time_factor`.
-3. `raw` is applied last. If a key is produced both by a typed field and by
-   `raw`, rendering must fail with a conflict error; there is no silent
-   overwrite.
-4. Output is indented with two spaces, keys are sorted, and the file ends with
-   a newline. This keeps the content stable so its checksum can be used to
-   trigger a rollout.
-5. Map keys use Factorio names (`coal`, `iron-ore`, `enemy-base`, …). List order
-   is preserved for `starting_points`.
+4. `raw` is applied last. A top-level key produced by a typed field is rejected
+   with a conflict error; a key that only exists in the defaults may be
+   overridden through `raw`.
+5. Output is indented with two spaces, keys are sorted, and the file ends with
+   a newline. This keeps the content stable so its checksum can trigger a
+   rollout.
+6. Map generation values are numbers, not GUI labels: `1` is the Factorio
+   default for frequency, size, richness, terrain segmentation and starting
+   area. Map keys use Factorio names (`coal`, `iron-ore`, `enemy-base`, …).
+   List order is preserved for `starting_points`.
+
+## Updating the golden files
+
+After changing the renderer or the sample:
+
+```sh
+UPDATE_GOLDEN=1 go test ./internal/config -run TestRenderSampleMatchesGoldenFiles
+```
 
 ## Not covered yet
 

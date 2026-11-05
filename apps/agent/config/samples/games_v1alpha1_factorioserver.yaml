@@ -13,14 +13,14 @@ spec:
     access:
       maxPlayers: 10
   mapGenSettings:
-    terrainSegmentation: normal
-    water: normal
+    terrainSegmentation: 1
+    water: 1
     seed: 123456
     autoplaceControls:
       coal:
-        frequency: high
-        size: normal
-        richness: normal
+        frequency: 2
+        size: 1
+        richness: 1
   mapSettings:
     enemyEvolution:
       enabled: true

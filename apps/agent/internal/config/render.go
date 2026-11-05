@@ -28,10 +28,17 @@ type ServerSecretValues struct {
 	Token        string
 }
 
-// render serialises settings and appends the trailing newline Factorio
-// configuration files are expected to end with.
-func render(settings map[string]any, raw *apiextensionsv1.JSON) ([]byte, error) {
-	if err := mergeRaw(settings, raw); err != nil {
+// render merges typed overrides and raw settings onto the Factorio defaults.
+// Factorio requires the complete property tree, so the defaults are the base
+// document rather than an empty object.
+func render(
+	defaults, overrides map[string]any,
+	raw *apiextensionsv1.JSON,
+) ([]byte, error) {
+	settings := deepCopyMap(defaults)
+	mergeMaps(settings, overrides)
+
+	if err := mergeRaw(settings, overrides, raw); err != nil {
 		return nil, err
 	}
 
@@ -43,9 +50,52 @@ func render(settings map[string]any, raw *apiextensionsv1.JSON) ([]byte, error) 
 	return append(data, '\n'), nil
 }
 
-// mergeRaw adds the keys of raw to settings. A key already produced by a typed
-// field is rejected rather than silently overwritten.
-func mergeRaw(settings map[string]any, raw *apiextensionsv1.JSON) error {
+func deepCopyMap(source map[string]any) map[string]any {
+	copied := make(map[string]any, len(source))
+	for key, value := range source {
+		copied[key] = deepCopyValue(value)
+	}
+	return copied
+}
+
+func deepCopyValue(value any) any {
+	switch typed := value.(type) {
+	case map[string]any:
+		return deepCopyMap(typed)
+	case []any:
+		copied := make([]any, len(typed))
+		for i, item := range typed {
+			copied[i] = deepCopyValue(item)
+		}
+		return copied
+	default:
+		return value
+	}
+}
+
+// mergeMaps recursively overlays source onto destination. Objects are merged
+// key by key, while lists and scalars replace the destination value.
+func mergeMaps(destination, source map[string]any) {
+	for key, value := range source {
+		sourceMap, sourceIsMap := value.(map[string]any)
+		if sourceIsMap {
+			if destinationMap, ok := destination[key].(map[string]any); ok {
+				mergeMaps(destinationMap, sourceMap)
+				continue
+			}
+		}
+
+		destination[key] = deepCopyValue(value)
+	}
+}
+
+// mergeRaw adds the keys of raw to settings. A key set by a typed field is
+// rejected rather than silently overwritten. Keys that only exist in the
+// defaults may be overridden through raw.
+func mergeRaw(
+	settings, overrides map[string]any,
+	raw *apiextensionsv1.JSON,
+) error {
 	if raw == nil || len(raw.Raw) == 0 {
 		return nil
 	}
@@ -55,13 +105,13 @@ func mergeRaw(settings map[string]any, raw *apiextensionsv1.JSON) error {
 		return fmt.Errorf("parse raw settings: %w", err)
 	}
 
-	for key, value := range extra {
-		if _, exists := settings[key]; exists {
+	for key := range extra {
+		if _, exists := overrides[key]; exists {
 			return fmt.Errorf("setting %q is defined both by a typed field and raw", key)
 		}
-		settings[key] = value
 	}
 
+	mergeMaps(settings, extra)
 	return nil
 }
 
@@ -92,12 +142,6 @@ func setInt64(settings map[string]any, key string, value *int64) {
 func setFloat64(settings map[string]any, key string, value *float64) {
 	if value != nil {
 		settings[key] = *value
-	}
-}
-
-func setMapGenSize(settings map[string]any, key string, value *gamesv1alpha1.MapGenSize) {
-	if value != nil {
-		settings[key] = string(*value)
 	}
 }
 
