@@ -28,7 +28,7 @@ type FactorioServerSpec struct {
 	// this is the version of the Factorio server that will be used to run the game server.
 	// +optional
 	// +kubebuilder:validation:Pattern=`^\d+\.\d+\.\d+$`
-	// +kubebuilder:default="2.1.0"
+	// +kubebuilder:default="2.1.24"
 	Version string `json:"version,omitempty"`
 
 	// suspended stops the server without deleting it or its data. The

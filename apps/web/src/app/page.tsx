@@ -74,7 +74,7 @@ export default function Home() {
 
   const [name, setName] = useState("");
   const [displayName, setDisplayName] = useState("");
-  const [version, setVersion] = useState("2.1.0");
+  const [version, setVersion] = useState("2.1.24");
   const [maxPlayers, setMaxPlayers] = useState("8");
   const [seed, setSeed] = useState("");
   const [storageSize, setStorageSize] = useState("10Gi");
@@ -354,7 +354,7 @@ export default function Home() {
                 className={inputClass}
                 value={version}
                 onChange={(event) => setVersion(event.target.value)}
-                placeholder="2.1.0"
+                placeholder="2.1.24"
               />
             </label>
             <label className={labelClass}>

@@ -69,7 +69,7 @@ describe('ServersService', () => {
       name: 'my-server',
       namespace: 'games',
     });
-    expect(server.spec.version).toBe('2.1.0');
+    expect(server.spec.version).toBe('2.1.24');
     expect(createNamespacedCustomObject).toHaveBeenCalledWith(
       expect.objectContaining({
         namespace: 'games',
@@ -107,7 +107,7 @@ describe('ServersService', () => {
       apiVersion: 'games.dev.streamixs.com/v1alpha1',
       kind: 'FactorioServer',
       metadata: { name: 'my-server', namespace: 'games' },
-      spec: { version: '2.1.0' },
+      spec: { version: '2.1.24' },
     });
     replaceNamespacedCustomObject.mockImplementation(
       (request: { body: FactorioServer }) => Promise.resolve(request.body),

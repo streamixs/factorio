@@ -19,7 +19,7 @@ func ptr[T any](value T) *T {
 func testServer() *gamesv1alpha1.FactorioServer {
 	return &gamesv1alpha1.FactorioServer{
 		ObjectMeta: metav1.ObjectMeta{Name: "demo", Namespace: "games"},
-		Spec:       gamesv1alpha1.FactorioServerSpec{Version: "2.1.0"},
+		Spec:       gamesv1alpha1.FactorioServerSpec{Version: "2.1.24"},
 	}
 }
 

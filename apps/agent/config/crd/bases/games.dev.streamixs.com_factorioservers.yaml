@@ -720,7 +720,7 @@ spec:
                   the server again.
                 type: boolean
               version:
-                default: 2.1.0
+                default: 2.1.24
                 description: this is the version of the Factorio server that will
                   be used to run the game server.
                 pattern: ^\d+\.\d+\.\d+$

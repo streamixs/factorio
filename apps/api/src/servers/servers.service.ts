@@ -16,7 +16,7 @@ import { KubernetesService } from '../kubernetes/kubernetes.service.js';
 const GROUP = 'games.dev.streamixs.com';
 const VERSION = 'v1alpha1';
 const PLURAL = 'factorioservers';
-const DEFAULT_VERSION = '2.1.0';
+const DEFAULT_VERSION = '2.1.24';
 
 const NAME_PATTERN = /^[a-z0-9]([-a-z0-9]*[a-z0-9])?$/;
 const VERSION_PATTERN = /^\d+\.\d+\.\d+$/;
@@ -170,7 +170,9 @@ export class ServersService {
     this.assertName(input.name);
 
     if (input.version !== undefined && !VERSION_PATTERN.test(input.version)) {
-      throw new BadRequestException('version must look like 2.1.0');
+      throw new BadRequestException(
+        'version must look like <major>.<minor>.<patch>',
+      );
     }
 
     if (

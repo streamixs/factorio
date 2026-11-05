@@ -120,7 +120,7 @@ var _ = Describe("FactorioServer Controller", func() {
 				Namespace: resourceNamespace,
 			},
 			Spec: gamesv1alpha1.FactorioServerSpec{
-				Version: "2.1.0",
+				Version: "2.1.24",
 				Server: &gamesv1alpha1.ServerSettingsSpec{
 					Identity: &gamesv1alpha1.ServerIdentitySpec{
 						Name: ptr("Test Server"),

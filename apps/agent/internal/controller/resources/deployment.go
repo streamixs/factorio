@@ -14,7 +14,7 @@ import (
 )
 
 const (
-	defaultVersion = "2.1.0"
+	defaultVersion = "2.1.24"
 	configDir      = "/factorio/config"
 	dataDir        = "/factorio"
 	gamePort       = 34197
