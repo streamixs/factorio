@@ -70,6 +70,7 @@ export class ServersService {
       },
       spec: {
         version: input.version ?? DEFAULT_VERSION,
+        suspended: input.suspended,
         server: input.server,
         mapGenSettings: input.mapGenSettings,
         mapSettings: input.mapSettings,
@@ -104,6 +105,27 @@ export class ServersService {
         propagationPolicy: 'Background',
       }),
     );
+  }
+
+  async setSuspended(
+    name: string,
+    suspended: boolean,
+  ): Promise<FactorioServer> {
+    const server = await this.get(name);
+    server.spec.suspended = suspended;
+
+    const result = await this.call(() =>
+      this.kubernetes.customObjects.replaceNamespacedCustomObject({
+        group: GROUP,
+        version: VERSION,
+        namespace: this.kubernetes.namespace,
+        plural: PLURAL,
+        name,
+        body: server,
+      }),
+    );
+
+    return result as FactorioServer;
   }
 
   private async call<T>(operation: () => Promise<T>): Promise<T> {

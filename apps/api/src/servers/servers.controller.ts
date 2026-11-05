@@ -35,6 +35,18 @@ export class ServersController {
     return this.servers.create(input);
   }
 
+  @Post(':name/start')
+  @HttpCode(HttpStatus.OK)
+  start(@Param('name') name: string): Promise<FactorioServer> {
+    return this.servers.setSuspended(name, false);
+  }
+
+  @Post(':name/stop')
+  @HttpCode(HttpStatus.OK)
+  stop(@Param('name') name: string): Promise<FactorioServer> {
+    return this.servers.setSuspended(name, true);
+  }
+
   @Delete(':name')
   @HttpCode(HttpStatus.NO_CONTENT)
   async remove(@Param('name') name: string): Promise<void> {

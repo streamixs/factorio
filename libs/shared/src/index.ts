@@ -164,6 +164,7 @@ export interface ServiceSettings {
 
 export interface FactorioServerSpec {
   version?: string;
+  suspended?: boolean;
   server?: ServerSettings;
   mapGenSettings?: MapGenSettings;
   mapSettings?: MapSettings;
@@ -215,6 +216,7 @@ export interface FactorioServerList {
 export interface CreateFactorioServerInput {
   name: string;
   version?: string;
+  suspended?: boolean;
   server?: ServerSettings;
   mapGenSettings?: MapGenSettings;
   mapSettings?: MapSettings;

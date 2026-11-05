@@ -11,6 +11,7 @@ describe('ServersService', () => {
   const getNamespacedCustomObject = vi.fn();
   const createNamespacedCustomObject = vi.fn();
   const deleteNamespacedCustomObject = vi.fn();
+  const replaceNamespacedCustomObject = vi.fn();
 
   let service: ServersService;
 
@@ -29,6 +30,7 @@ describe('ServersService', () => {
               getNamespacedCustomObject,
               createNamespacedCustomObject,
               deleteNamespacedCustomObject,
+              replaceNamespacedCustomObject,
             },
           },
         },
@@ -98,6 +100,41 @@ describe('ServersService', () => {
     await expect(service.get('missing')).rejects.toBeInstanceOf(
       NotFoundException,
     );
+  });
+
+  it('stops a server by replacing it with suspended=true', async () => {
+    getNamespacedCustomObject.mockResolvedValue({
+      apiVersion: 'games.dev.streamixs.com/v1alpha1',
+      kind: 'FactorioServer',
+      metadata: { name: 'my-server', namespace: 'games' },
+      spec: { version: '2.1.0' },
+    });
+    replaceNamespacedCustomObject.mockImplementation(
+      (request: { body: FactorioServer }) => Promise.resolve(request.body),
+    );
+
+    const server = await service.setSuspended('my-server', true);
+
+    expect(server.spec.suspended).toBe(true);
+    expect(replaceNamespacedCustomObject).toHaveBeenCalledWith(
+      expect.objectContaining({ namespace: 'games', name: 'my-server' }),
+    );
+  });
+
+  it('starts a server by replacing it with suspended=false', async () => {
+    getNamespacedCustomObject.mockResolvedValue({
+      apiVersion: 'games.dev.streamixs.com/v1alpha1',
+      kind: 'FactorioServer',
+      metadata: { name: 'my-server', namespace: 'games' },
+      spec: { version: '2.1.0', suspended: true },
+    });
+    replaceNamespacedCustomObject.mockImplementation(
+      (request: { body: FactorioServer }) => Promise.resolve(request.body),
+    );
+
+    const server = await service.setSuspended('my-server', false);
+
+    expect(server.spec.suspended).toBe(false);
   });
 
   it('deletes with background propagation', async () => {
