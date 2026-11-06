@@ -286,6 +286,12 @@ export interface ServerOperation {
   completedAt?: string;
 }
 
+export interface ServerSettingsJson {
+  server: string | null;
+  mapGen: string | null;
+  mapSettings: string | null;
+}
+
 export interface ServicePortInfo {
   name?: string;
   port: number;

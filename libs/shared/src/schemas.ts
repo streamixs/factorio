@@ -6,6 +6,7 @@ export const quantityPattern =
   /^(\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))(([KMGTPE]i)|[numkMGTPE]|([eE](\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))))?$/;
 
 const optionalNumber = z.number().finite().optional();
+const nonNegativeNumber = z.number().min(0).optional();
 const optionalBoolean = z.boolean().optional();
 const rawSchema = z.record(z.string(), z.unknown());
 
@@ -100,24 +101,24 @@ export const mapGenSettingsSchema = z.strictObject({
 
 export const pollutionSchema = z.strictObject({
   enabled: optionalBoolean,
-  diffusionRatio: optionalNumber,
-  minToDiffuse: optionalNumber,
-  ageing: optionalNumber,
-  expectedMaxPerChunk: optionalNumber,
-  minToShowPerChunk: optionalNumber,
-  minPollutionToDamageTrees: optionalNumber,
-  pollutionWithMaxForestDamage: optionalNumber,
-  pollutionPerTreeDamage: optionalNumber,
-  pollutionRestoredPerTreeDamage: optionalNumber,
-  maxPollutionToRestoreTrees: optionalNumber,
-  enemyAttackPollutionConsumptionModifier: optionalNumber,
+  diffusionRatio: nonNegativeNumber,
+  minToDiffuse: nonNegativeNumber,
+  ageing: nonNegativeNumber,
+  expectedMaxPerChunk: nonNegativeNumber,
+  minToShowPerChunk: nonNegativeNumber,
+  minPollutionToDamageTrees: nonNegativeNumber,
+  pollutionWithMaxForestDamage: nonNegativeNumber,
+  pollutionPerTreeDamage: nonNegativeNumber,
+  pollutionRestoredPerTreeDamage: nonNegativeNumber,
+  maxPollutionToRestoreTrees: nonNegativeNumber,
+  enemyAttackPollutionConsumptionModifier: nonNegativeNumber,
 });
 
 export const enemyEvolutionSchema = z.strictObject({
   enabled: optionalBoolean,
-  timeFactor: optionalNumber,
-  destroyFactor: optionalNumber,
-  pollutionFactor: optionalNumber,
+  timeFactor: nonNegativeNumber,
+  destroyFactor: nonNegativeNumber,
+  pollutionFactor: nonNegativeNumber,
 });
 
 export const enemyExpansionSchema = z.strictObject({
@@ -125,11 +126,11 @@ export const enemyExpansionSchema = z.strictObject({
   maxExpansionDistance: z.number().int().min(0).optional(),
   friendlyBaseInfluenceRadius: z.number().int().min(0).optional(),
   enemyBuildingInfluenceRadius: z.number().int().min(0).optional(),
-  buildingCoefficient: optionalNumber,
-  otherBaseCoefficient: optionalNumber,
-  neighbouringChunkCoefficient: optionalNumber,
-  neighbouringBaseChunkCoefficient: optionalNumber,
-  maxCollidingTilesCoefficient: optionalNumber,
+  buildingCoefficient: nonNegativeNumber,
+  otherBaseCoefficient: nonNegativeNumber,
+  neighbouringChunkCoefficient: nonNegativeNumber,
+  neighbouringBaseChunkCoefficient: nonNegativeNumber,
+  maxCollidingTilesCoefficient: nonNegativeNumber,
   settlerGroupMinSize: z.number().int().min(0).optional(),
   settlerGroupMaxSize: z.number().int().min(0).optional(),
   minExpansionCooldown: z.number().int().min(0).optional(),
@@ -139,8 +140,8 @@ export const enemyExpansionSchema = z.strictObject({
 export const difficultySettingsSchema = z.strictObject({
   recipeDifficulty: z.number().int().min(0).max(1).optional(),
   technologyDifficulty: z.number().int().min(0).max(1).optional(),
-  technologyPriceMultiplier: optionalNumber,
-  spoilTimeModifier: optionalNumber,
+  technologyPriceMultiplier: nonNegativeNumber,
+  spoilTimeModifier: nonNegativeNumber,
 });
 
 export const mapSettingsSchema = z.strictObject({
