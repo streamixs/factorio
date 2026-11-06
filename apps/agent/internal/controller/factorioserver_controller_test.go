@@ -250,9 +250,9 @@ var _ = Describe("FactorioServer Controller", func() {
 		Expect(deployment.Spec.Strategy.Type).To(
 			Equal(appsv1.RecreateDeploymentStrategyType))
 		Expect(deployment.Spec.Template.Spec.InitContainers).To(HaveLen(1))
-		Expect(deployment.Spec.Template.Spec.Volumes).To(HaveLen(4))
+		Expect(deployment.Spec.Template.Spec.Volumes).To(HaveLen(5))
 		Expect(deployment.Spec.Template.Spec.Containers).To(HaveLen(2))
-		Expect(deployment.Spec.Template.Spec.Containers[0].VolumeMounts).To(HaveLen(4))
+		Expect(deployment.Spec.Template.Spec.Containers[0].VolumeMounts).To(HaveLen(5))
 		Expect(deployment.Spec.Template.Spec.Containers[1].Name).To(Equal("saves"))
 		Expect(deployment.Spec.Template.Annotations).To(
 			HaveKey(factorioresources.RconPasswordHashAnnotation))
@@ -298,8 +298,9 @@ var _ = Describe("FactorioServer Controller", func() {
 			ContainSubstring(`"seed": 42`))
 
 		var mapSettings corev1.ConfigMap
-		err = k8sClient.Get(ctx, mapSettingsKey, &mapSettings)
-		Expect(apierrors.IsNotFound(err)).To(BeTrue())
+		Expect(k8sClient.Get(ctx, mapSettingsKey, &mapSettings)).To(Succeed())
+		Expect(mapSettings.Data["map-settings.json"]).To(
+			ContainSubstring(`"max_failed_behavior_count": 3`))
 
 		var effective corev1.ConfigMap
 		Expect(k8sClient.Get(ctx, effectiveSettingsKey, &effective)).To(Succeed())

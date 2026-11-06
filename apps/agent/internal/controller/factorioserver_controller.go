@@ -168,34 +168,28 @@ func (r *FactorioServerReconciler) renderSettings(
 ) (factorioresources.ConfigFiles, error) {
 	var files factorioresources.ConfigFiles
 
-	if server.Spec.Server != nil {
-		secrets, err := r.resolveSecrets(ctx, server)
-		if err != nil {
-			return files, err
-		}
-
-		content, err := config.RenderServerSettings(server.Spec.Server, secrets)
-		if err != nil {
-			return files, fmt.Errorf("render server settings: %w", err)
-		}
-		files.ServerSettings = content
+	secrets, err := r.resolveSecrets(ctx, server)
+	if err != nil {
+		return files, err
 	}
 
-	if server.Spec.MapGenSettings != nil {
-		content, err := config.RenderMapGenSettings(server.Spec.MapGenSettings)
-		if err != nil {
-			return files, fmt.Errorf("render map generation settings: %w", err)
-		}
-		files.MapGenSettings = content
+	serverSettings, err := config.RenderServerSettings(server.Spec.Server, secrets)
+	if err != nil {
+		return files, fmt.Errorf("render server settings: %w", err)
 	}
+	files.ServerSettings = serverSettings
 
-	if server.Spec.MapSettings != nil {
-		content, err := config.RenderMapSettings(server.Spec.MapSettings)
-		if err != nil {
-			return files, fmt.Errorf("render map settings: %w", err)
-		}
-		files.MapSettings = content
+	mapGenSettings, err := config.RenderMapGenSettings(server.Spec.MapGenSettings)
+	if err != nil {
+		return files, fmt.Errorf("render map generation settings: %w", err)
 	}
+	files.MapGenSettings = mapGenSettings
+
+	mapSettings, err := config.RenderMapSettings(server.Spec.MapSettings)
+	if err != nil {
+		return files, fmt.Errorf("render map settings: %w", err)
+	}
+	files.MapSettings = mapSettings
 
 	return files, nil
 }
