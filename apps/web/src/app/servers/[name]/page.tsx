@@ -5,7 +5,15 @@ import {
   type EffectiveSettings,
   type FactorioServer,
 } from "@factorio/shared";
-import { ArrowLeft } from "lucide-react";
+import {
+  ArrowLeft,
+  Bell,
+  Network,
+  Save,
+  ScrollText,
+  SlidersHorizontal,
+  Terminal,
+} from "lucide-react";
 import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
 import { Suspense, useCallback, useEffect, useState } from "react";
@@ -21,6 +29,8 @@ import {
   getEffectiveSettings,
   getServer,
   getSettingsSchema,
+  getStorageClasses,
+  getVersions,
   startServer,
   stopServer,
 } from "@/lib/api";
@@ -34,12 +44,12 @@ import { EventsPanel, LogsPanel } from "./diagnostics";
 import { SettingsForm } from "./settings-form";
 
 const VIEWS = [
-  { id: "config", label: "Configuration" },
-  { id: "connection", label: "Connexion" },
-  { id: "logs", label: "Logs" },
-  { id: "events", label: "Events" },
-  { id: "console", label: "Console" },
-  { id: "backups", label: "Sauvegardes" },
+  { id: "config", label: "Configuration", icon: SlidersHorizontal },
+  { id: "connection", label: "Connexion", icon: Network },
+  { id: "logs", label: "Logs", icon: ScrollText },
+  { id: "events", label: "Events", icon: Bell },
+  { id: "console", label: "Console", icon: Terminal },
+  { id: "backups", label: "Sauvegardes", icon: Save },
 ] as const;
 
 export default function ServerDetailPage() {
@@ -52,7 +62,7 @@ export default function ServerDetailPage() {
 
 function DetailSkeleton() {
   return (
-    <main className="mx-auto flex w-full max-w-6xl flex-1 flex-col gap-6 px-4 py-10 sm:px-6 lg:px-8">
+    <main className="mx-auto flex w-full max-w-7xl flex-1 flex-col gap-6 px-4 py-10 sm:px-6 lg:px-8">
       <Skeleton className="h-5 w-32" />
       <Skeleton className="h-10 w-64" />
       <Skeleton className="h-96 w-full" />
@@ -68,6 +78,8 @@ function ServerDetail() {
   const [server, setServer] = useState<FactorioServer | null>(null);
   const [settings, setSettings] = useState<EffectiveSettings | null>(null);
   const [schema, setSchema] = useState<SettingsSchema | null>(null);
+  const [versions, setVersions] = useState<string[]>([]);
+  const [storageClasses, setStorageClasses] = useState<string[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [warning, setWarning] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
@@ -119,6 +131,26 @@ function ServerDetail() {
       })
       .catch(() => {
         // The form falls back to the curated catalog without bounds.
+      });
+
+    getVersions()
+      .then((value) => {
+        if (active) {
+          setVersions(value);
+        }
+      })
+      .catch(() => {
+        // The form falls back to a plain version input.
+      });
+
+    getStorageClasses()
+      .then((value) => {
+        if (active) {
+          setStorageClasses(value);
+        }
+      })
+      .catch(() => {
+        // The form falls back to a plain StorageClass input.
       });
 
     return () => {
@@ -191,7 +223,7 @@ function ServerDetail() {
 
   if (loading) {
     return (
-      <main className="mx-auto flex w-full max-w-6xl flex-1 flex-col gap-6 px-4 py-10 sm:px-6 lg:px-8">
+      <main className="mx-auto flex w-full max-w-7xl flex-1 flex-col gap-6 px-4 py-10 sm:px-6 lg:px-8">
         <DetailSkeleton />
       </main>
     );
@@ -199,7 +231,7 @@ function ServerDetail() {
 
   if (server === null || settings === null) {
     return (
-      <main className="mx-auto flex w-full max-w-6xl flex-1 flex-col gap-4 px-4 py-10 sm:px-6 lg:px-8">
+      <main className="mx-auto flex w-full max-w-7xl flex-1 flex-col gap-4 px-4 py-10 sm:px-6 lg:px-8">
         <Link href="/" className={buttonVariants({ variant: "ghost", size: "sm" })}>
           ← Tous les serveurs
         </Link>
@@ -219,7 +251,7 @@ function ServerDetail() {
     server.spec.server?.identity?.name ?? server.metadata.name;
 
   return (
-    <main className="mx-auto flex w-full max-w-6xl flex-1 flex-col gap-6 px-4 py-10 sm:px-6 lg:px-8">
+    <main className="mx-auto flex w-full max-w-7xl flex-1 flex-col gap-6 px-4 py-10 sm:px-6 lg:px-8">
       <header className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
         <div className="min-w-0">
           <div className="flex flex-wrap items-center gap-3">
@@ -291,65 +323,81 @@ function ServerDetail() {
         </Alert>
       )}
 
-      <Tabs
-        value={view}
-        onValueChange={(value) => setView(String(value))}
-        className="flex-col"
-      >
-        <TabsList className="h-auto flex-wrap">
-          {VIEWS.map((item) => (
-            <TabsTrigger key={item.id} value={item.id}>
-              {item.label}
-            </TabsTrigger>
-          ))}
+      <div className="flex flex-col gap-6 lg:flex-row lg:items-start">
+        <Tabs
+          value={view}
+          onValueChange={(value) => setView(String(value))}
+          className="contents"
+        >
+        <TabsList
+          className="group-data-horizontal/tabs:h-auto h-auto w-full flex-wrap justify-start gap-1 rounded-xl border bg-muted/40 p-2 lg:sticky lg:top-6 lg:w-56 lg:shrink-0 lg:flex-col lg:flex-nowrap lg:items-stretch"
+        >
+          {VIEWS.map((item) => {
+            const Icon = item.icon;
+            return (
+              <TabsTrigger
+                key={item.id}
+                value={item.id}
+                className="justify-start gap-2 data-active:bg-primary/10 data-active:text-primary dark:data-active:bg-primary/10 dark:data-active:text-primary lg:w-full lg:flex-none"
+              >
+                <Icon className="size-4 shrink-0" aria-hidden />
+                <span className="truncate">{item.label}</span>
+              </TabsTrigger>
+            );
+          })}
         </TabsList>
 
-        <TabsContent value="config" keepMounted className="mt-4">
-          <SettingsForm
-            server={server}
-            defaults={settings.defaults}
-            effective={settings.effective}
-            schema={schema}
-            onSaved={(updated, merged) => {
-              setServer(updated);
-              setSettings({
-                defaults: settings.defaults,
-                effective: merged,
-              });
-            }}
-          />
-        </TabsContent>
+        <div className="min-w-0 flex-1">
+          <TabsContent value="config" keepMounted className="mt-0">
+            <SettingsForm
+              server={server}
+              defaults={settings.defaults}
+              effective={settings.effective}
+              schema={schema}
+              versions={versions}
+              storageClasses={storageClasses}
+              onSaved={(updated, merged) => {
+                setServer(updated);
+                setSettings({
+                  defaults: settings.defaults,
+                  effective: merged,
+                });
+              }}
+            />
+          </TabsContent>
 
-        <TabsContent value="connection" className="mt-4">
-          <ConnectionPanel
-            name={server.metadata.name}
-            suspended={suspended}
-          />
-        </TabsContent>
+          <TabsContent value="connection" className="mt-0">
+            <ConnectionPanel
+              name={server.metadata.name}
+              suspended={suspended}
+            />
+          </TabsContent>
 
-        <TabsContent value="logs" className="mt-4">
-          <LogsPanel name={server.metadata.name} />
-        </TabsContent>
+          <TabsContent value="logs" className="mt-0">
+            <LogsPanel name={server.metadata.name} />
+          </TabsContent>
 
-        <TabsContent value="events" className="mt-4">
-          <EventsPanel name={server.metadata.name} />
-        </TabsContent>
+          <TabsContent value="events" className="mt-0">
+            <EventsPanel name={server.metadata.name} />
+          </TabsContent>
 
-        <TabsContent value="console" className="mt-4">
-          <ConsolePanel name={server.metadata.name} suspended={suspended} />
-        </TabsContent>
+          <TabsContent value="console" className="mt-0">
+            <ConsolePanel name={server.metadata.name} suspended={suspended} />
+          </TabsContent>
 
-        <TabsContent value="backups" className="mt-4">
-          <BackupsPanel
-            name={server.metadata.name}
-            onRestoreStarted={() => {
-              window.setTimeout(() => {
-                void load();
-              }, 15000);
-            }}
-          />
-        </TabsContent>
-      </Tabs>
+          <TabsContent value="backups" className="mt-0">
+            <BackupsPanel
+              name={server.metadata.name}
+              onRestoreStarted={() => {
+                window.setTimeout(() => {
+                  void load();
+                }, 15000);
+              }}
+            />
+          </TabsContent>
+        </div>
+        </Tabs>
+      </div>
     </main>
   );
 }

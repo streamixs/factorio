@@ -16,6 +16,7 @@ export type FieldKind =
   | "select"
   | "textarea"
   | "tags"
+  | "quantity"
   | "secret";
 
 export interface SelectOption {
@@ -35,6 +36,8 @@ export interface FieldDefinition {
   options?: SelectOption[];
   wide?: boolean;
   clearPath?: string;
+  /** Field is fixed once the resource exists (e.g. the data volume). */
+  readOnly?: boolean;
   /** Autocomplete values shown in the field's datalist. */
   suggestions?: string[];
   /** OpenAPI schema node resolved from the CRD. */
@@ -55,6 +58,11 @@ export interface SettingsSection {
   description?: string;
   groups: FieldGroup[];
   custom?: "autoplace" | "raw";
+}
+
+export interface CatalogOptions {
+  versions?: string[];
+  storageClasses?: string[];
 }
 
 export interface CredentialsFormValues {
@@ -159,9 +167,9 @@ const SUGGESTIONS: Record<string, string[]> = {
   ],
   "spec.mapSettings.maxFailedBehaviorCount": ["0", "1", "3", "5", "10"],
   "spec.resources.cpuRequest": ["250m", "500m", "1", "2"],
-  "spec.resources.cpuLimit": ["1", "2", "4", "8"],
+  "spec.resources.cpuLimit": ["250m", "500m", "1", "2", "4", "8"],
   "spec.resources.memoryRequest": ["512Mi", "1Gi", "2Gi", "4Gi"],
-  "spec.resources.memoryLimit": ["2Gi", "4Gi", "8Gi", "16Gi"],
+  "spec.resources.memoryLimit": ["512Mi", "1Gi", "2Gi", "4Gi", "8Gi", "16Gi"],
   "spec.storage.size": ["5Gi", "10Gi", "20Gi", "50Gi", "100Gi"],
 };
 
@@ -296,6 +304,7 @@ export const SETTINGS_SECTIONS: SettingsSection[] = [
             path: "spec.server.autoSave.slots",
             label: "Nombre de slots",
             kind: "number",
+            help: "Défaut : 5. Fichiers conservés en rotation.",
           },
           {
             path: "spec.server.autoSave.nonBlockingSaving",
@@ -329,6 +338,7 @@ export const SETTINGS_SECTIONS: SettingsSection[] = [
             path: "spec.server.playerManagement.maxUploadSlots",
             label: "Slots d'upload max",
             kind: "number",
+            help: "0 = illimité.",
           },
           {
             path: "spec.server.playerManagement.maxUploadKilobytesPerSecond",
@@ -340,11 +350,13 @@ export const SETTINGS_SECTIONS: SettingsSection[] = [
             path: "spec.server.playerManagement.minimumLatencyInTicks",
             label: "Latence minimale (ticks)",
             kind: "number",
+            help: "0 = aucune latence ajoutée.",
           },
           {
             path: "spec.server.playerManagement.maxHeartbeatsPerSecond",
             label: "Heartbeats max par seconde",
             kind: "number",
+            help: "Défaut : 60.",
           },
           {
             path: "spec.server.playerManagement.autoPauseWhenNoPlayers",
@@ -380,7 +392,7 @@ export const SETTINGS_SECTIONS: SettingsSection[] = [
             kind: "select",
             numeric: true,
             options: MAP_GEN_SIZE_OPTIONS,
-            help: "Échelle du générateur Factorio (0 à 6).",
+            help: "Échelle du générateur Factorio.",
           },
           {
             path: "spec.mapGenSettings.water",
@@ -388,7 +400,7 @@ export const SETTINGS_SECTIONS: SettingsSection[] = [
             kind: "select",
             numeric: true,
             options: MAP_GEN_SIZE_OPTIONS,
-            help: "Échelle du générateur Factorio (0 à 6).",
+            help: "Échelle du générateur Factorio.",
           },
           {
             path: "spec.mapGenSettings.startingArea",
@@ -396,7 +408,7 @@ export const SETTINGS_SECTIONS: SettingsSection[] = [
             kind: "select",
             numeric: true,
             options: MAP_GEN_SIZE_OPTIONS,
-            help: "Échelle du générateur Factorio (0 à 6).",
+            help: "Échelle du générateur Factorio.",
           },
           {
             path: "spec.mapGenSettings.width",
@@ -410,12 +422,14 @@ export const SETTINGS_SECTIONS: SettingsSection[] = [
             label: "Hauteur",
             kind: "number",
             placeholder: "0",
+            help: "0 = infinie.",
           },
           {
             path: "spec.mapGenSettings.seed",
             label: "Seed",
             kind: "number",
             placeholder: "aléatoire",
+            help: "Laisser vide pour un seed aléatoire.",
           },
           {
             path: "spec.mapGenSettings.peacefulMode",
@@ -429,9 +443,10 @@ export const SETTINGS_SECTIONS: SettingsSection[] = [
         fields: [
           {
             path: "spec.mapGenSettings.cliffSettings.name",
-            label: "Nom",
+            label: "Prototype de falaise",
             kind: "text",
             placeholder: "cliff",
+            help: "Nom du prototype Factorio.",
             emptyAsUndefined: true,
           },
           {
@@ -451,6 +466,7 @@ export const SETTINGS_SECTIONS: SettingsSection[] = [
             label: "Richesse",
             kind: "number",
             step: "0.1",
+            help: "0 = pas de falaises, 10 = rangées pleines.",
           },
         ],
       },
@@ -680,6 +696,7 @@ export const SETTINGS_SECTIONS: SettingsSection[] = [
             path: "spec.mapSettings.maxFailedBehaviorCount",
             label: "Échecs de comportement max",
             kind: "number",
+            help: "Défaut : 3.",
           },
         ],
       },
@@ -690,14 +707,14 @@ export const SETTINGS_SECTIONS: SettingsSection[] = [
     title: "Ressources, stockage & réseau",
     badge: "Redémarre le serveur",
     description:
-      "Limites CPU/RAM du conteneur Factorio, volume de données et exposition du port de jeu.",
+      "Limites CPU/RAM du conteneur Factorio, volume de données et exposition du port de jeu. Le stockage est fixé à la création du serveur.",
     groups: [
       {
         fields: [
           {
             path: "spec.resources.cpuRequest",
             label: "CPU — request",
-            kind: "text",
+            kind: "quantity",
             placeholder: "500m",
             help: "Défaut : 500m. Réservé au serveur.",
             emptyAsUndefined: true,
@@ -705,15 +722,15 @@ export const SETTINGS_SECTIONS: SettingsSection[] = [
           {
             path: "spec.resources.cpuLimit",
             label: "CPU — limit",
-            kind: "text",
+            kind: "quantity",
             placeholder: "2",
-            help: "Défaut : 2 cœurs.",
+            help: "Défaut : 2 cœurs. Doit être ≥ CPU — request.",
             emptyAsUndefined: true,
           },
           {
             path: "spec.resources.memoryRequest",
             label: "Mémoire — request",
-            kind: "text",
+            kind: "quantity",
             placeholder: "1Gi",
             help: "Défaut : 1Gi.",
             emptyAsUndefined: true,
@@ -721,25 +738,28 @@ export const SETTINGS_SECTIONS: SettingsSection[] = [
           {
             path: "spec.resources.memoryLimit",
             label: "Mémoire — limit",
-            kind: "text",
+            kind: "quantity",
             placeholder: "4Gi",
-            help: "Défaut : 4Gi. Une grosse usine ou des mods peuvent nécessiter plus.",
+            help: "Défaut : 4Gi. Doit être ≥ Mémoire — request. Une grosse usine ou des mods peuvent nécessiter plus.",
             emptyAsUndefined: true,
           },
           {
             path: "spec.storage.size",
             label: "Taille du volume",
-            kind: "text",
+            kind: "quantity",
             placeholder: "10Gi",
-            help: "Un PVC existant n'est pas redimensionné.",
+            help: "Défini à la création. Un PVC existant n'est pas redimensionné.",
             emptyAsUndefined: true,
+            readOnly: true,
           },
           {
             path: "spec.storage.storageClassName",
             label: "StorageClass",
             kind: "text",
             placeholder: "défaut du cluster",
+            help: "Défini à la création. Non modifiable après.",
             emptyAsUndefined: true,
+            readOnly: true,
           },
           {
             path: "spec.service.type",
@@ -760,7 +780,7 @@ export const SETTINGS_SECTIONS: SettingsSection[] = [
     title: "Avancé",
     custom: "raw",
     description:
-      "Pour les paramètres qui ne sont pas exposés dans les autres onglets. Les clés déjà définies par un champ typé sont refusées.",
+      "Clés supplémentaires (raw) pour les paramètres non exposés, puis JSON complet réellement rendu. Les clés déjà définies par un champ typé sont refusées dans les éditeurs raw.",
     groups: [],
   },
 ];
@@ -878,6 +898,45 @@ function buildAutoSection(
   };
 }
 
+function dynamicFieldOptions(
+  field: FieldDefinition,
+  catalog: CatalogOptions,
+): Partial<
+  Pick<FieldDefinition, "kind" | "options" | "suggestions">
+> {
+  if (field.path === "spec.version") {
+    const versions = catalog.versions ?? [];
+    if (versions.length > 0) {
+      return {
+        kind: "select",
+        options: [
+          { value: "", label: "Défaut" },
+          ...versions.map((version) => ({ value: version, label: version })),
+        ],
+        suggestions: [],
+      };
+    }
+    return { suggestions: [] };
+  }
+
+  if (field.path === "spec.storage.storageClassName") {
+    const storageClasses = catalog.storageClasses ?? [];
+    if (storageClasses.length > 0) {
+      return {
+        kind: "select",
+        options: [
+          { value: "", label: "Défaut du cluster" },
+          ...storageClasses.map((name) => ({ value: name, label: name })),
+        ],
+        suggestions: [],
+      };
+    }
+    return { suggestions: [] };
+  }
+
+  return {};
+}
+
 /**
  * Builds the visible sections from the curated catalog and the CRD schema.
  * Fields keep their curated labels/groups; types, bounds, enums and defaults
@@ -886,6 +945,7 @@ function buildAutoSection(
 export function buildSections(
   schema: SettingsSchema | null,
   defaults: FactorioServerSpec,
+  catalog: CatalogOptions = {},
 ): SettingsSection[] {
   const sections: SettingsSection[] = SETTINGS_SECTIONS.map((section) => ({
     ...section,
@@ -894,15 +954,19 @@ export function buildSections(
       fields: group.fields.map((field) => {
         const node = schemaAt(schema, field.path);
         const defaultValue = valueAtPath(defaults, field.path);
+        const dynamic = dynamicFieldOptions(field, catalog);
         return {
           ...field,
+          ...dynamic,
           schema: node,
           defaultValue,
-          suggestions: unique([
-            ...(SUGGESTIONS[field.path] ?? []),
-            ...(defaultValue === undefined ? [] : [String(defaultValue)]),
-            ...(node?.enum === undefined ? [] : node.enum.map(String)),
-          ]),
+          suggestions:
+            dynamic.suggestions ??
+            unique([
+              ...(SUGGESTIONS[field.path] ?? []),
+              ...(defaultValue === undefined ? [] : [String(defaultValue)]),
+              ...(node?.enum === undefined ? [] : node.enum.map(String)),
+            ]),
         };
       }),
     })),

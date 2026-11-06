@@ -7,12 +7,15 @@ import {
   type FactorioServer,
   type FactorioServerSpec,
 } from "@factorio/shared";
-import { useState, useMemo } from "react";
+import { useMemo, useState, useEffect, useRef } from "react";
 import {
   Controller,
   FormProvider,
+  useFieldArray,
   useForm,
   useFormContext,
+  useWatch,
+  type FieldErrors,
   type FieldPath,
 } from "react-hook-form";
 import { toast } from "sonner";
@@ -43,7 +46,6 @@ import {
   SelectContent,
   SelectItem,
   SelectTrigger,
-  SelectValue,
 } from "@/components/ui/select";
 import { Separator } from "@/components/ui/separator";
 import { Switch } from "@/components/ui/switch";
@@ -51,7 +53,9 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Textarea } from "@/components/ui/textarea";
 
 import { updateServer } from "@/lib/api";
+import { SettingsJsonPanel } from "./settings-json";
 import {
+  MAP_GEN_SIZE_OPTIONS,
   RESOURCES,
   RESOURCE_FIELDS,
   SETTINGS_SECTIONS,
@@ -65,12 +69,119 @@ import {
 } from "@/lib/settings-registry";
 import {
   describeBounds,
-  MAP_GEN_SIZE_VALUES,
   type JsonSchemaNode,
   type SettingsSchema,
 } from "@/lib/settings-schema";
 
 const DEFAULT_SELECT_VALUE = "__default__";
+const CUSTOM_SELECT_VALUE = "__custom__";
+
+function parseCpu(value: string): number | undefined {
+  const match = /^([0-9.]+)(m|u|n)?$/.exec(value.trim());
+  if (match === null) {
+    return undefined;
+  }
+  const amount = Number(match[1]);
+  if (!Number.isFinite(amount)) {
+    return undefined;
+  }
+  switch (match[2]) {
+    case "n":
+      return amount / 1_000_000;
+    case "u":
+      return amount / 1_000;
+    case "m":
+      return amount;
+    default:
+      return amount * 1000;
+  }
+}
+
+function parseMemory(value: string): number | undefined {
+  const match = /^([0-9.]+)(Ki|Mi|Gi|Ti|Pi|Ei|K|M|G|T|P|E)?$/.exec(
+    value.trim(),
+  );
+  if (match === null) {
+    return undefined;
+  }
+  const amount = Number(match[1]);
+  if (!Number.isFinite(amount)) {
+    return undefined;
+  }
+  const units: Record<string, number> = {
+    Ki: 1024,
+    Mi: 1024 ** 2,
+    Gi: 1024 ** 3,
+    Ti: 1024 ** 4,
+    Pi: 1024 ** 5,
+    Ei: 1024 ** 6,
+    K: 1e3,
+    M: 1e6,
+    G: 1e9,
+    T: 1e12,
+    P: 1e15,
+    E: 1e18,
+  };
+  return match[2] === undefined ? amount : amount * (units[match[2]] ?? 1);
+}
+
+function resourceLimitIssue(
+  spec: FactorioServerSpec,
+): { path: string; message: string } | undefined {
+  const resources = spec.resources;
+  if (resources === undefined) {
+    return undefined;
+  }
+
+  const cpuRequest = resources.cpuRequest
+    ? parseCpu(resources.cpuRequest)
+    : undefined;
+  const cpuLimit = resources.cpuLimit
+    ? parseCpu(resources.cpuLimit)
+    : undefined;
+  if (
+    cpuRequest !== undefined &&
+    cpuLimit !== undefined &&
+    cpuLimit < cpuRequest
+  ) {
+    return {
+      path: "spec.resources.cpuLimit",
+      message: "La limite CPU doit être supérieure ou égale à la CPU request.",
+    };
+  }
+
+  const memoryRequest = resources.memoryRequest
+    ? parseMemory(resources.memoryRequest)
+    : undefined;
+  const memoryLimit = resources.memoryLimit
+    ? parseMemory(resources.memoryLimit)
+    : undefined;
+  if (
+    memoryRequest !== undefined &&
+    memoryLimit !== undefined &&
+    memoryLimit < memoryRequest
+  ) {
+    return {
+      path: "spec.resources.memoryLimit",
+      message:
+        "La limite mémoire doit être supérieure ou égale à la mémoire request.",
+    };
+  }
+
+  return undefined;
+}
+
+function compareVersions(left: string, right: string): number {
+  const leftParts = left.split(".").map(Number);
+  const rightParts = right.split(".").map(Number);
+  for (let index = 0; index < 3; index += 1) {
+    const difference = (leftParts[index] ?? 0) - (rightParts[index] ?? 0);
+    if (difference !== 0) {
+      return difference;
+    }
+  }
+  return 0;
+}
 
 const formSchema = z.object({
   spec: factorioServerSpecSchema,
@@ -82,6 +193,15 @@ const formSchema = z.object({
     clearPassword: z.boolean(),
     clearToken: z.boolean(),
   }),
+}).superRefine((values, ctx) => {
+  const issue = resourceLimitIssue(values.spec);
+  if (issue !== undefined) {
+    ctx.addIssue({
+      code: "custom",
+      path: issue.path.split("."),
+      message: issue.message,
+    });
+  }
 });
 
 type RawEditors = {
@@ -129,7 +249,26 @@ function parseRawEditor(
 }
 
 function numberOrUndefined(value: string): number | undefined {
-  return value === "" ? undefined : Number(value);
+  if (value.trim() === "") {
+    return undefined;
+  }
+  const number = Number(value);
+  return Number.isFinite(number) ? number : undefined;
+}
+
+function inputValue(value: unknown): string {
+  return typeof value === "number" || typeof value === "string"
+    ? String(value)
+    : "";
+}
+
+function withFormDefaults(spec: FactorioServerSpec): FactorioServerSpec {
+  const result = structuredClone(spec);
+  result.mapGenSettings = {
+    ...(result.mapGenSettings ?? {}),
+    startingPoints: result.mapGenSettings?.startingPoints ?? [],
+  };
+  return result;
 }
 
 export function SettingsForm({
@@ -137,27 +276,50 @@ export function SettingsForm({
   defaults,
   effective,
   schema,
+  versions,
+  storageClasses,
   onSaved,
 }: {
   server: FactorioServer;
   defaults: FactorioServerSpec;
   effective: FactorioServerSpec;
   schema: SettingsSchema | null;
+  versions: string[];
+  storageClasses: string[];
   onSaved: (server: FactorioServer, effective: FactorioServerSpec) => void;
 }) {
+  const allowedVersions = useMemo(() => {
+    const current = effective.version ?? "0.0.0";
+    return versions.filter(
+      (version) => compareVersions(version, current) >= 0,
+    );
+  }, [versions, effective.version]);
   const sections = useMemo(
-    () => buildSections(schema, defaults),
-    [schema, defaults],
+    () =>
+      buildSections(schema, defaults, {
+        versions: allowedVersions,
+        storageClasses,
+      }),
+    [schema, defaults, allowedVersions, storageClasses],
   );
   const form = useForm<FormValues>({
     resolver: zodResolver(formSchema),
     defaultValues: {
-      spec: structuredClone(effective),
+      spec: withFormDefaults(effective),
       credentials: emptyCredentials(),
     },
     mode: "onBlur",
+    reValidateMode: "onChange",
   });
   const { handleSubmit, reset, formState } = form;
+  const watched = useWatch({ control: form.control });
+  const baseline = useMemo(
+    () => ({
+      spec: withFormDefaults(effective),
+      credentials: emptyCredentials(),
+    }),
+    [effective],
+  );
 
   const [tab, setTab] = useState<string>(SETTINGS_SECTIONS[0].id);  const [rawEditors, setRawEditors] = useState<RawEditors>(() =>
     rawEditorsFrom(effective),
@@ -167,13 +329,18 @@ export function SettingsForm({
   );
   const [rawError, setRawError] = useState<string | null>(null);
   const [saveError, setSaveError] = useState<string | null>(null);
-  const [saved, setSaved] = useState(false);
 
   const rawDirty =
     rawEditors.server !== initialRaw.server ||
     rawEditors.mapGen !== initialRaw.mapGen ||
     rawEditors.mapSettings !== initialRaw.mapSettings;
-  const dirty = formState.isDirty || rawDirty;
+  const valuesDirty = JSON.stringify(watched) !== JSON.stringify(baseline);
+  const dirty = valuesDirty || rawDirty;
+  const showActions =
+    dirty ||
+    formState.isSubmitting ||
+    saveError !== null ||
+    Object.keys(formState.errors).length > 0;
 
   const secretIsSet: Record<string, boolean> = {
     "credentials.gamePassword":
@@ -184,18 +351,23 @@ export function SettingsForm({
       server.spec.server?.authentication?.tokenRef !== undefined,
   };
 
+  function onInvalid(errors: FieldErrors<FormValues>) {
+    if (errors.spec?.resources !== undefined) {
+      setTab("infra");
+    }
+  }
+
   async function onSubmit(values: FormValues) {
     setSaveError(null);
-    setSaved(false);
 
     let serverRaw: Record<string, unknown> | undefined;
     let mapGenRaw: Record<string, unknown> | undefined;
     let mapSettingsRaw: Record<string, unknown> | undefined;
 
     try {
-      serverRaw = parseRawEditor(rawEditors.server, "server.raw");
-      mapGenRaw = parseRawEditor(rawEditors.mapGen, "mapGenSettings.raw");
-      mapSettingsRaw = parseRawEditor(rawEditors.mapSettings, "mapSettings.raw");
+      serverRaw = parseRawEditor(rawEditors.server, "server-settings.json (raw)");
+      mapGenRaw = parseRawEditor(rawEditors.mapGen, "map-gen-settings.json (raw)");
+      mapSettingsRaw = parseRawEditor(rawEditors.mapSettings, "map-settings.json (raw)");
     } catch (error) {
       setRawError(error instanceof Error ? error.message : "JSON invalide");
       setTab("advanced");
@@ -204,6 +376,10 @@ export function SettingsForm({
     setRawError(null);
 
     const spec = structuredClone(values.spec);
+
+    if (spec.mapGenSettings?.startingPoints?.length === 0) {
+      delete spec.mapGenSettings.startingPoints;
+    }
 
     if (serverRaw !== undefined) {
       spec.server = { ...(spec.server ?? {}), raw: serverRaw };
@@ -258,10 +434,12 @@ export function SettingsForm({
       const merged = mergeWithDefaults(defaults, updated.spec);
       const raw = rawEditorsFrom(merged);
 
-      reset({ spec: structuredClone(merged), credentials: emptyCredentials() });
+      reset({
+        spec: withFormDefaults(merged),
+        credentials: emptyCredentials(),
+      });
       setRawEditors(raw);
       setInitialRaw(raw);
-      setSaved(true);
       onSaved(updated, merged);
       toast.success("Configuration enregistrée");
     } catch (error) {
@@ -274,19 +452,18 @@ export function SettingsForm({
 
   function handleReset() {
     const raw = rawEditorsFrom(effective);
-    reset({ spec: structuredClone(effective), credentials: emptyCredentials() });
+    reset({ spec: withFormDefaults(effective), credentials: emptyCredentials() });
     setRawEditors(raw);
     setInitialRaw(raw);
     setRawError(null);
     setSaveError(null);
-    setSaved(false);
   }
 
   return (
     <FormProvider {...form}>
       <form
-        onSubmit={(event) => void handleSubmit(onSubmit)(event)}
-        className="flex flex-col gap-4"
+        onSubmit={(event) => void handleSubmit(onSubmit, onInvalid)(event)}
+        className="flex flex-col gap-4 pb-24"
       >
         <Tabs
           value={tab}
@@ -310,6 +487,7 @@ export function SettingsForm({
             >
               <SectionCard
                 section={section}
+                serverName={server.metadata.name}
                 secretIsSet={secretIsSet}
                 rawEditors={rawEditors}
                 setRawEditors={setRawEditors}
@@ -319,29 +497,30 @@ export function SettingsForm({
           ))}
         </Tabs>
 
-        <div className="sticky bottom-4 z-10 flex flex-wrap items-center gap-3 rounded-xl border bg-background/95 p-3 shadow-lg backdrop-blur">
-          <Button type="submit" disabled={!dirty || formState.isSubmitting}>
-            {formState.isSubmitting ? "Enregistrement…" : "Enregistrer"}
-          </Button>
-          <Button
-            type="button"
-            variant="outline"
-            onClick={handleReset}
-            disabled={!dirty || formState.isSubmitting}
-          >
-            Annuler
-          </Button>
-          {saved && !dirty && <Badge variant="secondary">Enregistré</Badge>}
-          {saveError !== null && (
-            <span className="text-sm text-destructive">{saveError}</span>
-          )}
-          {!formState.isSubmitting &&
-            Object.keys(formState.errors).length > 0 && (
-              <span className="text-sm text-destructive">
-                Certains champs sont invalides.
-              </span>
+        {showActions && (
+          <div className="sticky bottom-4 z-10 flex flex-wrap items-center gap-3 rounded-xl border bg-background/95 p-3 shadow-lg backdrop-blur">
+            <Button type="submit" disabled={!dirty || formState.isSubmitting}>
+              {formState.isSubmitting ? "Enregistrement…" : "Enregistrer"}
+            </Button>
+            <Button
+              type="button"
+              variant="outline"
+              onClick={handleReset}
+              disabled={!dirty || formState.isSubmitting}
+            >
+              Annuler
+            </Button>
+            {saveError !== null && (
+              <span className="text-sm text-destructive">{saveError}</span>
             )}
-        </div>
+            {!formState.isSubmitting &&
+              Object.keys(formState.errors).length > 0 && (
+                <span className="text-sm text-destructive">
+                  Certains champs sont invalides.
+                </span>
+              )}
+          </div>
+        )}
       </form>
     </FormProvider>
   );
@@ -349,12 +528,14 @@ export function SettingsForm({
 
 function SectionCard({
   section,
+  serverName,
   secretIsSet,
   rawEditors,
   setRawEditors,
   rawError,
 }: {
   section: SettingsSection;
+  serverName: string;
   secretIsSet: Record<string, boolean>;
   rawEditors: RawEditors;
   setRawEditors: (editors: RawEditors) => void;
@@ -396,14 +577,23 @@ function SectionCard({
           </div>
         ))}
 
-        {section.custom === "autoplace" && <AutoplaceTable />}
+        {section.custom === "autoplace" && (
+          <div className="flex flex-col gap-8">
+            <AutoplaceTable />
+            <StartingPointsTable />
+          </div>
+        )}
 
         {section.custom === "raw" && (
-          <RawEditors
-            editors={rawEditors}
-            setEditors={setRawEditors}
-            error={rawError}
-          />
+          <div className="flex flex-col gap-8">
+            <RawEditors
+              editors={rawEditors}
+              setEditors={setRawEditors}
+              error={rawError}
+            />
+            <Separator />
+            <SettingsJsonPanel name={serverName} />
+          </div>
         )}
       </CardContent>
     </Card>
@@ -470,7 +660,7 @@ function FieldRenderer({
           </>
         );
 
-        return definition.wide ? (
+        return definition.wide || definition.kind === "switch" ? (
           <div className="sm:col-span-2">{content}</div>
         ) : (
           content
@@ -567,18 +757,35 @@ function renderControl(
   },
   invalid: boolean,
 ) {
-  const node = definition.schema;
-  const listId = `suggestions-${definition.path.replace(/[^a-zA-Z0-9]/g, "-")}`;
-  const suggestions = definition.suggestions ?? [];
-  const datalist =
-    suggestions.length === 0 ? null : (
-      <datalist id={listId}>
-        {suggestions.map((value) => (
-          <option key={value} value={value} />
-        ))}
-      </datalist>
-    );
+  if (definition.readOnly) {
+    const options = definition.options ?? [];
+    const value =
+      field.value === undefined || field.value === null
+        ? ""
+        : String(field.value);
+    const label =
+      options.find((option) => option.value === value)?.label ??
+      (value === "" ? "Défaut" : value);
 
+    return (
+      <Input
+        id={definition.path}
+        value={label}
+        readOnly
+        aria-readonly="true"
+        aria-invalid={invalid}
+        className="bg-muted/30 text-muted-foreground"
+      />
+    );
+  }
+
+  if (definition.kind === "quantity") {
+    return (
+      <QuantityControl definition={definition} field={field} invalid={invalid} />
+    );
+  }
+
+  const node = definition.schema;
   const isNumber = definition.kind === "number" ||
     node?.type === "integer" ||
     node?.type === "number";
@@ -593,43 +800,35 @@ function renderControl(
       options !== undefined;
 
     if (useSelect) {
-      return renderSelect(definition, field, invalid, node);
+      return (
+        <SelectControl
+          definition={definition}
+          field={field}
+          invalid={invalid}
+          node={node}
+        />
+      );
     }
 
     return (
-      <>
-        <Input
-          id={definition.path}
-          type="number"
-          min={node?.minimum}
-          max={node?.maximum}
-          step={definition.step ?? (isIntegerNode(node) ? "1" : "any")}
-          list={suggestions.length > 0 ? listId : undefined}
-          placeholder={definition.placeholder}
-          value={
-            typeof field.value === "number" || typeof field.value === "string"
-              ? field.value
-              : ""
-          }
-          onChange={(event) =>
-            field.onChange(numberOrUndefined(event.target.value))
-          }
-          onBlur={() => {
-            const clamped = clampNumber(field.value, node);
-            if (clamped !== field.value) {
-              field.onChange(clamped);
-            }
-            field.onBlur();
-          }}
-          aria-invalid={invalid}
-        />
-        {datalist}
-      </>
+      <EditableInput
+        definition={definition}
+        field={field}
+        invalid={invalid}
+        numeric
+      />
     );
   }
 
   if (definition.kind === "select") {
-    return renderSelect(definition, field, invalid, node);
+    return (
+      <SelectControl
+        definition={definition}
+        field={field}
+        invalid={invalid}
+        node={node}
+      />
+    );
   }
 
   if (definition.kind === "textarea") {
@@ -637,6 +836,7 @@ function renderControl(
       <Textarea
         id={definition.path}
         placeholder={definition.placeholder}
+        maxLength={node?.maxLength}
         value={typeof field.value === "string" ? field.value : ""}
         onChange={(event) => field.onChange(event.target.value)}
         onBlur={field.onBlur}
@@ -666,37 +866,302 @@ function renderControl(
   }
 
   return (
-    <>
-      <Input
-        id={definition.path}
-        list={suggestions.length > 0 ? listId : undefined}
-        placeholder={definition.placeholder}
-        value={typeof field.value === "string" ? field.value : ""}
-        onChange={(event) =>
-          field.onChange(
-            definition.emptyAsUndefined && event.target.value === ""
-              ? undefined
-              : event.target.value,
-          )
-        }
-        onBlur={field.onBlur}
-        aria-invalid={invalid}
-      />
-      {datalist}
-    </>
+    <EditableInput
+      definition={definition}
+      field={field}
+      invalid={invalid}
+      numeric={false}
+    />
   );
 }
 
-function renderSelect(
-  definition: FieldDefinition,
+function EditableInput({
+  definition,
+  field,
+  invalid,
+  numeric,
+}: {
+  definition: FieldDefinition;
   field: {
     value: unknown;
     onChange: (value: unknown) => void;
     onBlur: () => void;
-  },
-  invalid: boolean,
-  node?: JsonSchemaNode,
-) {
+  };
+  invalid: boolean;
+  numeric: boolean;
+}) {
+  const node = definition.schema;
+  const listId = `suggestions-${definition.path.replace(/[^a-zA-Z0-9]/g, "-")}`;
+  const suggestions = definition.suggestions ?? [];
+  const isInteger = isIntegerNode(node);
+  const [text, setText] = useState(() => inputValue(field.value));
+  const lastValue = useRef(field.value);
+
+  useEffect(() => {
+    if (!Object.is(field.value, lastValue.current)) {
+      lastValue.current = field.value;
+      setText(inputValue(field.value));
+    }
+  }, [field.value]);
+
+  function commit(value: string) {
+    if (numeric) {
+      const next = numberOrUndefined(value);
+      lastValue.current = next;
+      field.onChange(next);
+      return;
+    }
+
+    const next =
+      definition.emptyAsUndefined && value === "" ? undefined : value;
+    lastValue.current = next;
+    field.onChange(next);
+  }
+
+  return (
+    <>
+      <Input
+        id={definition.path}
+        type="text"
+        inputMode={numeric ? (isInteger ? "numeric" : "decimal") : undefined}
+        list={suggestions.length > 0 ? listId : undefined}
+        maxLength={numeric ? undefined : node?.maxLength}
+        placeholder={definition.placeholder}
+        value={text}
+        onChange={(event) => {
+          const value = event.target.value;
+          setText(value);
+          commit(value);
+        }}
+        onBlur={() => {
+          if (numeric) {
+            const clamped = clampNumber(text, node);
+            lastValue.current = clamped;
+            field.onChange(clamped);
+            setText(clamped === undefined ? "" : String(clamped));
+          }
+          field.onBlur();
+        }}
+        aria-invalid={invalid}
+      />
+      {suggestions.length > 0 && (
+        <datalist id={listId}>
+          {suggestions.map((value) => (
+            <option key={value} value={value} />
+          ))}
+        </datalist>
+      )}
+    </>
+  );
+}
+
+function selectCurrent(value: unknown): string {
+  return value === undefined || value === null || value === ""
+    ? DEFAULT_SELECT_VALUE
+    : String(value);
+}
+
+function QuantityControl({
+  definition,
+  field,
+  invalid,
+}: {
+  definition: FieldDefinition;
+  field: {
+    value: unknown;
+    onChange: (value: unknown) => void;
+    onBlur: () => void;
+  };
+  invalid: boolean;
+}) {
+  const { control } = useFormContext<FormValues>();
+  const cpuRequest = useWatch({ control, name: "spec.resources.cpuRequest" });
+  const cpuLimit = useWatch({ control, name: "spec.resources.cpuLimit" });
+  const memoryRequest = useWatch({
+    control,
+    name: "spec.resources.memoryRequest",
+  });
+  const memoryLimit = useWatch({
+    control,
+    name: "spec.resources.memoryLimit",
+  });
+  const presets = useMemo(() => {
+    const all = definition.suggestions ?? [];
+    const filter = (
+      parse: (value: string) => number | undefined,
+      boundary: unknown,
+      keep: (value: number, limit: number) => boolean,
+    ) => {
+      const limit = parse(inputValue(boundary));
+      if (limit === undefined) {
+        return all;
+      }
+      return all.filter((preset) => {
+        const value = parse(preset);
+        return value !== undefined && keep(value, limit);
+      });
+    };
+
+    switch (definition.path) {
+      case "spec.resources.cpuLimit":
+        return filter(parseCpu, cpuRequest, (value, request) => value >= request);
+      case "spec.resources.cpuRequest":
+        return filter(parseCpu, cpuLimit, (value, limit) => value <= limit);
+      case "spec.resources.memoryLimit":
+        return filter(
+          parseMemory,
+          memoryRequest,
+          (value, request) => value >= request,
+        );
+      case "spec.resources.memoryRequest":
+        return filter(parseMemory, memoryLimit, (value, limit) => value <= limit);
+      default:
+        return all;
+    }
+  }, [
+    definition.path,
+    definition.suggestions,
+    cpuRequest,
+    cpuLimit,
+    memoryRequest,
+    memoryLimit,
+  ]);
+  const current = inputValue(field.value);
+  const [custom, setCustom] = useState(
+    () => current !== "" && !presets.includes(current),
+  );
+
+  const selectValue = custom
+    ? CUSTOM_SELECT_VALUE
+    : current === ""
+      ? DEFAULT_SELECT_VALUE
+      : presets.includes(current)
+        ? current
+        : CUSTOM_SELECT_VALUE;
+  const customLabel =
+    current !== "" && !presets.includes(current)
+      ? `Personnalisé (${current})`
+      : "Personnalisé…";
+  const defaultValid = (() => {
+    const defaultValue = inputValue(definition.defaultValue);
+    if (defaultValue === "") {
+      return true;
+    }
+    switch (definition.path) {
+      case "spec.resources.cpuLimit":
+        return (parseCpu(defaultValue) ?? 0) >= (parseCpu(inputValue(cpuRequest)) ?? 0);
+      case "spec.resources.cpuRequest":
+        return (parseCpu(defaultValue) ?? 0) <= (parseCpu(inputValue(cpuLimit)) ?? Number.POSITIVE_INFINITY);
+      case "spec.resources.memoryLimit":
+        return (parseMemory(defaultValue) ?? 0) >= (parseMemory(inputValue(memoryRequest)) ?? 0);
+      case "spec.resources.memoryRequest":
+        return (parseMemory(defaultValue) ?? 0) <= (parseMemory(inputValue(memoryLimit)) ?? Number.POSITIVE_INFINITY);
+      default:
+        return true;
+    }
+  })();
+  const normalized = [
+    ...(defaultValid
+      ? [{ value: DEFAULT_SELECT_VALUE, label: "Défaut" }]
+      : []),
+    ...presets
+      .filter((preset) => preset !== "")
+      .map((preset) => ({ value: preset, label: preset })),
+    { value: CUSTOM_SELECT_VALUE, label: customLabel },
+  ];
+
+  return (
+    <div className="flex flex-col gap-2">
+      <Select
+        items={normalized}
+        value={selectValue}
+        onValueChange={(value) => {
+          if (value === null) {
+            return;
+          }
+          if (value === DEFAULT_SELECT_VALUE) {
+            setCustom(false);
+            field.onChange(undefined);
+            return;
+          }
+          if (value === CUSTOM_SELECT_VALUE) {
+            setCustom(true);
+            return;
+          }
+          setCustom(false);
+          field.onChange(value);
+        }}
+      >
+        <SelectTrigger
+          id={definition.path}
+          className="w-full"
+          disabled={custom}
+          aria-invalid={invalid}
+          onBlur={field.onBlur}
+        >
+          <span data-slot="select-value" className="flex flex-1 text-left">
+            {normalized.find((option) => option.value === selectValue)?.label ??
+              "Défaut"}
+          </span>
+        </SelectTrigger>
+        <SelectContent>
+          {normalized.map((option) => (
+            <SelectItem key={option.value} value={option.value}>
+              {option.label}
+            </SelectItem>
+          ))}
+        </SelectContent>
+      </Select>
+      {custom && (
+        <div className="flex flex-col gap-1">
+          <label
+            htmlFor={`${definition.path}-custom`}
+            className="text-xs text-muted-foreground"
+          >
+            Valeur personnalisée
+          </label>
+          <EditableInput
+            definition={{
+              ...definition,
+              path: `${definition.path}-custom`,
+              suggestions: [],
+            }}
+            field={field}
+            invalid={invalid}
+            numeric={false}
+          />
+          <Button
+            type="button"
+            variant="link"
+            size="sm"
+            className="h-auto self-start p-0 text-xs"
+            onClick={() => setCustom(false)}
+          >
+            Choisir un préréglage
+          </Button>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function SelectControl({
+  definition,
+  field,
+  invalid,
+  node,
+  compact = false,
+}: {
+  definition: FieldDefinition;
+  field: {
+    value: unknown;
+    onChange: (value: unknown) => void;
+    onBlur: () => void;
+  };
+  invalid: boolean;
+  node?: JsonSchemaNode;
+  compact?: boolean;
+}) {
   const options = selectOptions(definition, node);
   const normalized = options.map((option) => ({
     ...option,
@@ -705,39 +1170,67 @@ function renderSelect(
   if (!normalized.some((option) => option.value === DEFAULT_SELECT_VALUE)) {
     normalized.unshift({ value: DEFAULT_SELECT_VALUE, label: "Défaut" });
   }
-  const current =
-    field.value === undefined || field.value === null || field.value === ""
-      ? DEFAULT_SELECT_VALUE
-      : String(field.value);
+
+  const [local, setLocal] = useState(() => selectCurrent(field.value));
+  const lastValue = useRef(field.value);
+  const pendingChange = useRef(false);
+
+  useEffect(() => {
+    if (pendingChange.current) {
+      pendingChange.current = false;
+      lastValue.current = field.value;
+      return;
+    }
+    if (!Object.is(field.value, lastValue.current)) {
+      lastValue.current = field.value;
+      setLocal(selectCurrent(field.value));
+    }
+  }, [field.value]);
 
   if (
-    current !== DEFAULT_SELECT_VALUE &&
-    !normalized.some((option) => option.value === current)
+    local !== DEFAULT_SELECT_VALUE &&
+    !normalized.some((option) => option.value === local)
   ) {
     normalized.push({
-      value: current,
-      label: `Personnalisé (${current})`,
+      value: local,
+      label: `Personnalisé (${local})`,
     });
   }
 
-  const numeric = definition.numeric === true ||
+  const numeric =
+    definition.numeric === true ||
     node?.type === "integer" ||
     node?.type === "number";
 
   return (
     <Select
       items={normalized}
-      value={current}
+      value={local}
       onValueChange={(value) => {
-        if (value === DEFAULT_SELECT_VALUE) {
-          field.onChange(definition.defaultValue);
-          return;
-        }
-        field.onChange(numeric ? Number(value) : value);
+        const nextValue = value === null ? DEFAULT_SELECT_VALUE : value;
+        const next =
+          nextValue === DEFAULT_SELECT_VALUE
+            ? undefined
+            : numeric
+              ? Number(nextValue)
+              : nextValue;
+        lastValue.current = next;
+        pendingChange.current = true;
+        setLocal(nextValue);
+        field.onChange(next);
       }}
     >
-      <SelectTrigger id={definition.path} aria-invalid={invalid}>
-        <SelectValue />
+      <SelectTrigger
+        id={definition.path}
+        size={compact ? "sm" : "default"}
+        className={compact ? "w-full" : undefined}
+        aria-invalid={invalid}
+        onBlur={field.onBlur}
+      >
+        <span data-slot="select-value" className="flex flex-1 text-left">
+          {normalized.find((option) => option.value === local)?.label ??
+            "Défaut"}
+        </span>
       </SelectTrigger>
       <SelectContent>
         {normalized.map((option) => (
@@ -803,6 +1296,86 @@ function SecretField({
   );
 }
 
+function StartingPointsTable() {
+  const { control } = useFormContext<FormValues>();
+  const { fields, append, remove } = useFieldArray<FormValues>({
+    control,
+    name: "spec.mapGenSettings.startingPoints",
+  });
+
+  return (
+    <div className="flex flex-col gap-3">
+      <div className="flex flex-wrap items-center gap-3">
+        <h3 className="text-sm font-semibold">Points de départ</h3>
+        <Separator className="flex-1" />
+        <Button
+          type="button"
+          variant="outline"
+          size="sm"
+          onClick={() => append({ x: 0, y: 0 })}
+        >
+          Ajouter un point
+        </Button>
+      </div>
+      <p className="text-xs text-muted-foreground">
+        Coordonnées des positions de départ. Un point à (0, 0) est la carte
+        standard.
+      </p>
+      {fields.length === 0 ? (
+        <p className="text-sm text-muted-foreground">
+          Aucun point explicite : Factorio utilise la position par défaut.
+        </p>
+      ) : (
+        <div className="flex flex-col gap-2">
+          {fields.map((point, index) => (
+            <div
+              key={point.id}
+              className="flex flex-wrap items-end gap-2 rounded-md border p-2"
+            >
+              {(["x", "y"] as const).map((axis) => (
+                <div key={axis} className="flex flex-1 flex-col gap-1">
+                  <label
+                    className="text-xs text-muted-foreground uppercase"
+                    htmlFor={`starting-point-${index}-${axis}`}
+                  >
+                    {axis}
+                  </label>
+                  <Controller
+                    control={control}
+                    name={
+                      `spec.mapGenSettings.startingPoints.${index}.${axis}` as FieldPath<FormValues>
+                    }
+                    render={({ field }) => (
+                      <EditableInput
+                        definition={{
+                          path: `starting-point-${index}-${axis}`,
+                          label: axis,
+                          kind: "number",
+                        }}
+                        field={field}
+                        invalid={false}
+                        numeric
+                      />
+                    )}
+                  />
+                </div>
+              ))}
+              <Button
+                type="button"
+                variant="ghost"
+                size="sm"
+                onClick={() => remove(index)}
+              >
+                Retirer
+              </Button>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
 const RICHNESS_RESOURCES = new Set([
   "coal",
   "stone",
@@ -813,13 +1386,70 @@ const RICHNESS_RESOURCES = new Set([
 ]);
 
 function AutoplaceTable() {
-  const { control } = useFormContext<FormValues>();
+  const { control, setValue, getValues } = useFormContext<FormValues>();
+  const [newResource, setNewResource] = useState("");
+  const controls = useWatch({
+    control,
+    name: "spec.mapGenSettings.autoplaceControls",
+  }) as Record<string, unknown> | undefined;
+  const resourceNames = useMemo(() => {
+    const extra = Object.keys(controls ?? {}).filter(
+      (name) => !(RESOURCES as readonly string[]).includes(name),
+    );
+    return [...RESOURCES, ...extra.sort()];
+  }, [controls]);
+
+  function addResource() {
+    const name = newResource.trim();
+    if (
+      name === "" ||
+      resourceNames.includes(name) ||
+      !/^[a-z0-9][a-z0-9_-]*$/.test(name)
+    ) {
+      return;
+    }
+
+    setValue(
+      `spec.mapGenSettings.autoplaceControls.${name}` as FieldPath<FormValues>,
+      { frequency: 1, size: 1, richness: 1 },
+      { shouldDirty: true },
+    );
+    setNewResource("");
+  }
+
+  function removeResource(name: string) {
+    const current = getValues("spec.mapGenSettings.autoplaceControls");
+    if (current === undefined) {
+      return;
+    }
+
+    const next = { ...current };
+    delete next[name];
+    setValue("spec.mapGenSettings.autoplaceControls", next, {
+      shouldDirty: true,
+    });
+  }
 
   return (
     <div className="flex flex-col gap-3">
-      <div className="flex items-center gap-3">
+      <div className="flex flex-wrap items-center gap-3">
         <h3 className="text-sm font-semibold">Ressources (autoplace)</h3>
         <Separator className="flex-1" />
+        <Input
+          value={newResource}
+          onChange={(event) => setNewResource(event.target.value)}
+          placeholder="nom de ressource"
+          className="h-8 w-40"
+          onKeyDown={(event) => {
+            if (event.key === "Enter") {
+              event.preventDefault();
+              addResource();
+            }
+          }}
+        />
+        <Button type="button" variant="outline" size="sm" onClick={addResource}>
+          Ajouter
+        </Button>
       </div>
       <p className="text-xs text-muted-foreground">
         Valeurs du générateur Factorio (0 à 6). La richesse n&apos;est pas
@@ -836,11 +1466,28 @@ function AutoplaceTable() {
             </tr>
           </thead>
           <tbody>
-            {RESOURCES.map((resource) => (
+            {resourceNames.map((resource) => (
               <tr key={resource}>
-                <td className="py-1 pr-3 font-mono text-xs">{resource}</td>
+                <td className="py-1 pr-3 font-mono text-xs">
+                  <div className="flex items-center gap-1">
+                    <span>{resource}</span>
+                    {!(RESOURCES as readonly string[]).includes(resource) && (
+                      <button
+                        type="button"
+                        aria-label={`Retirer ${resource}`}
+                        className="text-muted-foreground hover:text-destructive"
+                        onClick={() => removeResource(resource)}
+                      >
+                        ×
+                      </button>
+                    )}
+                  </div>
+                </td>
                 {RESOURCE_FIELDS.map((field) => {
-                  if (field === "richness" && !RICHNESS_RESOURCES.has(resource)) {
+                  const usesRichness =
+                    RICHNESS_RESOURCES.has(resource) ||
+                    !(RESOURCES as readonly string[]).includes(resource);
+                  if (field === "richness" && !usesRichness) {
                     return (
                       <td
                         key={field}
@@ -860,10 +1507,17 @@ function AutoplaceTable() {
                         control={control}
                         name={path}
                         render={({ field: controller }) => (
-                          <AutoplaceSelect
-                            value={controller.value}
-                            onChange={controller.onChange}
-                            onBlur={controller.onBlur}
+                          <SelectControl
+                            definition={{
+                              path,
+                              label: `${resource} ${field}`,
+                              kind: "select",
+                              numeric: true,
+                              options: MAP_GEN_SIZE_OPTIONS,
+                            }}
+                            field={controller}
+                            invalid={false}
+                            compact
                           />
                         )}
                       />
@@ -879,47 +1533,6 @@ function AutoplaceTable() {
   );
 }
 
-function AutoplaceSelect({
-  value,
-  onChange,
-  onBlur,
-}: {
-  value: unknown;
-  onChange: (value: unknown) => void;
-  onBlur: () => void;
-}) {
-  const current =
-    value === undefined || value === null || value === ""
-      ? ""
-      : String(value);
-  const hasCurrent = MAP_GEN_SIZE_VALUES.some(
-    (item) => String(item.value) === current,
-  );
-
-  return (
-    <select
-      value={current}
-      onChange={(event) =>
-        onChange(
-          event.target.value === "" ? undefined : Number(event.target.value),
-        )
-      }
-      onBlur={onBlur}
-      className="h-8 w-full rounded-md border border-input bg-background px-2 text-xs shadow-xs outline-none focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50"
-    >
-      <option value="">Défaut</option>
-      {MAP_GEN_SIZE_VALUES.map((item) => (
-        <option key={item.value} value={String(item.value)}>
-          {item.label}
-        </option>
-      ))}
-      {current !== "" && !hasCurrent && (
-        <option value={current}>Personnalisé ({current})</option>
-      )}
-    </select>
-  );
-}
-
 function RawEditors({
   editors,
   setEditors,
@@ -931,13 +1544,19 @@ function RawEditors({
 }) {
   return (
     <div className="flex flex-col gap-4">
+      <div className="flex flex-col gap-1">
+        <h3 className="text-sm font-semibold">Clés supplémentaires (raw)</h3>
+        <p className="text-sm text-muted-foreground">
+          Uniquement les clés non exposées par les formulaires typés.
+        </p>
+      </div>
       {error !== null && (
         <Alert variant="destructive">
           <AlertDescription>{error}</AlertDescription>
         </Alert>
       )}
       <Field>
-        <FieldLabel htmlFor="raw-server">server.raw</FieldLabel>
+        <FieldLabel htmlFor="raw-server">server-settings.json (raw)</FieldLabel>
         <Textarea
           id="raw-server"
           className="font-mono text-xs"
@@ -953,7 +1572,7 @@ function RawEditors({
         </FieldDescription>
       </Field>
       <Field>
-        <FieldLabel htmlFor="raw-mapgen">mapGenSettings.raw</FieldLabel>
+        <FieldLabel htmlFor="raw-mapgen">map-gen-settings.json (raw)</FieldLabel>
         <Textarea
           id="raw-mapgen"
           className="font-mono text-xs"
@@ -969,7 +1588,7 @@ function RawEditors({
         </FieldDescription>
       </Field>
       <Field>
-        <FieldLabel htmlFor="raw-map">mapSettings.raw</FieldLabel>
+        <FieldLabel htmlFor="raw-map">map-settings.json (raw)</FieldLabel>
         <Textarea
           id="raw-map"
           className="font-mono text-xs"

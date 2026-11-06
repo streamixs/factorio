@@ -12,6 +12,8 @@ export interface JsonSchemaNode {
   enum?: unknown[];
   minimum?: number;
   maximum?: number;
+  minLength?: number;
+  maxLength?: number;
   default?: unknown;
   description?: string;
   pattern?: string;
@@ -78,11 +80,17 @@ export function describeBounds(node?: JsonSchemaNode): string | undefined {
   if (node.minimum !== undefined && node.maximum !== undefined) {
     return `Entre ${formatBound(node.minimum)} et ${formatBound(node.maximum)}.`;
   }
-  if (node.minimum !== undefined) {
+  if (node.minimum !== undefined && node.minimum > 0) {
     return `Minimum ${formatBound(node.minimum)}.`;
   }
   if (node.maximum !== undefined) {
     return `Maximum ${formatBound(node.maximum)}.`;
+  }
+  if (node.minLength !== undefined && node.maxLength !== undefined) {
+    return `Entre ${node.minLength} et ${node.maxLength} caractères.`;
+  }
+  if (node.maxLength !== undefined) {
+    return `${node.maxLength} caractères maximum.`;
   }
   return undefined;
 }
