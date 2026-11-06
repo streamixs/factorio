@@ -44,6 +44,7 @@ The Role in the target namespace allows:
 - `secrets` get/create/update/delete (managed credentials and RCON)
 - `configmaps` get (effective settings)
 - `customresourcedefinitions` get cluster-wide (settings form schema)
+- `storageclasses` get/list cluster-wide (StorageClass picker)
 - `pods` list and `pods/log` get (logs)
 - `events` list (diagnostics)
 - `services` get (connection details)
