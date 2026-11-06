@@ -7,6 +7,7 @@ import type {
   ServerEvent,
   ServerLogs,
   ServerOperation,
+  ServerSettingsJson,
   ServerUsage,
   UpdateFactorioServerInput,
 } from "@factorio/shared";
@@ -122,12 +123,28 @@ export function getSettingsSchema(): Promise<SettingsSchema> {
   return request<SettingsSchema>("/schema");
 }
 
+export function getVersions(): Promise<string[]> {
+  return request<string[]>("/versions");
+}
+
+export function getStorageClasses(): Promise<string[]> {
+  return request<string[]>("/storage-classes");
+}
+
 export function getServerConnection(name: string): Promise<ServerConnection> {
   return request<ServerConnection>(`/${encodeURIComponent(name)}/connection`);
 }
 
 export function getServerUsage(name: string): Promise<ServerUsage> {
   return request<ServerUsage>(`/${encodeURIComponent(name)}/usage`);
+}
+
+export function getServerSettingsJson(
+  name: string,
+): Promise<ServerSettingsJson> {
+  return request<ServerSettingsJson>(
+    `/${encodeURIComponent(name)}/settings-json`,
+  );
 }
 
 export function getServerBackups(name: string): Promise<ServerBackups> {
