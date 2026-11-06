@@ -616,6 +616,50 @@ describe('ServersService', () => {
     });
   });
 
+  it('returns rendered settings JSON with credentials masked', async () => {
+    getNamespacedCustomObject.mockResolvedValue({
+      metadata: { name: 'my-server', namespace: 'games' },
+      spec: { version: '2.1.24' },
+    });
+    readNamespacedSecret.mockResolvedValue({
+      data: {
+        'server-settings.json': Buffer.from(
+          JSON.stringify({
+            name: 'Server',
+            game_password: 'hunter2',
+            password: 'account-password',
+            token: 'api-token',
+            username: 'player',
+          }),
+        ).toString('base64'),
+      },
+    });
+    readNamespacedConfigMap.mockImplementation(
+      (request: { name: string }) => {
+        if (request.name === 'my-server-map-gen-settings') {
+          return Promise.resolve({
+            data: { 'map-gen-settings.json': '{"seed":42}' },
+          });
+        }
+        return Promise.reject(
+          new ApiException(404, 'Not Found', undefined, {}),
+        );
+      },
+    );
+
+    const json = await service.settingsJson('my-server');
+
+    expect(JSON.parse(json.server ?? '{}')).toMatchObject({
+      name: 'Server',
+      game_password: '********',
+      password: '********',
+      token: '********',
+      username: 'player',
+    });
+    expect(json.mapGen).toBe('{"seed":42}');
+    expect(json.mapSettings).toBeNull();
+  });
+
   it('lists operations for one server, newest first', async () => {
     listNamespacedCustomObject.mockResolvedValue({
       items: [

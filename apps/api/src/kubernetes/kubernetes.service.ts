@@ -5,6 +5,7 @@ import {
   CoreV1Api,
   CustomObjectsApi,
   KubeConfig,
+  StorageV1Api,
 } from '@kubernetes/client-node';
 
 interface KubernetesClients {
@@ -12,6 +13,7 @@ interface KubernetesClients {
   core: CoreV1Api;
   batch: BatchV1Api;
   apiextensions: ApiextensionsV1Api;
+  storage: StorageV1Api;
 }
 
 /**
@@ -46,6 +48,10 @@ export class KubernetesService {
     return this.requireClients().apiextensions;
   }
 
+  get storage(): StorageV1Api {
+    return this.requireClients().storage;
+  }
+
   private requireClients(): KubernetesClients {
     if (this.clients === null) {
       throw new ServiceUnavailableException(
@@ -71,6 +77,7 @@ export class KubernetesService {
         core: kubeConfig.makeApiClient(CoreV1Api),
         batch: kubeConfig.makeApiClient(BatchV1Api),
         apiextensions: kubeConfig.makeApiClient(ApiextensionsV1Api),
+        storage: kubeConfig.makeApiClient(StorageV1Api),
       };
     } catch (error) {
       this.logger.warn(

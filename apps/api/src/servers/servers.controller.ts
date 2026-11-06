@@ -25,6 +25,7 @@ import type {
   ServerEvent,
   ServerLogs,
   ServerOperation,
+  ServerSettingsJson,
   ServerUsage,
   UpdateFactorioServerInput,
 } from '@factorio/shared';
@@ -43,6 +44,21 @@ export class ServersController {
   @Get('schema')
   schema(): Promise<Record<string, unknown>> {
     return this.servers.schema();
+  }
+
+  @Get(':name/settings-json')
+  settingsJson(@Param('name') name: string): Promise<ServerSettingsJson> {
+    return this.servers.settingsJson(name);
+  }
+
+  @Get('versions')
+  versions(): Promise<string[]> {
+    return this.servers.versions();
+  }
+
+  @Get('storage-classes')
+  storageClasses(): Promise<string[]> {
+    return this.servers.storageClasses();
   }
 
   @Get(':name')

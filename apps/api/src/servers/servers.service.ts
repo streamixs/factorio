@@ -44,6 +44,7 @@ import type {
   ServerOperation,
   ServerOperationPhase,
   ServerOperationType,
+  ServerSettingsJson,
   ServerUsage,
   ServicePortInfo,
   UpdateFactorioServerInput,
@@ -57,6 +58,14 @@ const PLURAL = 'factorioservers';
 const OPERATIONS_PLURAL = 'factoriooperations';
 const CRD_NAME = 'factorioservers.games.dev.streamixs.com';
 const SCHEMA_TTL_MS = 5 * 60 * 1000;
+const VERSIONS_TTL_MS = 10 * 60 * 1000;
+const FACTORIO_IMAGE_REPOSITORY = 'factoriotools/factorio';
+const SERVER_SETTINGS_SECRET_SUFFIX = '-server-settings';
+const MAP_GEN_SETTINGS_CONFIGMAP_SUFFIX = '-map-gen-settings';
+const MAP_SETTINGS_CONFIGMAP_SUFFIX = '-map-settings';
+const SERVER_SETTINGS_FILE = 'server-settings.json';
+const MAP_GEN_SETTINGS_FILE = 'map-gen-settings.json';
+const MAP_SETTINGS_FILE = 'map-settings.json';
 const DEFAULT_VERSION = '2.1.24';
 
 const NAME_PATTERN = /^[a-z0-9]([-a-z0-9]*[a-z0-9])?$/;
@@ -115,6 +124,10 @@ export class ServersService {
   private readonly imports = new Map<string, PendingImport>();
   private schemaCache: {
     value: Record<string, unknown>;
+    expiresAt: number;
+  } | null = null;
+  private versionsCache: {
+    value: string[];
     expiresAt: number;
   } | null = null;
 
@@ -635,6 +648,127 @@ export class ServersService {
       expiresAt: Date.now() + SCHEMA_TTL_MS,
     };
     return value;
+  }
+
+  /**
+   * Returns Factorio image tags that can be selected in the UI. Docker Hub is
+   * best effort: without network access the configured default is returned.
+   */
+  async versions(): Promise<string[]> {
+    if (
+      this.versionsCache !== null &&
+      this.versionsCache.expiresAt > Date.now()
+    ) {
+      return this.versionsCache.value;
+    }
+
+    let versions = [DEFAULT_VERSION];
+    try {
+      const response = await fetch(
+        `https://hub.docker.com/v2/repositories/${FACTORIO_IMAGE_REPOSITORY}/tags?page_size=100&ordering=last_updated`,
+        { signal: AbortSignal.timeout(5000) },
+      );
+      if (response.ok) {
+        const body = (await response.json()) as {
+          results?: { name?: string }[];
+        };
+        const tags = (body.results ?? [])
+          .map((item) => item.name)
+          .filter(
+            (name): name is string =>
+              typeof name === 'string' && /^\d+\.\d+\.\d+$/.test(name),
+          );
+        versions = [...new Set([DEFAULT_VERSION, ...tags])];
+      }
+    } catch {
+      // Offline cluster: the default version remains selectable.
+    }
+
+    versions.sort(compareVersionsDesc);
+    this.versionsCache = {
+      value: versions,
+      expiresAt: Date.now() + VERSIONS_TTL_MS,
+    };
+    return versions;
+  }
+
+  /** Lists the StorageClasses available to the cluster. */
+  async storageClasses(): Promise<string[]> {
+    try {
+      const result = await this.kubernetes.storage.listStorageClass({});
+      return (result.items ?? [])
+        .map((item) => item.metadata?.name)
+        .filter(
+          (name): name is string => typeof name === 'string' && name !== '',
+        )
+        .sort();
+    } catch {
+      return [];
+    }
+  }
+
+  /**
+   * Returns the JSON files the agent actually rendered for Factorio. The
+   * server settings are read from the Secret and account credentials are
+   * masked before they leave the API.
+   */
+  async settingsJson(name: string): Promise<ServerSettingsJson> {
+    this.assertName(name);
+    await this.get(name);
+
+    const namespace = this.kubernetes.namespace;
+    const [server, mapGen, mapSettings] = await Promise.all([
+      this.readServerSettingsJson(name, namespace),
+      this.readConfigMapValue(
+        name + MAP_GEN_SETTINGS_CONFIGMAP_SUFFIX,
+        namespace,
+        MAP_GEN_SETTINGS_FILE,
+      ),
+      this.readConfigMapValue(
+        name + MAP_SETTINGS_CONFIGMAP_SUFFIX,
+        namespace,
+        MAP_SETTINGS_FILE,
+      ),
+    ]);
+
+    return { server, mapGen, mapSettings };
+  }
+
+  private async readServerSettingsJson(
+    name: string,
+    namespace: string,
+  ): Promise<string | null> {
+    try {
+      const secret = await this.kubernetes.core.readNamespacedSecret({
+        name: name + SERVER_SETTINGS_SECRET_SUFFIX,
+        namespace,
+      });
+      const encoded = secret.data?.[SERVER_SETTINGS_FILE];
+      if (encoded === undefined) {
+        return null;
+      }
+      return maskServerSettings(
+        Buffer.from(encoded, 'base64').toString('utf8'),
+      );
+    } catch {
+      return null;
+    }
+  }
+
+  private async readConfigMapValue(
+    name: string,
+    namespace: string,
+    key: string,
+  ): Promise<string | null> {
+    try {
+      const configMap = await this.kubernetes.core.readNamespacedConfigMap({
+        name,
+        namespace,
+      });
+      return configMap.data?.[key] ?? null;
+    } catch {
+      return null;
+    }
   }
 
   async operations(name: string): Promise<ServerOperation[]> {    this.assertName(name);
@@ -1295,6 +1429,33 @@ function parseMemoryBytes(value: string): number {
   };
 
   return match[2] === undefined ? amount : amount * (units[match[2]] ?? 1);
+}
+
+function maskServerSettings(content: string): string {
+  try {
+    const data = JSON.parse(content) as Record<string, unknown>;
+    for (const key of ['game_password', 'password', 'token']) {
+      if (typeof data[key] === 'string' && data[key] !== '') {
+        data[key] = '********';
+      }
+    }
+    return `${JSON.stringify(data, null, 2)}\n`;
+  } catch {
+    return content;
+  }
+}
+
+function compareVersionsDesc(left: string, right: string): number {
+  const leftParts = left.split('.').map(Number);
+  const rightParts = right.split('.').map(Number);
+
+  for (let index = 0; index < 3; index += 1) {
+    const difference = (rightParts[index] ?? 0) - (leftParts[index] ?? 0);
+    if (difference !== 0) {
+      return difference;
+    }
+  }
+  return right.localeCompare(left);
 }
 
 function clampTailLines(value?: number): number {
