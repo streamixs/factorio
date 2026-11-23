@@ -122,6 +122,29 @@ describe('ServersService', () => {
     );
   });
 
+  it('keeps resource settings when creating a FactorioServer', async () => {
+    createNamespacedCustomObject.mockImplementation(
+      (request: { body: FactorioServer }) => Promise.resolve(request.body),
+    );
+
+    const server = await service.create({
+      name: 'my-server',
+      resources: {
+        cpuRequest: '750m',
+        cpuLimit: '3',
+        memoryRequest: '2Gi',
+        memoryLimit: '6Gi',
+      },
+    });
+
+    expect(server.spec.resources).toEqual({
+      cpuRequest: '750m',
+      cpuLimit: '3',
+      memoryRequest: '2Gi',
+      memoryLimit: '6Gi',
+    });
+  });
+
   it('creates the managed credentials Secret', async () => {
     createNamespacedCustomObject.mockImplementation(
       (request: { body: FactorioServer }) =>
@@ -350,6 +373,16 @@ describe('ServersService', () => {
   });
 
   it('returns related events newest first', async () => {
+    getNamespacedCustomObject.mockResolvedValue({
+      metadata: { name: 'my-server', uid: 'uid-my-server' },
+      spec: {},
+    });
+    listNamespacedCustomObject.mockResolvedValue({
+      items: [
+        { metadata: { name: 'my-server' }, spec: {} },
+        { metadata: { name: 'other-server' }, spec: {} },
+      ],
+    });
     listNamespacedEvent.mockResolvedValue({
       items: [
         {
@@ -386,6 +419,62 @@ describe('ServersService', () => {
     expect(events[0].lastTimestamp).toBe('2026-01-03T00:00:00.000Z');
     expect(events[1].reason).toBe('Created');
     expect(events[1].objectName).toBe('my-server-abc');
+  });
+
+  it('does not leak events from a server whose name extends the requested name', async () => {
+    getNamespacedCustomObject.mockResolvedValue({
+      metadata: { name: 'my-server', uid: 'uid-my-server' },
+      spec: {},
+    });
+    listNamespacedCustomObject.mockResolvedValue({
+      items: [
+        { metadata: { name: 'my-server' }, spec: {} },
+        { metadata: { name: 'my-server-other' }, spec: {} },
+      ],
+    });
+    listNamespacedEvent.mockResolvedValue({
+      items: [
+        {
+          type: 'Normal',
+          reason: 'OwnPod',
+          message: 'pod created',
+          involvedObject: { kind: 'Pod', name: 'my-server-abc' },
+          lastTimestamp: new Date('2026-01-01T00:00:00Z'),
+          count: 1,
+        },
+        {
+          type: 'Normal',
+          reason: 'OwnDeployment',
+          message: 'deployment updated',
+          involvedObject: { kind: 'Deployment', name: 'my-server' },
+          lastTimestamp: new Date('2026-01-02T00:00:00Z'),
+          count: 1,
+        },
+        {
+          type: 'Warning',
+          reason: 'OtherService',
+          message: 'other server service',
+          involvedObject: { kind: 'Service', name: 'my-server-other' },
+          lastTimestamp: new Date('2026-01-03T00:00:00Z'),
+          count: 1,
+        },
+        {
+          type: 'Warning',
+          reason: 'OtherPod',
+          message: 'other server pod',
+          involvedObject: { kind: 'Pod', name: 'my-server-other-abc' },
+          lastTimestamp: new Date('2026-01-04T00:00:00Z'),
+          count: 1,
+        },
+      ],
+    });
+
+    const events = await service.events('my-server');
+
+    expect(events.map((event) => event.reason)).toEqual([
+      'OwnDeployment',
+      'OwnPod',
+    ]);
   });
 
   it('returns default and effective specifications', async () => {
@@ -429,8 +518,7 @@ describe('ServersService', () => {
       'fetch',
       vi.fn().mockResolvedValue({
         ok: true,
-        text: async () =>
-          '_autosave2.zip 123 1767225600\n_broken.txt 1 1\n',
+        text: async () => '_autosave2.zip 123 1767225600\n_broken.txt 1 1\n',
       }),
     );
 
@@ -472,10 +560,7 @@ describe('ServersService', () => {
       }),
     );
 
-    const backup = await service.downloadBackup(
-      'my-server',
-      '_autosave2.zip',
-    );
+    const backup = await service.downloadBackup('my-server', '_autosave2.zip');
 
     expect(backup.filename).toBe('_autosave2.zip');
     expect(backup.data).toEqual(Buffer.from([1, 2, 3]));
@@ -500,10 +585,7 @@ describe('ServersService', () => {
       metadata: { name: 'my-server-restore-abc' },
     });
 
-    const result = await service.restoreBackup(
-      'my-server',
-      '_autosave2.zip',
-    );
+    const result = await service.restoreBackup('my-server', '_autosave2.zip');
 
     expect(result.operation).toBe('my-server-restore-abc');
     expect(createNamespacedCustomObject).toHaveBeenCalledWith(
@@ -634,18 +716,14 @@ describe('ServersService', () => {
         ).toString('base64'),
       },
     });
-    readNamespacedConfigMap.mockImplementation(
-      (request: { name: string }) => {
-        if (request.name === 'my-server-map-gen-settings') {
-          return Promise.resolve({
-            data: { 'map-gen-settings.json': '{"seed":42}' },
-          });
-        }
-        return Promise.reject(
-          new ApiException(404, 'Not Found', undefined, {}),
-        );
-      },
-    );
+    readNamespacedConfigMap.mockImplementation((request: { name: string }) => {
+      if (request.name === 'my-server-map-gen-settings') {
+        return Promise.resolve({
+          data: { 'map-gen-settings.json': '{"seed":42}' },
+        });
+      }
+      return Promise.reject(new ApiException(404, 'Not Found', undefined, {}));
+    });
 
     const json = await service.settingsJson('my-server');
 
@@ -780,9 +858,7 @@ describe('ServersService', () => {
       items: [
         {
           status: {
-            addresses: [
-              { type: 'InternalIP', address: '192.168.139.2' },
-            ],
+            addresses: [{ type: 'InternalIP', address: '192.168.139.2' }],
           },
         },
       ],

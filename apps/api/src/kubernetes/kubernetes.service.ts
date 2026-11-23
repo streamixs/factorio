@@ -1,4 +1,8 @@
-import { Injectable, Logger, ServiceUnavailableException } from '@nestjs/common';
+import {
+  Injectable,
+  Logger,
+  ServiceUnavailableException,
+} from '@nestjs/common';
 import {
   ApiextensionsV1Api,
   BatchV1Api,
@@ -50,6 +54,28 @@ export class KubernetesService {
 
   get storage(): StorageV1Api {
     return this.requireClients().storage;
+  }
+
+  /**
+   * Reports whether the API can reach the Kubernetes API. Used by the
+   * readiness probe; the liveness probe stays independent so a Kubernetes
+   * outage does not restart the pod in a loop.
+   */
+  async checkReadiness(): Promise<boolean> {
+    if (this.clients === null) {
+      return false;
+    }
+
+    try {
+      await this.clients.core.listNamespacedPod({
+        namespace: this.namespace,
+        limit: 1,
+        timeoutSeconds: 2,
+      });
+      return true;
+    } catch {
+      return false;
+    }
   }
 
   private requireClients(): KubernetesClients {

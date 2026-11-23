@@ -124,6 +124,9 @@ jobs:
       - name: Build shared package
         run: pnpm --filter @factorio/shared build
 
+      - name: Check formatting
+        run: pnpm --filter @factorio/api format:check
+
       - name: Lint
         run: pnpm --filter @factorio/api lint
 
