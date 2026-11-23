@@ -104,6 +104,18 @@ func (r *FactorioOperationReconciler) Reconcile(
 		}
 	}
 
+	if operation.Status.Phase == "" ||
+		operation.Status.Phase == gamesv1alpha1.OperationPhasePending {
+		conflict, err := r.conflictingOperation(ctx, &operation)
+		if err != nil {
+			return ctrl.Result{}, err
+		}
+		if conflict != nil {
+			return r.failConflict(ctx, &operation, &server,
+				fmt.Sprintf("Operation %q is already in progress", conflict.Name))
+		}
+	}
+
 	logger.Info("Reconciling FactorioOperation",
 		"name", operation.Name, "server", server.Name,
 		"phase", operation.Status.Phase)
@@ -124,6 +136,60 @@ func (r *FactorioOperationReconciler) Reconcile(
 		return r.fail(ctx, &operation, &server,
 			fmt.Sprintf("Unknown operation phase %q", operation.Status.Phase))
 	}
+}
+
+// conflictingOperation returns another non-terminal operation for the same
+// server. Pending operations use their name as a deterministic tie-break so
+// only one of them can start.
+func (r *FactorioOperationReconciler) conflictingOperation(
+	ctx context.Context,
+	operation *gamesv1alpha1.FactorioOperation,
+) (*gamesv1alpha1.FactorioOperation, error) {
+	var operations gamesv1alpha1.FactorioOperationList
+	if err := r.List(ctx, &operations,
+		client.InNamespace(operation.Namespace)); err != nil {
+		return nil, err
+	}
+
+	for i := range operations.Items {
+		other := &operations.Items[i]
+		if other.Name == operation.Name ||
+			other.Spec.ServerName != operation.Spec.ServerName {
+			continue
+		}
+
+		switch other.Status.Phase {
+		case gamesv1alpha1.OperationPhaseSuspending,
+			gamesv1alpha1.OperationPhaseRunning:
+			return other, nil
+		case "", gamesv1alpha1.OperationPhasePending:
+			if other.Name < operation.Name {
+				return other, nil
+			}
+		}
+	}
+
+	return nil, nil
+}
+
+// failConflict rejects an operation that would run at the same time as another
+// one. It records the server state so finalization never restarts a server the
+// user had stopped.
+func (r *FactorioOperationReconciler) failConflict(
+	ctx context.Context,
+	operation *gamesv1alpha1.FactorioOperation,
+	server *gamesv1alpha1.FactorioServer,
+	message string,
+) (ctrl.Result, error) {
+	operation.Status.WasSuspended = server.Spec.Suspended
+	r.finish(operation, gamesv1alpha1.OperationPhaseFailed, message)
+	if err := r.Status().Update(ctx, operation); err != nil {
+		return ctrl.Result{}, err
+	}
+
+	r.deleteJob(ctx, operation)
+	r.recordEvent(operation, corev1.EventTypeWarning, "Conflict", message)
+	return ctrl.Result{}, nil
 }
 
 // begin records whether the server was already stopped before suspending it.
@@ -366,14 +432,57 @@ func (r *FactorioOperationReconciler) deleteJob(
 	}
 }
 
-// finalize releases a server that an operation stopped, then lets the
-// operation be deleted.
+// ensureJobDeleted requests deletion of the operation Job and reports whether
+// it is still present. Finalization waits for it so a Factorio pod never mounts
+// the data volume while the Job is still writing.
+func (r *FactorioOperationReconciler) ensureJobDeleted(
+	ctx context.Context,
+	operation *gamesv1alpha1.FactorioOperation,
+) (bool, error) {
+	if operation.Status.JobName == "" {
+		return false, nil
+	}
+
+	job := &batchv1.Job{}
+	err := r.Get(ctx, types.NamespacedName{
+		Namespace: operation.Namespace,
+		Name:      operation.Status.JobName,
+	}, job)
+	if apierrors.IsNotFound(err) {
+		return false, nil
+	}
+	if err != nil {
+		return false, err
+	}
+
+	if job.DeletionTimestamp.IsZero() {
+		if err := r.Delete(ctx, job, client.PropagationPolicy(
+			metav1.DeletePropagationBackground)); err != nil &&
+			!apierrors.IsNotFound(err) {
+			return false, fmt.Errorf("delete operation Job %q: %w",
+				job.Name, err)
+		}
+	}
+
+	return true, nil
+}
+
+// finalize waits for the Job to disappear before releasing the server, then
+// lets the operation be deleted.
 func (r *FactorioOperationReconciler) finalize(
 	ctx context.Context,
 	operation *gamesv1alpha1.FactorioOperation,
 ) (ctrl.Result, error) {
+	pending, err := r.ensureJobDeleted(ctx, operation)
+	if err != nil {
+		return ctrl.Result{}, err
+	}
+	if pending {
+		return ctrl.Result{RequeueAfter: operationPoll}, nil
+	}
+
 	var server gamesv1alpha1.FactorioServer
-	err := r.Get(ctx, types.NamespacedName{
+	err = r.Get(ctx, types.NamespacedName{
 		Namespace: operation.Namespace,
 		Name:      operation.Spec.ServerName,
 	}, &server)
@@ -387,8 +496,6 @@ func (r *FactorioOperationReconciler) finalize(
 	} else if !apierrors.IsNotFound(err) {
 		return ctrl.Result{}, err
 	}
-
-	r.deleteJob(ctx, operation)
 
 	controllerutil.RemoveFinalizer(operation, operationFinalizer)
 	if err := r.Update(ctx, operation); err != nil {
