@@ -122,6 +122,7 @@ interface FactorioOperationResource {
 export class ServersService {
   private readonly logger = new Logger(ServersService.name);
   private readonly imports = new Map<string, PendingImport>();
+  private readonly creatingOperations = new Set<string>();
   private schemaCache: {
     value: Record<string, unknown>;
     expiresAt: number;
@@ -261,19 +262,7 @@ export class ServersService {
     suspended: boolean,
   ): Promise<FactorioServer> {
     const server = await this.get(name);
-
-    if (!suspended) {
-      const operations = await this.operations(name);
-      const active = operations.find(
-        (operation) =>
-          operation.phase !== 'Completed' && operation.phase !== 'Failed',
-      );
-      if (active !== undefined) {
-        throw new ConflictException(
-          `Operation ${active.name} is still in progress`,
-        );
-      }
-    }
+    await this.assertNoActiveOperation(name);
 
     server.spec.suspended = suspended;
     return this.replace(server, server.spec);
@@ -587,6 +576,7 @@ export class ServersService {
   ): Promise<{ operation: string }> {
     this.assertName(name);
     assertBackupFile(file);
+    await this.assertNoActiveOperation(name);
 
     const server = await this.get(name);
     const operation = await this.createOperation(server, 'Restore', {
@@ -612,6 +602,8 @@ export class ServersService {
     if (Number.isFinite(declared) && declared > MAX_IMPORT_BYTES) {
       throw new PayloadTooLargeException('Save file is larger than 1 GiB');
     }
+
+    await this.assertNoActiveOperation(name);
 
     const server = await this.get(name);
     const token = randomBytes(24).toString('base64url');
@@ -640,11 +632,17 @@ export class ServersService {
       expiresAt: Date.now() + IMPORT_TTL_MS,
     });
 
-    const operation = await this.createOperation(server, 'Import', {
-      importUrl: importUrl(name, token),
-    });
+    try {
+      const operation = await this.createOperation(server, 'Import', {
+        importUrl: importUrl(name, token),
+      });
 
-    return { operation };
+      return { operation };
+    } catch (error) {
+      this.imports.delete(token);
+      await unlink(filePath).catch(() => undefined);
+      throw error;
+    }
   }
 
   /**
@@ -826,43 +824,69 @@ export class ServersService {
       );
   }
 
+  private async assertNoActiveOperation(name: string): Promise<void> {
+    const active = (await this.operations(name)).find(
+      (operation) =>
+        operation.phase !== 'Completed' && operation.phase !== 'Failed',
+    );
+    if (active !== undefined) {
+      throw new ConflictException(
+        `Operation ${active.name} is still in progress`,
+      );
+    }
+  }
+
   private async createOperation(
     server: FactorioServer,
     type: ServerOperationType,
     extra: { saveFile?: string; importUrl?: string },
   ): Promise<string> {
-    const namespace = server.metadata.namespace ?? this.kubernetes.namespace;
-    const body = {
-      apiVersion: `${GROUP}/${VERSION}`,
-      kind: 'FactorioOperation',
-      metadata: {
-        generateName: `${server.metadata.name}-${type.toLowerCase()}-`,
-        namespace,
-        ownerReferences: [this.ownerReference(server)],
-      },
-      spec: {
-        serverName: server.metadata.name,
-        type,
-        ...extra,
-      },
-    };
+    const serverName = server.metadata.name;
 
-    const created = await this.call(() =>
-      this.kubernetes.customObjects.createNamespacedCustomObject({
-        group: GROUP,
-        version: VERSION,
-        namespace,
-        plural: OPERATIONS_PLURAL,
-        body,
-      }),
-    );
-
-    const operationName = (created as { metadata?: { name?: string } }).metadata
-      ?.name;
-    if (operationName === undefined || operationName === '') {
-      throw new InternalServerErrorException('Operation name is missing');
+    if (this.creatingOperations.has(serverName)) {
+      throw new ConflictException(
+        `An operation is already being created for ${serverName}`,
+      );
     }
-    return operationName;
+
+    this.creatingOperations.add(serverName);
+    try {
+      await this.assertNoActiveOperation(serverName);
+      const namespace = server.metadata.namespace ?? this.kubernetes.namespace;
+      const body = {
+        apiVersion: `${GROUP}/${VERSION}`,
+        kind: 'FactorioOperation',
+        metadata: {
+          generateName: `${serverName}-${type.toLowerCase()}-`,
+          namespace,
+          ownerReferences: [this.ownerReference(server)],
+        },
+        spec: {
+          serverName,
+          type,
+          ...extra,
+        },
+      };
+
+      const created = await this.call(() =>
+        this.kubernetes.customObjects.createNamespacedCustomObject({
+          group: GROUP,
+          version: VERSION,
+          namespace,
+          plural: OPERATIONS_PLURAL,
+          body,
+        }),
+      );
+
+      const operationName = (created as { metadata?: { name?: string } })
+        .metadata?.name;
+      if (operationName === undefined || operationName === '') {
+        throw new InternalServerErrorException('Operation name is missing');
+      }
+      return operationName;
+    } finally {
+      this.creatingOperations.delete(serverName);
+    }
   }
 
   /**
