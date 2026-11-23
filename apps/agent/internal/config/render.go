@@ -89,6 +89,34 @@ func mergeMaps(destination, source map[string]any) {
 	}
 }
 
+// sensitiveServerRawKeys are server-settings.json secrets that must be stored
+// in the managed credentials Secret instead of the custom resource.
+var sensitiveServerRawKeys = map[string]struct{}{
+	"game_password": {},
+	"password":      {},
+	"token":         {},
+}
+
+func validateServerRaw(raw *apiextensionsv1.JSON) error {
+	if raw == nil || len(raw.Raw) == 0 {
+		return nil
+	}
+
+	var extra map[string]any
+	if err := json.Unmarshal(raw.Raw, &extra); err != nil {
+		return fmt.Errorf("parse raw settings: %w", err)
+	}
+
+	for key := range extra {
+		if _, forbidden := sensitiveServerRawKeys[key]; forbidden {
+			return fmt.Errorf(
+				"setting %q must be configured through credentials", key)
+		}
+	}
+
+	return nil
+}
+
 // mergeRaw adds the keys of raw to settings. A key set by a typed field is
 // rejected rather than silently overwritten. Keys that only exist in the
 // defaults may be overridden through raw.
