@@ -581,6 +581,7 @@ describe('ServersService', () => {
       },
     };
     getNamespacedCustomObject.mockResolvedValue(server);
+    listNamespacedCustomObject.mockResolvedValue({ items: [] });
     createNamespacedCustomObject.mockResolvedValue({
       metadata: { name: 'my-server-restore-abc' },
     });
@@ -632,6 +633,7 @@ describe('ServersService', () => {
       },
     };
     getNamespacedCustomObject.mockResolvedValue(server);
+    listNamespacedCustomObject.mockResolvedValue({ items: [] });
     createNamespacedCustomObject.mockResolvedValue({
       metadata: { name: 'my-server-import-abc' },
     });
@@ -790,6 +792,7 @@ describe('ServersService', () => {
       metadata: { name: 'my-server', namespace: 'games' },
       spec: { version: '2.1.24' },
     });
+    listNamespacedCustomObject.mockResolvedValue({ items: [] });
 
     await expect(
       service.importSave(
@@ -938,6 +941,7 @@ describe('ServersService', () => {
     replaceNamespacedCustomObject.mockImplementation(
       (request: { body: FactorioServer }) => Promise.resolve(request.body),
     );
+    listNamespacedCustomObject.mockResolvedValue({ items: [] });
 
     const server = await service.setSuspended('my-server', true);
 
@@ -986,6 +990,102 @@ describe('ServersService', () => {
     ).rejects.toBeInstanceOf(ConflictException);
 
     expect(replaceNamespacedCustomObject).not.toHaveBeenCalled();
+  });
+
+  it('refuses to stop a server while an operation is running', async () => {
+    getNamespacedCustomObject.mockResolvedValue({
+      apiVersion: 'games.dev.streamixs.com/v1alpha1',
+      kind: 'FactorioServer',
+      metadata: { name: 'my-server', namespace: 'games' },
+      spec: { version: '2.1.24', suspended: false },
+    });
+    listNamespacedCustomObject.mockResolvedValue({
+      items: [
+        {
+          metadata: { name: 'my-server-restore-abc' },
+          spec: { serverName: 'my-server', type: 'Restore' },
+          status: { phase: 'Running' },
+        },
+      ],
+    });
+
+    await expect(
+      service.setSuspended('my-server', true),
+    ).rejects.toBeInstanceOf(ConflictException);
+
+    expect(replaceNamespacedCustomObject).not.toHaveBeenCalled();
+  });
+
+  it('refuses to restore while an operation is running', async () => {
+    listNamespacedCustomObject.mockResolvedValue({
+      items: [
+        {
+          metadata: { name: 'my-server-import-abc' },
+          spec: { serverName: 'my-server', type: 'Import' },
+          status: { phase: 'Running' },
+        },
+      ],
+    });
+
+    await expect(
+      service.restoreBackup('my-server', '_autosave2.zip'),
+    ).rejects.toBeInstanceOf(ConflictException);
+
+    expect(createNamespacedCustomObject).not.toHaveBeenCalled();
+  });
+
+  it('refuses to import while an operation is running', async () => {
+    listNamespacedCustomObject.mockResolvedValue({
+      items: [
+        {
+          metadata: { name: 'my-server-restore-abc' },
+          spec: { serverName: 'my-server', type: 'Restore' },
+          status: { phase: 'Running' },
+        },
+      ],
+    });
+
+    await expect(
+      service.importSave(
+        'my-server',
+        Readable.from([Buffer.from([0x50, 0x4b, 0x03, 0x04])]),
+        '4',
+      ),
+    ).rejects.toBeInstanceOf(ConflictException);
+
+    expect(getNamespacedCustomObject).not.toHaveBeenCalled();
+    expect(createNamespacedCustomObject).not.toHaveBeenCalled();
+  });
+
+  it('allows only one concurrent operation creation', async () => {
+    const server = {
+      apiVersion: 'games.dev.streamixs.com/v1alpha1',
+      kind: 'FactorioServer',
+      metadata: {
+        name: 'my-server',
+        namespace: 'games',
+        uid: 'uid-1',
+      },
+      spec: { version: '2.1.24', suspended: false },
+    };
+    getNamespacedCustomObject.mockResolvedValue(server);
+    listNamespacedCustomObject.mockResolvedValue({ items: [] });
+    createNamespacedCustomObject.mockResolvedValue({
+      metadata: { name: 'my-server-restore-abc' },
+    });
+
+    const results = await Promise.allSettled([
+      service.restoreBackup('my-server', '_autosave1.zip'),
+      service.restoreBackup('my-server', '_autosave2.zip'),
+    ]);
+
+    expect(
+      results.filter((result) => result.status === 'fulfilled'),
+    ).toHaveLength(1);
+    expect(
+      results.filter((result) => result.status === 'rejected'),
+    ).toHaveLength(1);
+    expect(createNamespacedCustomObject).toHaveBeenCalledTimes(1);
   });
 
   it('deletes with background propagation', async () => {
