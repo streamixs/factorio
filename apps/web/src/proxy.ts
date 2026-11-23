@@ -39,8 +39,16 @@ function isSameOriginMutation(request: NextRequest): boolean {
   }
 
   const origin = request.headers.get('origin');
-  if (origin !== null && origin !== request.nextUrl.origin) {
-    return false;
+  if (origin !== null) {
+    try {
+      const originHost = new URL(origin).host;
+      const host = request.headers.get('host');
+      if (host === null || originHost !== host) {
+        return false;
+      }
+    } catch {
+      return false;
+    }
   }
 
   const site = request.headers.get('sec-fetch-site');
