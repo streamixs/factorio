@@ -35,7 +35,7 @@ jobs:
           cache-dependency-path: apps/agent/go.sum
 
       - name: Restore agent lint tools
-        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: apps/agent/bin
           key: agent-lint-tools-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('apps/agent/go.mod', 'apps/agent/go.sum', 'apps/agent/Makefile', 'apps/agent/.custom-gcl.yml') }}
@@ -43,7 +43,7 @@ jobs:
             agent-lint-tools-${{ runner.os }}-${{ runner.arch }}-
 
       - name: Restore Go build cache
-        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: ~/.cache/go-build
           key: agent-lint-go-build-${{ runner.os }}-${{ hashFiles('apps/agent/go.mod', 'apps/agent/go.sum') }}
@@ -76,7 +76,7 @@ jobs:
           cache-dependency-path: apps/agent/go.sum
 
       - name: Restore agent test tools
-        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: apps/agent/bin
           key: agent-test-tools-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('apps/agent/go.mod', 'apps/agent/go.sum', 'apps/agent/Makefile', 'apps/agent/.custom-gcl.yml') }}
@@ -84,7 +84,7 @@ jobs:
             agent-test-tools-${{ runner.os }}-${{ runner.arch }}-
 
       - name: Restore Go build cache
-        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: ~/.cache/go-build
           key: agent-test-go-build-${{ runner.os }}-${{ hashFiles('apps/agent/go.mod', 'apps/agent/go.sum') }}
