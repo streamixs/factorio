@@ -99,7 +99,7 @@ export function CreateServerForm({
               value={name}
               onChange={(event) => setName(event.target.value)}
               placeholder="my-factorio"
-              pattern="[a-z0-9]([-a-z0-9]*[a-z0-9])?"
+              pattern={"[a-z0-9]([\\-a-z0-9]*[a-z0-9])?"}
               maxLength={63}
               required
             />
