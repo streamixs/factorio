@@ -50,6 +50,11 @@ func TestBuildDeploymentMountsConfiguredFiles(t *testing.T) {
 	deployment := BuildDeployment(testServer(), files, testRconPassword, testResourceRequirements())
 	container := deployment.Spec.Template.Spec.Containers[0]
 
+	if deployment.Spec.Template.Spec.AutomountServiceAccountToken == nil ||
+		*deployment.Spec.Template.Spec.AutomountServiceAccountToken {
+		t.Error("deployment automounts a service account token")
+	}
+
 	if got := deployment.Spec.Template.Annotations[PodTemplateHashAnnotation]; got == "" {
 		t.Fatal("config hash annotation is empty")
 	}
@@ -593,6 +598,11 @@ func TestBuildOperationJobRestore(t *testing.T) {
 	}
 
 	job := BuildOperationJob(operation, testServer())
+
+	if job.Spec.Template.Spec.AutomountServiceAccountToken == nil ||
+		*job.Spec.Template.Spec.AutomountServiceAccountToken {
+		t.Error("operation job automounts a service account token")
+	}
 
 	if got, want := job.Name, "demo-restore-job"; got != want {
 		t.Errorf("job name is %q, want %q", got, want)

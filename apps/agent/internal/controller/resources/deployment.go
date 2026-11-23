@@ -126,6 +126,7 @@ func BuildDeployment(
 			Annotations: map[string]string{},
 		},
 		Spec: corev1.PodSpec{
+			AutomountServiceAccountToken: new(false),
 			InitContainers: []corev1.Container{
 				{
 					Name:         "prepare-data",

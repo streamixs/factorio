@@ -234,10 +234,11 @@ var _ = Describe("FactorioServer Controller", func() {
 	})
 
 	It("creates the settings objects and the Deployment", func() {
-		_, err := reconciler.Reconcile(ctx, reconcile.Request{
+		result, err := reconciler.Reconcile(ctx, reconcile.Request{
 			NamespacedName: key,
 		})
 		Expect(err).NotTo(HaveOccurred())
+		Expect(result.RequeueAfter).To(Equal(resyncInterval))
 
 		var deployment appsv1.Deployment
 		Expect(k8sClient.Get(ctx, key, &deployment)).To(Succeed())
