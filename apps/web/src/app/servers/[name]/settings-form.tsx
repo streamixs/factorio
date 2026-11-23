@@ -144,6 +144,9 @@ export function SettingsForm({
     setRawError(null);
 
     const spec = structuredClone(values.spec);
+    // The API preserves the live suspension state; the settings form must not
+    // send a stale value loaded before an external start/stop.
+    delete spec.suspended;
 
     if (spec.mapGenSettings?.startingPoints?.length === 0) {
       delete spec.mapGenSettings.startingPoints;
