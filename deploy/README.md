@@ -104,6 +104,25 @@ picked up without waiting for an unrelated server event. The Factorio and
 operation pods do not automount a Kubernetes service account token, and the web
 pod does not either.
 
+## Network policies
+
+`deploy/network-policies.yaml` limits the attack surface:
+
+- the API accepts traffic only from pods labeled `app=factorio-web` in
+  `factorio-system`;
+- Factorio pods accept UDP 34197 from anywhere so players can connect;
+- saves (8080) and RCON (27015) accept traffic only from the API pods.
+
+The game policy is written for the `default` namespace. If you change
+`FACTORIO_NAMESPACE`, move that policy to the same namespace. Enforcement
+depends on the cluster CNI; verify from a pod outside `factorio-system` that
+the API is unreachable.
+
+## Audit
+
+RCON commands are logged with the server name and a truncated,
+whitespace-normalized command. Passwords and command output are never logged.
+
 ## Metrics
 
 The Connection tab reads CPU and memory from `metrics-server`. On OrbStack the

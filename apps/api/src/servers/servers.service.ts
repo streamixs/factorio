@@ -999,6 +999,11 @@ export class ServersService {
         password,
         parsed.data.command,
       );
+      this.logger.log(
+        `RCON command for ${name}: ${parsed.data.command
+          .replace(/\s+/g, ' ')
+          .slice(0, 200)}`,
+      );
       return { output };
     } catch (error) {
       this.logger.error(

@@ -5,4 +5,5 @@ resources:
   - api-rbac.yaml
   - api-imports-pvc.yaml
   - api.yaml
+  - network-policies.yaml
   - web.yaml
