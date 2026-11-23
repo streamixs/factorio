@@ -21,7 +21,8 @@ import { mkdir, open, unlink } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { Socket } from 'node:net';
-import { Transform, type Readable } from 'node:stream';
+import { Readable, Transform } from 'node:stream';
+import type { ReadableStream as NodeReadableStream } from 'node:stream/web';
 import { pipeline } from 'node:stream/promises';
 import {
   createFactorioServerSchema,
@@ -544,7 +545,7 @@ export class ServersService {
   async downloadBackup(
     name: string,
     file: string,
-  ): Promise<{ data: Buffer; filename: string }> {
+  ): Promise<{ stream: Readable; filename: string; contentLength?: number }> {
     this.assertName(name);
     assertBackupFile(file);
 
@@ -558,15 +559,28 @@ export class ServersService {
     const response = await this.fetchFromPod(
       podIP,
       `/${encodeURIComponent(file)}`,
+      0,
     );
 
     if (!response.ok) {
       throw new NotFoundException('Save not found');
     }
 
+    if (response.body === null) {
+      throw new InternalServerErrorException('Save stream is empty');
+    }
+
+    const contentLengthHeader = response.headers.get('content-length');
+    const contentLength =
+      contentLengthHeader === null ? undefined : Number(contentLengthHeader);
+
     return {
-      data: Buffer.from(await response.arrayBuffer()),
+      stream: Readable.fromWeb(response.body as unknown as NodeReadableStream),
       filename: file,
+      contentLength:
+        contentLength !== undefined && Number.isFinite(contentLength)
+          ? contentLength
+          : undefined,
     };
   }
 
@@ -984,11 +998,19 @@ export class ServersService {
     return selectPod(pods.items ?? []);
   }
 
-  private async fetchFromPod(podIP: string, path: string): Promise<Response> {
+  private async fetchFromPod(
+    podIP: string,
+    path: string,
+    timeoutMs = 5000,
+  ): Promise<Response> {
     const host = podIP.includes(':') ? `[${podIP}]` : podIP;
-    return fetch(`http://${host}:${SAVES_HTTP_PORT}${path}`, {
-      signal: AbortSignal.timeout(5000),
-    });
+    const init: RequestInit = {};
+
+    if (timeoutMs > 0) {
+      init.signal = AbortSignal.timeout(timeoutMs);
+    }
+
+    return fetch(`http://${host}:${SAVES_HTTP_PORT}${path}`, init);
   }
 
   private async replace(

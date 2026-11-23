@@ -116,7 +116,12 @@ export class ServersController {
       'Content-Disposition': `attachment; filename="${backup.filename}"`,
     });
 
-    return new StreamableFile(backup.data);
+    if (backup.contentLength !== undefined) {
+      response.set('Content-Length', String(backup.contentLength));
+    }
+
+    response.on('close', () => backup.stream.destroy());
+    return new StreamableFile(backup.stream);
   }
 
   @Post(':name/backups/:file/restore')

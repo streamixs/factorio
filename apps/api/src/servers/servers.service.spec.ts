@@ -543,7 +543,7 @@ describe('ServersService', () => {
     });
   });
 
-  it('downloads a save from the sidecar', async () => {
+  it('streams a save from the sidecar', async () => {
     listNamespacedPod.mockResolvedValue({
       items: [
         {
@@ -556,14 +556,45 @@ describe('ServersService', () => {
       'fetch',
       vi.fn().mockResolvedValue({
         ok: true,
-        arrayBuffer: async () => new Uint8Array([1, 2, 3]).buffer,
+        headers: new Headers({ 'content-length': '3' }),
+        body: Readable.toWeb(Readable.from([Buffer.from([1, 2, 3])])),
       }),
     );
 
     const backup = await service.downloadBackup('my-server', '_autosave2.zip');
 
     expect(backup.filename).toBe('_autosave2.zip');
-    expect(backup.data).toEqual(Buffer.from([1, 2, 3]));
+    expect(backup.contentLength).toBe(3);
+
+    const chunks: Buffer[] = [];
+    for await (const chunk of backup.stream) {
+      chunks.push(Buffer.from(chunk as Uint8Array));
+    }
+    expect(Buffer.concat(chunks)).toEqual(Buffer.from([1, 2, 3]));
+  });
+
+  it('returns not found when the save is missing', async () => {
+    listNamespacedPod.mockResolvedValue({
+      items: [
+        {
+          metadata: { name: 'pod' },
+          status: { podIP: '10.0.0.1', containerStatuses: [{ ready: true }] },
+        },
+      ],
+    });
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValue({
+        ok: false,
+        status: 404,
+        headers: new Headers(),
+        body: null,
+      }),
+    );
+
+    await expect(
+      service.downloadBackup('my-server', 'missing.zip'),
+    ).rejects.toBeInstanceOf(NotFoundException);
   });
 
   it('creates a restore operation', async () => {
