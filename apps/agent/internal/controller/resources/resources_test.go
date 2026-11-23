@@ -647,15 +647,35 @@ func TestBuildOperationJobImport(t *testing.T) {
 	}
 }
 
-func TestOperationJobNameTruncates(t *testing.T) {
+func TestOperationJobNameKeepsShortNames(t *testing.T) {
 	operation := &gamesv1alpha1.FactorioOperation{
-		ObjectMeta: metav1.ObjectMeta{Name: strings.Repeat("a", 70)},
+		ObjectMeta: metav1.ObjectMeta{Name: "demo-restore-abcde"},
 	}
 
-	name := OperationJobName(operation)
-	if len(name) > maxJobNameLength {
+	if got, want := OperationJobName(operation), "demo-restore-abcde-job"; got != want {
+		t.Errorf("job name is %q, want %q", got, want)
+	}
+}
+
+func TestOperationJobNameTruncatesAndHashes(t *testing.T) {
+	first := &gamesv1alpha1.FactorioOperation{
+		ObjectMeta: metav1.ObjectMeta{Name: strings.Repeat("a", 70)},
+	}
+	second := &gamesv1alpha1.FactorioOperation{
+		ObjectMeta: metav1.ObjectMeta{Name: strings.Repeat("a", 69) + "b"},
+	}
+
+	firstJob := OperationJobName(first)
+	if len(firstJob) > maxJobNameLength {
 		t.Errorf("job name is %d characters, want at most %d",
-			len(name), maxJobNameLength)
+			len(firstJob), maxJobNameLength)
+	}
+	if got := OperationJobName(first); got != firstJob {
+		t.Errorf("job name is not deterministic: %q then %q", firstJob, got)
+	}
+	if secondJob := OperationJobName(second); secondJob == firstJob {
+		t.Errorf("different long operation names produced the same job %q",
+			firstJob)
 	}
 }
 

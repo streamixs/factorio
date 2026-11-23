@@ -1,6 +1,8 @@
 package resources
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
 	"strings"
 
 	batchv1 "k8s.io/api/batch/v1"
@@ -44,13 +46,19 @@ touch "$target"
 `
 
 // OperationJobName returns the deterministic name of the Job for an
-// operation. Determinism makes the controller idempotent across restarts.
+// operation. Determinism makes the controller idempotent across restarts, and
+// the hash suffix keeps long server names from losing the random operation
+// suffix and colliding.
 func OperationJobName(operation *gamesv1alpha1.FactorioOperation) string {
 	name := operation.Name + "-job"
-	if len(name) > maxJobNameLength {
-		name = strings.TrimRight(name[:maxJobNameLength], "-")
+	if len(name) <= maxJobNameLength {
+		return name
 	}
-	return name
+
+	sum := sha256.Sum256([]byte(operation.Name))
+	suffix := "-" + hex.EncodeToString(sum[:4])
+	base := strings.TrimRight(name[:maxJobNameLength-len(suffix)], "-")
+	return base + suffix
 }
 
 func operationLabels(
