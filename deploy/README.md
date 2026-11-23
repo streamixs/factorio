@@ -69,6 +69,14 @@ Imports and their metadata expire after 30 minutes and are pruned
 automatically. Keeping them on the volume means an import survives an API
 restart while the operation Job is running.
 
+## Secrets
+
+The agent re-renders a server's settings every 10 minutes. A rotated Secret
+referenced by the server, or an owned Secret that was recreated, is therefore
+picked up without waiting for an unrelated server event. The Factorio and
+operation pods do not automount a Kubernetes service account token, and the web
+pod does not either.
+
 ## Metrics
 
 The Connection tab reads CPU and memory from `metrics-server`. On OrbStack the

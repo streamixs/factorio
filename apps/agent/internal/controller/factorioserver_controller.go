@@ -20,6 +20,7 @@ import (
 	"context"
 	"fmt"
 	"reflect"
+	"time"
 
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
@@ -61,6 +62,10 @@ const (
 	// ConditionDegraded is true when reconciliation failed or the rollout
 	// exceeded its deadline.
 	ConditionDegraded = "Degraded"
+
+	// resyncInterval re-renders settings periodically so rotations of
+	// referenced Secrets and owned Secret recreation are picked up.
+	resyncInterval = 10 * time.Minute
 )
 
 // +kubebuilder:rbac:groups=apps,resources=deployments,verbs=get;list;watch;create;update;patch;delete
@@ -99,7 +104,7 @@ func (r *FactorioServerReconciler) Reconcile(
 		return ctrl.Result{}, err
 	}
 
-	return ctrl.Result{}, nil
+	return ctrl.Result{RequeueAfter: resyncInterval}, nil
 }
 
 // reconcileResources converges the owned resources towards the desired state.
