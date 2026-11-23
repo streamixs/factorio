@@ -154,7 +154,7 @@ export class ServersController {
     @Param('token') token: string,
     @Res({ passthrough: true }) response: Response,
   ): Promise<StreamableFile> {
-    const imported = this.servers.claimImport(name, token);
+    const imported = await this.servers.claimImport(name, token);
     response.set({
       'Content-Type': 'application/zip',
       'Content-Disposition': `attachment; filename="${imported.filename}"`,

@@ -57,6 +57,18 @@ machine; the API only creates `FactorioOperation` resources.
 The API does not need `deployments` or pod write access; the agent owns those
 resources.
 
+## Import uploads
+
+Uploaded saves are stored in `/var/lib/factorio/imports` on the
+`factorio-api-imports` PersistentVolumeClaim (5Gi, `ReadWriteOnce`). The API
+deployment uses the `Recreate` strategy because only one pod can mount that
+volume at a time. Scaling the API horizontally requires a `ReadWriteMany`
+volume or object storage.
+
+Imports and their metadata expire after 30 minutes and are pruned
+automatically. Keeping them on the volume means an import survives an API
+restart while the operation Job is running.
+
 ## Metrics
 
 The Connection tab reads CPU and memory from `metrics-server`. On OrbStack the

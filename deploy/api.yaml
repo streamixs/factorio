@@ -7,6 +7,8 @@ metadata:
     app: factorio-api
 spec:
   replicas: 1
+  strategy:
+    type: Recreate
   selector:
     matchLabels:
       app: factorio-api
@@ -32,6 +34,8 @@ spec:
               value: default
             - name: API_INTERNAL_URL
               value: http://factorio-api.factorio-system.svc.cluster.local:3001
+            - name: FACTORIO_IMPORT_DIR
+              value: /var/lib/factorio/imports
             - name: PORT
               value: "3001"
           ports:
@@ -65,9 +69,14 @@ spec:
           volumeMounts:
             - name: tmp
               mountPath: /tmp
+            - name: imports
+              mountPath: /var/lib/factorio/imports
       volumes:
         - name: tmp
           emptyDir: {}
+        - name: imports
+          persistentVolumeClaim:
+            claimName: factorio-api-imports
 ---
 apiVersion: v1
 kind: Service

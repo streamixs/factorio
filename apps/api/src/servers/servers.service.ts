@@ -17,7 +17,16 @@ import type {
 } from '@kubernetes/client-node';
 import { randomBytes } from 'node:crypto';
 import { createWriteStream } from 'node:fs';
-import { mkdir, open, unlink } from 'node:fs/promises';
+import {
+  mkdir,
+  open,
+  readFile,
+  readdir,
+  rename,
+  stat,
+  unlink,
+  writeFile,
+} from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { Socket } from 'node:net';
@@ -89,16 +98,15 @@ const RCON_EXEC_ID = 2;
 const RCON_AUTH_TYPE = 3;
 const RCON_EXEC_TYPE = 2;
 const RCON_RESPONSE_TYPE = 0;
-const IMPORT_DIR = join(tmpdir(), 'factorio-imports');
+const IMPORT_TOKEN_PATTERN = /^[A-Za-z0-9_-]{32}$/;
 const MAX_IMPORT_BYTES = 1024 * 1024 * 1024;
 const IMPORT_TTL_MS = 30 * 60 * 1000;
 const API_INTERNAL_URL =
   process.env.API_INTERNAL_URL ??
   'http://factorio-api.factorio-system.svc.cluster.local:3001';
 
-interface PendingImport {
+interface StoredImport {
   name: string;
-  path: string;
   expiresAt: number;
 }
 
@@ -122,7 +130,8 @@ interface FactorioOperationResource {
 @Injectable()
 export class ServersService {
   private readonly logger = new Logger(ServersService.name);
-  private readonly imports = new Map<string, PendingImport>();
+  private readonly importDir =
+    process.env.FACTORIO_IMPORT_DIR ?? join(tmpdir(), 'factorio-imports');
   private readonly creatingOperations = new Set<string>();
   private schemaCache: {
     value: Record<string, unknown>;
@@ -135,7 +144,8 @@ export class ServersService {
 
   constructor(private readonly kubernetes: KubernetesService) {
     // Uploaded saves are kept only until the operation Job fetches them.
-    setInterval(() => this.pruneImports(), 60_000).unref();
+    void this.pruneImports();
+    setInterval(() => void this.pruneImports(), 60_000).unref();
   }
 
   async list(): Promise<FactorioServer[]> {
@@ -621,30 +631,32 @@ export class ServersService {
 
     const server = await this.get(name);
     const token = randomBytes(24).toString('base64url');
-    const filePath = join(IMPORT_DIR, `${token}.zip`);
+    const filePath = join(this.importDir, `${token}.zip`);
+    const tempPath = `${filePath}.tmp`;
 
-    await mkdir(IMPORT_DIR, { recursive: true });
+    await mkdir(this.importDir, { recursive: true });
 
     try {
-      await writeLimited(body, filePath);
+      await writeLimited(body, tempPath);
+
+      if (!(await hasZipMagic(tempPath))) {
+        throw new BadRequestException(
+          'The uploaded file is not a Factorio save (.zip)',
+        );
+      }
+
+      await rename(tempPath, filePath);
+      await this.writeImportMetadata(token, {
+        name,
+        expiresAt: Date.now() + IMPORT_TTL_MS,
+      });
     } catch (error) {
-      await unlink(filePath).catch(() => undefined);
+      await unlink(tempPath).catch(() => undefined);
+      await this.deleteImport(token);
       throw error;
     }
 
-    if (!(await hasZipMagic(filePath))) {
-      await unlink(filePath).catch(() => undefined);
-      throw new BadRequestException(
-        'The uploaded file is not a Factorio save (.zip)',
-      );
-    }
-
-    this.pruneImports();
-    this.imports.set(token, {
-      name,
-      path: filePath,
-      expiresAt: Date.now() + IMPORT_TTL_MS,
-    });
+    await this.pruneImports();
 
     try {
       const operation = await this.createOperation(server, 'Import', {
@@ -653,8 +665,7 @@ export class ServersService {
 
       return { operation };
     } catch (error) {
-      this.imports.delete(token);
-      await unlink(filePath).catch(() => undefined);
+      await this.deleteImport(token);
       throw error;
     }
   }
@@ -905,22 +916,37 @@ export class ServersService {
 
   /**
    * Resolves the one-time URL the import Job uses to fetch the uploaded save.
-   * The token is scoped to the server and expires after a few minutes.
+   * The metadata lives next to the file so it survives an API restart.
    */
-  claimImport(name: string, token: string): { path: string; filename: string } {
+  async claimImport(
+    name: string,
+    token: string,
+  ): Promise<{ path: string; filename: string }> {
     this.assertName(name);
 
-    const entry = this.imports.get(token);
-    if (
-      entry === undefined ||
-      entry.name !== name ||
-      entry.expiresAt <= Date.now()
-    ) {
-      this.imports.delete(token);
+    if (!IMPORT_TOKEN_PATTERN.test(token)) {
       throw new NotFoundException('Import not found');
     }
 
-    return { path: entry.path, filename: `${name}.zip` };
+    const metadata = await this.readImportMetadata(token);
+    if (metadata === undefined) {
+      throw new NotFoundException('Import not found');
+    }
+
+    const paths = this.importPaths(token);
+    if (metadata.name !== name || metadata.expiresAt <= Date.now()) {
+      await this.deleteImport(token);
+      throw new NotFoundException('Import not found');
+    }
+
+    try {
+      await stat(paths.zip);
+    } catch {
+      await this.deleteImport(token);
+      throw new NotFoundException('Import not found');
+    }
+
+    return { path: paths.zip, filename: `${name}.zip` };
   }
 
   /**
@@ -979,12 +1005,107 @@ export class ServersService {
     }
   }
 
-  private pruneImports(): void {
+  private importPaths(token: string): { zip: string; metadata: string } {
+    return {
+      zip: join(this.importDir, `${token}.zip`),
+      metadata: join(this.importDir, `${token}.json`),
+    };
+  }
+
+  private async writeImportMetadata(
+    token: string,
+    metadata: StoredImport,
+  ): Promise<void> {
+    const paths = this.importPaths(token);
+    const tempPath = `${paths.metadata}.tmp`;
+    await writeFile(tempPath, JSON.stringify(metadata), {
+      encoding: 'utf8',
+      mode: 0o600,
+    });
+    await rename(tempPath, paths.metadata);
+  }
+
+  private async readImportMetadata(
+    token: string,
+  ): Promise<StoredImport | undefined> {
+    try {
+      const raw = await readFile(this.importPaths(token).metadata, 'utf8');
+      const parsed = JSON.parse(raw) as Partial<StoredImport>;
+      if (
+        typeof parsed.name !== 'string' ||
+        typeof parsed.expiresAt !== 'number' ||
+        !Number.isFinite(parsed.expiresAt)
+      ) {
+        return undefined;
+      }
+      return { name: parsed.name, expiresAt: parsed.expiresAt };
+    } catch {
+      return undefined;
+    }
+  }
+
+  private async deleteImport(token: string): Promise<void> {
+    const paths = this.importPaths(token);
+    await Promise.all([
+      unlink(paths.zip).catch(() => undefined),
+      unlink(paths.metadata).catch(() => undefined),
+    ]);
+  }
+
+  private async pruneImports(): Promise<void> {
+    let entries: string[];
+    try {
+      entries = await readdir(this.importDir);
+    } catch {
+      return;
+    }
+
     const now = Date.now();
-    for (const [token, entry] of this.imports) {
-      if (entry.expiresAt <= now) {
-        this.imports.delete(token);
-        void unlink(entry.path).catch(() => undefined);
+    const tokens = new Set<string>();
+
+    for (const entry of entries) {
+      if (entry.endsWith('.json')) {
+        tokens.add(entry.slice(0, -5));
+      } else if (entry.endsWith('.zip')) {
+        tokens.add(entry.slice(0, -4));
+      } else if (entry.endsWith('.tmp')) {
+        const tempPath = join(this.importDir, entry);
+        try {
+          const info = await stat(tempPath);
+          if (now - info.mtimeMs > IMPORT_TTL_MS) {
+            await unlink(tempPath).catch(() => undefined);
+          }
+        } catch {
+          // The temp file disappeared while pruning.
+        }
+      }
+    }
+
+    for (const token of tokens) {
+      const metadata = await this.readImportMetadata(token);
+      const paths = this.importPaths(token);
+
+      if (metadata === undefined) {
+        try {
+          const info = await stat(paths.zip);
+          if (now - info.mtimeMs > IMPORT_TTL_MS) {
+            await this.deleteImport(token);
+          }
+        } catch {
+          await this.deleteImport(token);
+        }
+        continue;
+      }
+
+      let missingSave = false;
+      try {
+        await stat(paths.zip);
+      } catch {
+        missingSave = true;
+      }
+
+      if (missingSave || metadata.expiresAt <= now) {
+        await this.deleteImport(token);
       }
     }
   }
