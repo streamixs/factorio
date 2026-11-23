@@ -1,0 +1,52 @@
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: factorio-api-ingress
+  namespace: factorio-system
+spec:
+  podSelector:
+    matchLabels:
+      app: factorio-api
+  policyTypes:
+    - Ingress
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: factorio-system
+          podSelector:
+            matchLabels:
+              app: factorio-web
+      ports:
+        - protocol: TCP
+          port: 3001
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: factorio-game-ingress
+  namespace: default
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: factorio
+  policyTypes:
+    - Ingress
+  ingress:
+    # Players reach the game port from outside the cluster.
+    - ports:
+        - protocol: UDP
+          port: 34197
+    # Only the API can list/download saves and use RCON.
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: factorio-system
+          podSelector:
+            matchLabels:
+              app: factorio-api
+      ports:
+        - protocol: TCP
+          port: 8080
+        - protocol: TCP
+          port: 27015
