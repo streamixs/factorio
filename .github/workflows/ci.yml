@@ -15,10 +15,10 @@ concurrency:
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
-  agent:
-    name: Agent
+  agent-lint:
+    name: Agent lint
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 15
     env:
       GOTOOLCHAIN: local
     defaults:
@@ -34,11 +34,62 @@ jobs:
           go-version-file: apps/agent/go.mod
           cache-dependency-path: apps/agent/go.sum
 
+      - name: Restore agent lint tools
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
+        with:
+          path: apps/agent/bin
+          key: agent-lint-tools-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('apps/agent/go.mod', 'apps/agent/go.sum', 'apps/agent/Makefile', 'apps/agent/.custom-gcl.yml') }}
+          restore-keys: |
+            agent-lint-tools-${{ runner.os }}-${{ runner.arch }}-
+
+      - name: Restore Go build cache
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
+        with:
+          path: ~/.cache/go-build
+          key: agent-lint-go-build-${{ runner.os }}-${{ hashFiles('apps/agent/go.mod', 'apps/agent/go.sum') }}
+          restore-keys: |
+            agent-lint-go-build-${{ runner.os }}-
+
       - name: Verify linter configuration
         run: make lint-config
 
       - name: Lint
         run: make lint
+
+  agent-test:
+    name: Agent test
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      GOTOOLCHAIN: local
+    defaults:
+      run:
+        working-directory: apps/agent
+    steps:
+      - name: Checkout
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+
+      - name: Set up Go
+        uses: actions/setup-go@v6.3.0
+        with:
+          go-version-file: apps/agent/go.mod
+          cache-dependency-path: apps/agent/go.sum
+
+      - name: Restore agent test tools
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
+        with:
+          path: apps/agent/bin
+          key: agent-test-tools-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('apps/agent/go.mod', 'apps/agent/go.sum', 'apps/agent/Makefile', 'apps/agent/.custom-gcl.yml') }}
+          restore-keys: |
+            agent-test-tools-${{ runner.os }}-${{ runner.arch }}-
+
+      - name: Restore Go build cache
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
+        with:
+          path: ~/.cache/go-build
+          key: agent-test-go-build-${{ runner.os }}-${{ hashFiles('apps/agent/go.mod', 'apps/agent/go.sum') }}
+          restore-keys: |
+            agent-test-go-build-${{ runner.os }}-
 
       - name: Test
         run: make test
