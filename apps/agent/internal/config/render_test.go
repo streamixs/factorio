@@ -380,6 +380,38 @@ func TestRawSettingsAreMerged(t *testing.T) {
 	}
 }
 
+func TestServerRawRejectsSecrets(t *testing.T) {
+	for _, key := range []string{"game_password", "password", "token"} {
+		spec := &gamesv1alpha1.ServerSettingsSpec{
+			Raw: rawJSON("{\"" + key + "\":\"secret\"}"),
+		}
+
+		_, err := RenderServerSettings(spec, ServerSecretValues{})
+		if err == nil {
+			t.Fatalf("expected an error for %s, got nil", key)
+		}
+		if !strings.Contains(err.Error(), key) {
+			t.Errorf("error %q does not mention %s", err, key)
+		}
+	}
+}
+
+func TestServerRawAllowsNonSecretKeys(t *testing.T) {
+	spec := &gamesv1alpha1.ServerSettingsSpec{
+		Raw: rawJSON(`{"custom_setting": "value"}`),
+	}
+
+	got, err := RenderServerSettings(spec, ServerSecretValues{})
+	if err != nil {
+		t.Fatalf("render: %v", err)
+	}
+
+	settings := decode(t, got)
+	if settings["custom_setting"] != "value" {
+		t.Errorf("custom_setting is %v", settings["custom_setting"])
+	}
+}
+
 func TestRawConflictingWithTypedFieldIsRejected(t *testing.T) {
 	spec := &gamesv1alpha1.MapGenSettingsSpec{
 		Seed: new(int64(42)),

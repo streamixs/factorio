@@ -19,6 +19,9 @@ func RenderServerSettings(
 	var raw *apiextensionsv1.JSON
 
 	if spec != nil {
+		if err := validateServerRaw(spec.Raw); err != nil {
+			return nil, err
+		}
 		raw = spec.Raw
 		renderIdentity(overrides, spec.Identity)
 		renderAccess(overrides, spec.Access, secrets)

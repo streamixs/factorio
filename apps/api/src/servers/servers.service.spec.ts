@@ -221,6 +221,30 @@ describe('ServersService', () => {
     ).rejects.toBeInstanceOf(BadRequestException);
   });
 
+  it('rejects secrets in server raw settings', async () => {
+    for (const key of ['game_password', 'password', 'token']) {
+      await expect(
+        service.create({
+          name: 'my-server',
+          server: { raw: { [key]: 'secret' } },
+        }),
+      ).rejects.toBeInstanceOf(BadRequestException);
+    }
+
+    expect(createNamespacedCustomObject).not.toHaveBeenCalled();
+  });
+
+  it('rejects secrets in server raw settings on update', async () => {
+    await expect(
+      service.update('my-server', {
+        spec: {
+          version: '2.1.24',
+          server: { raw: { token: 'secret' } },
+        },
+      }),
+    ).rejects.toBeInstanceOf(BadRequestException);
+  });
+
   it('updates the spec', async () => {
     getNamespacedCustomObject.mockResolvedValue({
       apiVersion: 'games.dev.streamixs.com/v1alpha1',

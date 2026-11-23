@@ -58,14 +58,28 @@ export const authenticationSchema = z.strictObject({
   tokenRef: secretKeySelectorSchema.optional(),
 });
 
-export const serverSettingsSchema = z.strictObject({
-  identity: serverIdentitySchema.optional(),
-  access: accessControlSchema.optional(),
-  autoSave: autoSaveSchema.optional(),
-  playerManagement: playerManagementSchema.optional(),
-  authentication: authenticationSchema.optional(),
-  raw: rawSchema.optional(),
-});
+export const serverSettingsSchema = z
+  .strictObject({
+    identity: serverIdentitySchema.optional(),
+    access: accessControlSchema.optional(),
+    autoSave: autoSaveSchema.optional(),
+    playerManagement: playerManagementSchema.optional(),
+    authentication: authenticationSchema.optional(),
+    raw: rawSchema.optional(),
+  })
+  .superRefine((value, context) => {
+    // Secrets must go through the managed credentials Secret so they never
+    // appear in the custom resource or in API responses.
+    for (const key of ["game_password", "password", "token"]) {
+      if (value.raw !== undefined && key in value.raw) {
+        context.addIssue({
+          code: "custom",
+          path: ["raw", key],
+          message: "must be configured through credentials, not raw",
+        });
+      }
+    }
+  });
 
 export const autoplaceControlSchema = z.strictObject({
   frequency: z.number().min(0).max(6).optional(),
