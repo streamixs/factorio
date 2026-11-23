@@ -31,6 +31,11 @@ spec:
             # The Next server proxies /api/* to this service.
             - name: API_INTERNAL_URL
               value: http://factorio-api:3001
+            - name: API_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: factorio-auth
+                  key: api-token
             - name: PORT
               value: "3000"
             - name: HOSTNAME

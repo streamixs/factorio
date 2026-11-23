@@ -14,9 +14,9 @@ import type {
 
 import type { SettingsSchema } from "./settings-schema";
 
-// Empty by default: in the cluster the Next server proxies /api to the API
-// Service. In local development .env.local points at http://localhost:3001.
-const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "";
+// The Next server proxies /api to the API Service. The browser must never
+// receive the internal API token, so it always uses this same-origin path.
+const API_URL = "";
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
   const response = await fetch(`${API_URL}/api/servers${path}`, {

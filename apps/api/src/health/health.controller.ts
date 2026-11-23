@@ -1,7 +1,9 @@
 import { Controller, Get, ServiceUnavailableException } from '@nestjs/common';
 
+import { Public } from '../auth/public.decorator.js';
 import { KubernetesService } from '../kubernetes/kubernetes.service.js';
 
+@Public()
 @Controller('health')
 export class HealthController {
   constructor(private readonly kubernetes: KubernetesService) {}
