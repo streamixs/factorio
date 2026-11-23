@@ -88,7 +88,7 @@ func (r *FactorioOperationReconciler) Reconcile(
 		Name:      operation.Spec.ServerName,
 	}, &server); err != nil {
 		if apierrors.IsNotFound(err) {
-			return r.fail(ctx, &operation, nil,
+			return r.fail(ctx, &operation,
 				fmt.Sprintf("FactorioServer %q was not found", operation.Spec.ServerName))
 		}
 		return ctrl.Result{}, err
@@ -128,12 +128,26 @@ func (r *FactorioOperationReconciler) Reconcile(
 	case gamesv1alpha1.OperationPhaseRunning:
 		return r.observeJob(ctx, &operation, &server)
 	case gamesv1alpha1.OperationPhaseCompleted, gamesv1alpha1.OperationPhaseFailed:
-		// A stale reconcile can recreate the Job after completion. Keep
-		// terminal operations clean on every observation.
-		r.deleteJob(ctx, &operation)
+		pending, err := r.ensureJobDeleted(ctx, &operation)
+		if err != nil {
+			return ctrl.Result{}, err
+		}
+		if pending {
+			return ctrl.Result{RequeueAfter: operationPoll}, nil
+		}
+
+		// A failed operation may have suspended the server. Resume it only
+		// after the Job and its pods are gone, and only if the operation
+		// actually started and the user had not stopped the server first.
+		if operation.Status.Phase == gamesv1alpha1.OperationPhaseFailed &&
+			operation.Status.StartedAt != nil {
+			if err := r.resumeIfNeeded(ctx, &operation, &server); err != nil {
+				return ctrl.Result{}, err
+			}
+		}
 		return ctrl.Result{}, nil
 	default:
-		return r.fail(ctx, &operation, &server,
+		return r.fail(ctx, &operation,
 			fmt.Sprintf("Unknown operation phase %q", operation.Status.Phase))
 	}
 }
@@ -310,12 +324,12 @@ func (r *FactorioOperationReconciler) observeJob(
 	}
 
 	if jobFailed(job) {
-		return r.fail(ctx, operation, server, "The operation Job failed")
+		return r.fail(ctx, operation, "The operation Job failed")
 	}
 
 	if operation.Status.StartedAt != nil &&
 		time.Since(operation.Status.StartedAt.Time) > operationTimeout {
-		return r.fail(ctx, operation, server, "The operation timed out")
+		return r.fail(ctx, operation, "The operation timed out")
 	}
 
 	return ctrl.Result{RequeueAfter: operationPoll}, nil
@@ -344,20 +358,13 @@ func (r *FactorioOperationReconciler) complete(
 	return ctrl.Result{}, nil
 }
 
-// fail stops the operation and restores the server state. It is also used when
-// the target server no longer exists, in which case there is nothing to resume.
+// fail stops the operation. The server is resumed later, once the Job and its
+// pods are gone, by the terminal phase handler.
 func (r *FactorioOperationReconciler) fail(
 	ctx context.Context,
 	operation *gamesv1alpha1.FactorioOperation,
-	server *gamesv1alpha1.FactorioServer,
 	message string,
 ) (ctrl.Result, error) {
-	if server != nil {
-		if err := r.resumeIfNeeded(ctx, operation, server); err != nil {
-			return ctrl.Result{}, err
-		}
-	}
-
 	r.finish(operation, gamesv1alpha1.OperationPhaseFailed, message)
 	if err := r.Status().Update(ctx, operation); err != nil {
 		return ctrl.Result{}, err
@@ -365,7 +372,7 @@ func (r *FactorioOperationReconciler) fail(
 
 	r.deleteJob(ctx, operation)
 	r.recordEvent(operation, corev1.EventTypeWarning, "Failed", message)
-	return ctrl.Result{}, nil
+	return ctrl.Result{RequeueAfter: operationPoll}, nil
 }
 
 func (r *FactorioOperationReconciler) resumeIfNeeded(
@@ -425,7 +432,7 @@ func (r *FactorioOperationReconciler) deleteJob(
 		},
 	}
 	if err := r.Delete(ctx, job, client.PropagationPolicy(
-		metav1.DeletePropagationBackground)); err != nil &&
+		metav1.DeletePropagationForeground)); err != nil &&
 		!apierrors.IsNotFound(err) {
 		logf.FromContext(ctx).Error(err, "Failed to delete operation Job",
 			"name", operation.Status.JobName)
@@ -457,7 +464,7 @@ func (r *FactorioOperationReconciler) ensureJobDeleted(
 
 	if job.DeletionTimestamp.IsZero() {
 		if err := r.Delete(ctx, job, client.PropagationPolicy(
-			metav1.DeletePropagationBackground)); err != nil &&
+			metav1.DeletePropagationForeground)); err != nil &&
 			!apierrors.IsNotFound(err) {
 			return false, fmt.Errorf("delete operation Job %q: %w",
 				job.Name, err)
@@ -487,7 +494,8 @@ func (r *FactorioOperationReconciler) finalize(
 		Name:      operation.Spec.ServerName,
 	}, &server)
 	if err == nil {
-		if !operation.Status.WasSuspended && operation.Status.Phase !=
+		if operation.Status.StartedAt != nil &&
+			!operation.Status.WasSuspended && operation.Status.Phase !=
 			gamesv1alpha1.OperationPhaseCompleted {
 			if err := r.resumeIfNeeded(ctx, operation, &server); err != nil {
 				return ctrl.Result{}, err
