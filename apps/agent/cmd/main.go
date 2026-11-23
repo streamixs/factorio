@@ -28,6 +28,7 @@ import (
 	"k8s.io/apimachinery/pkg/runtime"
 	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
 	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
+	"k8s.io/client-go/tools/record"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/healthz"
 	"sigs.k8s.io/controller-runtime/pkg/log/zap"
@@ -50,6 +51,13 @@ func init() {
 
 	utilruntime.Must(gamesv1alpha1.AddToScheme(scheme))
 	// +kubebuilder:scaffold:scheme
+}
+
+// eventRecorder returns the client-go recorder used by the reconcilers.
+// TODO: migrate to mgr.GetEventRecorder (events.k8s.io) with the reconcilers.
+func eventRecorder(mgr ctrl.Manager, name string) record.EventRecorder {
+	//nolint:staticcheck // Deprecated client-go events API; migration tracked separately.
+	return mgr.GetEventRecorderFor(name)
 }
 
 // nolint:gocyclo
@@ -185,7 +193,7 @@ func main() {
 	if err := (&controller.FactorioServerReconciler{
 		Client:    mgr.GetClient(),
 		APIReader: mgr.GetAPIReader(),
-		Recorder:  mgr.GetEventRecorderFor("factorioserver-controller"),
+		Recorder:  eventRecorder(mgr, "factorioserver-controller"),
 		Scheme:    mgr.GetScheme(),
 	}).SetupWithManager(mgr); err != nil {
 		setupLog.Error(err, "Failed to create controller", "controller", "factorioserver")
@@ -194,7 +202,7 @@ func main() {
 
 	if err := (&controller.FactorioOperationReconciler{
 		Client:   mgr.GetClient(),
-		Recorder: mgr.GetEventRecorderFor("factoriooperation-controller"),
+		Recorder: eventRecorder(mgr, "factoriooperation-controller"),
 		Scheme:   mgr.GetScheme(),
 	}).SetupWithManager(mgr); err != nil {
 		setupLog.Error(err, "Failed to create controller", "controller", "factoriooperation")

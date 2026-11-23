@@ -36,10 +36,6 @@ import (
 	factorioresources "github.com/streamixs/factorio/apps/agent/internal/controller/resources"
 )
 
-func ptr[T any](value T) *T {
-	return &value
-}
-
 func drainEvents(recorder *record.FakeRecorder) []string {
 	var events []string
 	for {
@@ -134,10 +130,10 @@ var _ = Describe("FactorioServer Controller", func() {
 				Version: "2.1.24",
 				Server: &gamesv1alpha1.ServerSettingsSpec{
 					Identity: &gamesv1alpha1.ServerIdentitySpec{
-						Name: ptr("Test Server"),
+						Name: new("Test Server"),
 					},
 					Access: &gamesv1alpha1.AccessControlSpec{
-						MaxPlayers: ptr(int32(8)),
+						MaxPlayers: new(int32(8)),
 						GamePasswordRef: &corev1.SecretKeySelector{
 							LocalObjectReference: corev1.LocalObjectReference{
 								Name: credentialsName,
@@ -147,7 +143,7 @@ var _ = Describe("FactorioServer Controller", func() {
 					},
 				},
 				MapGenSettings: &gamesv1alpha1.MapGenSettingsSpec{
-					Seed: ptr(int64(42)),
+					Seed: new(int64(42)),
 				},
 			},
 		}
@@ -369,7 +365,7 @@ var _ = Describe("FactorioServer Controller", func() {
 
 		var stored gamesv1alpha1.FactorioServer
 		Expect(k8sClient.Get(ctx, key, &stored)).To(Succeed())
-		stored.Spec.MapGenSettings.Seed = ptr(int64(43))
+		stored.Spec.MapGenSettings.Seed = new(int64(43))
 		Expect(k8sClient.Update(ctx, &stored)).To(Succeed())
 
 		_, err = reconciler.Reconcile(ctx, reconcile.Request{

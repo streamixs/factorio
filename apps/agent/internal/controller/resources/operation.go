@@ -64,10 +64,6 @@ func operationLabels(
 	}
 }
 
-func int32Ptr(value int32) *int32 {
-	return &value
-}
-
 // BuildOperationJob builds the Job that installs the save on the data volume.
 func BuildOperationJob(
 	operation *gamesv1alpha1.FactorioOperation,
@@ -102,7 +98,7 @@ func BuildOperationJob(
 			Labels:    labels,
 		},
 		Spec: batchv1.JobSpec{
-			BackoffLimit:          int32Ptr(1),
+			BackoffLimit:          new(int32(1)),
 			ActiveDeadlineSeconds: &deadline,
 			Template: corev1.PodTemplateSpec{
 				ObjectMeta: metav1.ObjectMeta{Labels: labels},

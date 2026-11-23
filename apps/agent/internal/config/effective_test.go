@@ -7,23 +7,24 @@ import (
 	gamesv1alpha1 "github.com/streamixs/factorio/apps/agent/api/v1alpha1"
 )
 
+//nolint:gocyclo // One test asserts the full effective spec, keeping the defaults visible in one place.
 func TestEffectiveSpecFillsDefaults(t *testing.T) {
 	user := &gamesv1alpha1.FactorioServerSpec{
 		Server: &gamesv1alpha1.ServerSettingsSpec{
 			Identity: &gamesv1alpha1.ServerIdentitySpec{
-				Name: ptr("Custom Server"),
+				Name: new("Custom Server"),
 			},
 			Access: &gamesv1alpha1.AccessControlSpec{
-				MaxPlayers: ptr(int32(12)),
+				MaxPlayers: new(int32(12)),
 				Visibility: &gamesv1alpha1.VisibilitySpec{
-					Public: ptr(false),
+					Public: new(false),
 				},
 			},
 		},
 		MapGenSettings: &gamesv1alpha1.MapGenSettingsSpec{
-			Seed: ptr(int64(42)),
+			Seed: new(int64(42)),
 			AutoplaceControls: map[string]gamesv1alpha1.AutoplaceControlSpec{
-				"coal": {Frequency: ptr(2.0)},
+				"coal": {Frequency: new(2.0)},
 			},
 		},
 	}
@@ -117,9 +118,9 @@ func TestRenderEffectiveSettingsProducesJSON(t *testing.T) {
 	user := &gamesv1alpha1.FactorioServerSpec{
 		Server: &gamesv1alpha1.ServerSettingsSpec{
 			Access: &gamesv1alpha1.AccessControlSpec{
-				MaxPlayers: ptr(int32(4)),
+				MaxPlayers: new(int32(4)),
 				Visibility: &gamesv1alpha1.VisibilitySpec{
-					Public: ptr(false),
+					Public: new(false),
 				},
 			},
 		},

@@ -25,6 +25,8 @@ const (
 
 	rconSecretSuffix = "-rcon"
 	rconPort         = 27015
+	// rconName is the name shared by the RCON container port, volume and mount.
+	rconName = "rcon"
 )
 
 // RconSecretName returns the name of the Secret holding the RCON password.
@@ -69,7 +71,7 @@ func rconPasswordHash(password string) string {
 
 func rconVolumeFor(server *gamesv1alpha1.FactorioServer) corev1.Volume {
 	return corev1.Volume{
-		Name: "rcon",
+		Name: rconName,
 		VolumeSource: corev1.VolumeSource{
 			Secret: &corev1.SecretVolumeSource{
 				SecretName: RconSecretName(server),
@@ -83,7 +85,7 @@ func rconVolumeFor(server *gamesv1alpha1.FactorioServer) corev1.Volume {
 
 func rconMount() corev1.VolumeMount {
 	return corev1.VolumeMount{
-		Name:      "rcon",
+		Name:      rconName,
 		MountPath: path.Join(configDir, RconPasswordKey),
 		SubPath:   RconPasswordKey,
 		ReadOnly:  true,

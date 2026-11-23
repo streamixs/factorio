@@ -14,15 +14,16 @@ import (
 	"github.com/streamixs/factorio/apps/agent/internal/config"
 )
 
-const testRconPassword = "test-rcon-password"
-
-func ptr[T any](value T) *T {
-	return &value
-}
+const (
+	testRconPassword = "test-rcon-password"
+	testServerName   = "demo"
+	testNamespace    = "games"
+	testTrue         = "true"
+)
 
 func testServer() *gamesv1alpha1.FactorioServer {
 	return &gamesv1alpha1.FactorioServer{
-		ObjectMeta: metav1.ObjectMeta{Name: "demo", Namespace: "games"},
+		ObjectMeta: metav1.ObjectMeta{Name: testServerName, Namespace: testNamespace},
 		Spec:       gamesv1alpha1.FactorioServerSpec{Version: "2.1.24"},
 	}
 }
@@ -252,7 +253,7 @@ func TestBuildDeploymentWithoutSettings(t *testing.T) {
 		env[variable.Name] = variable.Value
 	}
 
-	if env["GENERATE_NEW_SAVE"] != "true" {
+	if env["GENERATE_NEW_SAVE"] != testTrue {
 		t.Errorf("GENERATE_NEW_SAVE is %q, want true", env["GENERATE_NEW_SAVE"])
 	}
 
@@ -268,7 +269,9 @@ func TestBuildDeploymentWithoutSettings(t *testing.T) {
 func TestConfigFilesHash(t *testing.T) {
 	base := ConfigFiles{ServerSettings: []byte("a")}
 
-	if base.Hash() != base.Hash() {
+	first := base.Hash()
+	second := base.Hash()
+	if first != second {
 		t.Error("hash is not stable")
 	}
 
@@ -312,7 +315,7 @@ func TestNeedsUpdate(t *testing.T) {
 func TestUpdateDeploymentCopiesConfigAndKeepsAnnotations(t *testing.T) {
 	server := testServer()
 	existing := BuildDeployment(server, ConfigFiles{}, testRconPassword, testResourceRequirements())
-	existing.Spec.Template.Annotations["example.com/restarted"] = "true"
+	existing.Spec.Template.Annotations["example.com/restarted"] = testTrue
 
 	desired := BuildDeployment(server, ConfigFiles{
 		ServerSettings: []byte("{}"),
@@ -325,7 +328,7 @@ func TestUpdateDeploymentCopiesConfigAndKeepsAnnotations(t *testing.T) {
 		t.Errorf("config hash is %q, want %q", got, want)
 	}
 
-	if existing.Spec.Template.Annotations["example.com/restarted"] != "true" {
+	if existing.Spec.Template.Annotations["example.com/restarted"] != testTrue {
 		t.Error("unrelated annotation was lost")
 	}
 
@@ -414,7 +417,7 @@ func TestBuildDeploymentIncludesRcon(t *testing.T) {
 
 	var volume *corev1.Volume
 	for i := range deployment.Spec.Template.Spec.Volumes {
-		if deployment.Spec.Template.Spec.Volumes[i].Name == "rcon" {
+		if deployment.Spec.Template.Spec.Volumes[i].Name == rconName {
 			volume = &deployment.Spec.Template.Spec.Volumes[i]
 		}
 	}
@@ -425,7 +428,7 @@ func TestBuildDeploymentIncludesRcon(t *testing.T) {
 
 	var mount *corev1.VolumeMount
 	for i := range container.VolumeMounts {
-		if container.VolumeMounts[i].Name == "rcon" {
+		if container.VolumeMounts[i].Name == rconName {
 			mount = &container.VolumeMounts[i]
 		}
 	}
@@ -439,7 +442,7 @@ func TestBuildDeploymentIncludesRcon(t *testing.T) {
 		t.Error("rcon password hash annotation is empty")
 	}
 
-	if len(container.Ports) != 2 || container.Ports[1].Name != "rcon" ||
+	if len(container.Ports) != 2 || container.Ports[1].Name != rconName ||
 		container.Ports[1].ContainerPort != rconPort {
 		t.Errorf("rcon port is missing: %v", container.Ports)
 	}
@@ -581,9 +584,9 @@ func assertQuantity(
 
 func TestBuildOperationJobRestore(t *testing.T) {
 	operation := &gamesv1alpha1.FactorioOperation{
-		ObjectMeta: metav1.ObjectMeta{Name: "demo-restore", Namespace: "games"},
+		ObjectMeta: metav1.ObjectMeta{Name: "demo-restore", Namespace: testNamespace},
 		Spec: gamesv1alpha1.FactorioOperationSpec{
-			ServerName: "demo",
+			ServerName: testServerName,
 			Type:       gamesv1alpha1.OperationRestore,
 			SaveFile:   "_autosave2.zip",
 		},
@@ -594,7 +597,7 @@ func TestBuildOperationJobRestore(t *testing.T) {
 	if got, want := job.Name, "demo-restore-job"; got != want {
 		t.Errorf("job name is %q, want %q", got, want)
 	}
-	if job.Namespace != "games" {
+	if job.Namespace != testNamespace {
 		t.Errorf("job namespace is %q", job.Namespace)
 	}
 
@@ -623,9 +626,9 @@ func TestBuildOperationJobRestore(t *testing.T) {
 
 func TestBuildOperationJobImport(t *testing.T) {
 	operation := &gamesv1alpha1.FactorioOperation{
-		ObjectMeta: metav1.ObjectMeta{Name: "demo-import", Namespace: "games"},
+		ObjectMeta: metav1.ObjectMeta{Name: "demo-import", Namespace: testNamespace},
 		Spec: gamesv1alpha1.FactorioOperationSpec{
-			ServerName: "demo",
+			ServerName: testServerName,
 			Type:       gamesv1alpha1.OperationImport,
 			ImportURL:  "http://factorio-api/api/imports/token",
 		},
@@ -674,7 +677,7 @@ func TestBuildSettingsObjects(t *testing.T) {
 	if got := string(secret.Data[config.ServerSettingsFile]); got != "{}" {
 		t.Errorf("secret content is %q, want {}", got)
 	}
-	if got := secret.Labels["app.kubernetes.io/instance"]; got != "demo" {
+	if got := secret.Labels["app.kubernetes.io/instance"]; got != testServerName {
 		t.Errorf("secret instance label is %q, want demo", got)
 	}
 
@@ -728,7 +731,7 @@ func TestBuildPersistentVolumeClaimUsesSpec(t *testing.T) {
 	server := testServer()
 	server.Spec.Storage = &gamesv1alpha1.StorageSpec{
 		Size:             "20Gi",
-		StorageClassName: ptr("fast"),
+		StorageClassName: new("fast"),
 	}
 
 	claim, err := BuildPersistentVolumeClaim(server)
@@ -760,7 +763,7 @@ func TestBuildPersistentVolumeClaimRejectsInvalidSize(t *testing.T) {
 func TestBuildService(t *testing.T) {
 	service := BuildService(testServer())
 
-	if got, want := service.Name, "demo"; got != want {
+	if got, want := service.Name, testServerName; got != want {
 		t.Errorf("service name is %q, want %q", got, want)
 	}
 
@@ -778,7 +781,7 @@ func TestBuildService(t *testing.T) {
 		t.Errorf("unexpected port definition: %+v", port)
 	}
 
-	if got := service.Spec.Selector["app.kubernetes.io/instance"]; got != "demo" {
+	if got := service.Spec.Selector["app.kubernetes.io/instance"]; got != testServerName {
 		t.Errorf("service selector instance is %q, want demo", got)
 	}
 }

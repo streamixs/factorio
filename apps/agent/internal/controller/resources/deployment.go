@@ -4,6 +4,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"maps"
 	"path"
 	"strconv"
 
@@ -91,7 +92,7 @@ func BuildDeployment(
 					Protocol:      corev1.ProtocolUDP,
 				},
 				{
-					Name:          "rcon",
+					Name:          rconName,
 					ContainerPort: rconPort,
 					Protocol:      corev1.ProtocolTCP,
 				},
@@ -307,7 +308,5 @@ func UpdateDeployment(existing, desired *appsv1.Deployment) {
 	if existing.Spec.Template.Annotations == nil {
 		existing.Spec.Template.Annotations = map[string]string{}
 	}
-	for key, value := range desired.Spec.Template.Annotations {
-		existing.Spec.Template.Annotations[key] = value
-	}
+	maps.Copy(existing.Spec.Template.Annotations, desired.Spec.Template.Annotations)
 }

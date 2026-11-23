@@ -14,10 +14,6 @@ import (
 	gamesv1alpha1 "github.com/streamixs/factorio/apps/agent/api/v1alpha1"
 )
 
-func ptr[T any](value T) *T {
-	return &value
-}
-
 func rawJSON(value string) *apiextensionsv1.JSON {
 	return &apiextensionsv1.JSON{Raw: []byte(value)}
 }
@@ -195,15 +191,15 @@ func TestEmptySectionUsesDefaults(t *testing.T) {
 func TestServerSecretsAreResolvedFromSelectors(t *testing.T) {
 	spec := &gamesv1alpha1.ServerSettingsSpec{
 		Access: &gamesv1alpha1.AccessControlSpec{
-			MaxPlayers: ptr(int32(4)),
+			MaxPlayers: new(int32(4)),
 			GamePasswordRef: &corev1.SecretKeySelector{
 				LocalObjectReference: corev1.LocalObjectReference{Name: "server"},
 				Key:                  "game-password",
 			},
-			AllowCommands: ptr(gamesv1alpha1.AllowCommandsAdminsOnly),
+			AllowCommands: new(gamesv1alpha1.AllowCommandsAdminsOnly),
 		},
 		Authentication: &gamesv1alpha1.AuthenticationSpec{
-			Username: ptr("factorio"),
+			Username: new("factorio"),
 			TokenRef: &corev1.SecretKeySelector{
 				LocalObjectReference: corev1.LocalObjectReference{Name: "server"},
 				Key:                  "token",
@@ -244,16 +240,16 @@ func TestServerSecretsAreResolvedFromSelectors(t *testing.T) {
 
 func TestMapGenSettingsMappings(t *testing.T) {
 	spec := &gamesv1alpha1.MapGenSettingsSpec{
-		Width: ptr(int32(1000)),
+		Width: new(int32(1000)),
 		StartingPoints: []gamesv1alpha1.MapPosition{
-			{X: ptr(0.5), Y: ptr(-1.5)},
+			{X: new(0.5), Y: new(-1.5)},
 			{},
 		},
 		CliffSettings: &gamesv1alpha1.CliffSettingsSpec{
-			Name:                   ptr("custom-cliff"),
-			CliffElevation0:        ptr(10.0),
-			CliffElevationInterval: ptr(20.0),
-			Richness:               ptr(1.0),
+			Name:                   new("custom-cliff"),
+			CliffElevation0:        new(10.0),
+			CliffElevationInterval: new(20.0),
+			Richness:               new(1.0),
 		},
 	}
 
@@ -293,25 +289,25 @@ func TestMapGenSettingsMappings(t *testing.T) {
 func TestMapSettingsMappings(t *testing.T) {
 	spec := &gamesv1alpha1.MapSettingsSpec{
 		Pollution: &gamesv1alpha1.PollutionSpec{
-			Enabled:                                 ptr(true),
-			MinToDiffuse:                            ptr(0.1),
-			ExpectedMaxPerChunk:                     ptr(2.0),
-			EnemyAttackPollutionConsumptionModifier: ptr(1.5),
+			Enabled:                                 new(true),
+			MinToDiffuse:                            new(0.1),
+			ExpectedMaxPerChunk:                     new(2.0),
+			EnemyAttackPollutionConsumptionModifier: new(1.5),
 		},
 		EnemyEvolution: &gamesv1alpha1.EnemyEvolutionSpec{
-			DestroyFactor:   ptr(0.2),
-			PollutionFactor: ptr(0.3),
+			DestroyFactor:   new(0.2),
+			PollutionFactor: new(0.3),
 		},
 		EnemyExpansion: &gamesv1alpha1.EnemyExpansionSpec{
-			BuildingCoefficient:          ptr(0.4),
-			MaxCollidingTilesCoefficient: ptr(0.5),
-			SettlerGroupMaxSize:          ptr(int32(6)),
+			BuildingCoefficient:          new(0.4),
+			MaxCollidingTilesCoefficient: new(0.5),
+			SettlerGroupMaxSize:          new(int32(6)),
 		},
 		DifficultySettings: &gamesv1alpha1.DifficultySettingsSpec{
-			TechnologyPriceMultiplier: ptr(2.0),
-			SpoilTimeModifier:         ptr(0.25),
+			TechnologyPriceMultiplier: new(2.0),
+			SpoilTimeModifier:         new(0.25),
 		},
-		MaxFailedBehaviorCount: ptr(int32(9)),
+		MaxFailedBehaviorCount: new(int32(9)),
 	}
 
 	got, err := RenderMapSettings(spec)
@@ -361,7 +357,7 @@ func TestMapSettingsMappings(t *testing.T) {
 
 func TestRawSettingsAreMerged(t *testing.T) {
 	spec := &gamesv1alpha1.MapGenSettingsSpec{
-		Seed: ptr(int64(42)),
+		Seed: new(int64(42)),
 		Raw:  rawJSON(`{"property_expression_names": {"elevation": "basic"}}`),
 	}
 
@@ -386,7 +382,7 @@ func TestRawSettingsAreMerged(t *testing.T) {
 
 func TestRawConflictingWithTypedFieldIsRejected(t *testing.T) {
 	spec := &gamesv1alpha1.MapGenSettingsSpec{
-		Seed: ptr(int64(42)),
+		Seed: new(int64(42)),
 		Raw:  rawJSON(`{"seed": 7}`),
 	}
 
@@ -420,11 +416,11 @@ func TestInvalidRawIsRejected(t *testing.T) {
 func TestRenderingIsDeterministic(t *testing.T) {
 	spec := &gamesv1alpha1.MapSettingsSpec{
 		Pollution: &gamesv1alpha1.PollutionSpec{
-			Enabled:      ptr(true),
-			MinToDiffuse: ptr(0.1),
+			Enabled:      new(true),
+			MinToDiffuse: new(0.1),
 		},
 		EnemyEvolution: &gamesv1alpha1.EnemyEvolutionSpec{
-			TimeFactor: ptr(0.000004),
+			TimeFactor: new(0.000004),
 		},
 	}
 
