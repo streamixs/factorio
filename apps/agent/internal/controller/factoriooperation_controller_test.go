@@ -77,7 +77,10 @@ var _ = Describe("FactorioOperation Controller", func() {
 		Expect(k8sClient.List(ctx, &jobs,
 			client.InNamespace(operationNamespace))).To(Succeed())
 		for i := range jobs.Items {
-			_ = k8sClient.Delete(ctx, &jobs.Items[i])
+			job := &jobs.Items[i]
+			job.Finalizers = nil
+			_ = k8sClient.Update(ctx, job)
+			_ = k8sClient.Delete(ctx, job)
 		}
 
 		server := &gamesv1alpha1.FactorioServer{
@@ -347,8 +350,9 @@ var _ = Describe("FactorioOperation Controller", func() {
 		}
 		Expect(k8sClient.Create(ctx, operation)).To(Succeed())
 		operation.Status = gamesv1alpha1.FactorioOperationStatus{
-			Phase:   gamesv1alpha1.OperationPhaseRunning,
-			JobName: job.Name,
+			Phase:     gamesv1alpha1.OperationPhaseRunning,
+			JobName:   job.Name,
+			StartedAt: &metav1.Time{Time: time.Now().Add(-time.Minute)},
 		}
 		Expect(k8sClient.Status().Update(ctx, operation)).To(Succeed())
 		Expect(k8sClient.Delete(ctx, operation)).To(Succeed())
@@ -394,6 +398,93 @@ var _ = Describe("FactorioOperation Controller", func() {
 			err := k8sClient.Get(ctx, key, &gamesv1alpha1.FactorioOperation{})
 			return apierrors.IsNotFound(err)
 		}, time.Second*5, time.Millisecond*100).Should(BeTrue())
+
+		Expect(k8sClient.Get(ctx, types.NamespacedName{
+			Namespace: operationNamespace,
+			Name:      operationServerName,
+		}, &server)).To(Succeed())
+		Expect(server.Spec.Suspended).To(BeFalse())
+	})
+
+	It("waits for a timed-out Job to be deleted before resuming", func() {
+		operation := &gamesv1alpha1.FactorioOperation{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      "timeout-operation",
+				Namespace: operationNamespace,
+			},
+			Spec: gamesv1alpha1.FactorioOperationSpec{
+				ServerName: operationServerName,
+				Type:       gamesv1alpha1.OperationRestore,
+				SaveFile:   testSaveFile,
+			},
+		}
+		Expect(k8sClient.Create(ctx, operation)).To(Succeed())
+
+		key := types.NamespacedName{
+			Namespace: operationNamespace,
+			Name:      operation.Name,
+		}
+
+		_, err := reconciler.Reconcile(ctx, reconcile.Request{NamespacedName: key})
+		Expect(err).NotTo(HaveOccurred())
+		_, err = reconciler.Reconcile(ctx, reconcile.Request{NamespacedName: key})
+		Expect(err).NotTo(HaveOccurred())
+
+		var current gamesv1alpha1.FactorioOperation
+		Expect(k8sClient.Get(ctx, key, &current)).To(Succeed())
+		Expect(current.Status.Phase).To(Equal(gamesv1alpha1.OperationPhaseRunning))
+
+		var server gamesv1alpha1.FactorioServer
+		Expect(k8sClient.Get(ctx, types.NamespacedName{
+			Namespace: operationNamespace,
+			Name:      operationServerName,
+		}, &server)).To(Succeed())
+		Expect(server.Spec.Suspended).To(BeTrue())
+
+		var job batchv1.Job
+		Expect(k8sClient.Get(ctx, types.NamespacedName{
+			Namespace: operationNamespace,
+			Name:      current.Status.JobName,
+		}, &job)).To(Succeed())
+		job.Finalizers = append(job.Finalizers, "test/finalizer")
+		Expect(k8sClient.Update(ctx, &job)).To(Succeed())
+
+		current.Status.StartedAt = &metav1.Time{
+			Time: time.Now().Add(-25 * time.Minute),
+		}
+		Expect(k8sClient.Status().Update(ctx, &current)).To(Succeed())
+
+		_, err = reconciler.Reconcile(ctx, reconcile.Request{NamespacedName: key})
+		Expect(err).NotTo(HaveOccurred())
+
+		Expect(k8sClient.Get(ctx, key, &current)).To(Succeed())
+		Expect(current.Status.Phase).To(Equal(gamesv1alpha1.OperationPhaseFailed))
+
+		Expect(k8sClient.Get(ctx, types.NamespacedName{
+			Namespace: operationNamespace,
+			Name:      operationServerName,
+		}, &server)).To(Succeed())
+		Expect(server.Spec.Suspended).To(BeTrue())
+
+		Expect(k8sClient.Get(ctx, types.NamespacedName{
+			Namespace: operationNamespace,
+			Name:      current.Status.JobName,
+		}, &job)).To(Succeed())
+		Expect(job.DeletionTimestamp.IsZero()).To(BeFalse())
+
+		job.Finalizers = nil
+		Expect(k8sClient.Update(ctx, &job)).To(Succeed())
+
+		Eventually(func() bool {
+			err := k8sClient.Get(ctx, types.NamespacedName{
+				Namespace: operationNamespace,
+				Name:      job.Name,
+			}, &batchv1.Job{})
+			return apierrors.IsNotFound(err)
+		}, time.Second*5, time.Millisecond*100).Should(BeTrue())
+
+		_, err = reconciler.Reconcile(ctx, reconcile.Request{NamespacedName: key})
+		Expect(err).NotTo(HaveOccurred())
 
 		Expect(k8sClient.Get(ctx, types.NamespacedName{
 			Namespace: operationNamespace,
