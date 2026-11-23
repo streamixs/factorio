@@ -36,6 +36,11 @@ spec:
               value: http://factorio-api.factorio-system.svc.cluster.local:3001
             - name: FACTORIO_IMPORT_DIR
               value: /var/lib/factorio/imports
+            - name: API_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: factorio-auth
+                  key: api-token
             - name: PORT
               value: "3001"
           ports:

@@ -25,6 +25,29 @@ make port-forward   # http://localhost:3000
 The Next server proxies `/api/*` to the `factorio-api` Service, so the browser
 only needs to reach the web Service.
 
+## Authentication
+
+The API requires an internal bearer token; the web server injects it and the
+browser never sees it. Create the shared Secret before deploying:
+
+```sh
+make auth-secret
+```
+
+This creates `factorio-auth` with a random API token and prints the generated
+web username/password (used by the web Basic auth). To set your own values:
+
+```sh
+kubectl -n factorio-system create secret generic factorio-auth \
+  --from-literal=web-user=admin \
+  --from-literal=web-password='...' \
+  --from-literal=api-token="$(openssl rand -hex 32)"
+```
+
+`make deploy` refuses to run if the Secret is missing. Rotating the API token
+requires restarting both the API and web deployments so they pick up the new
+value.
+
 ## Namespace
 
 The API manages `FactorioServer` resources in the `default` namespace. To
