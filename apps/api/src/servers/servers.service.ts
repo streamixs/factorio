@@ -179,6 +179,7 @@ export class ServersService {
       mapGenSettings: data.mapGenSettings,
       mapSettings: data.mapSettings,
       storage: data.storage,
+      resources: data.resources,
       service: data.service,
     };
 
@@ -314,6 +315,12 @@ export class ServersService {
   async events(name: string): Promise<ServerEvent[]> {
     this.assertName(name);
 
+    const server = await this.get(name);
+    const servers = await this.list();
+    const otherServers = servers.filter(
+      (item) => item.metadata.name !== name,
+    );
+
     const result = await this.kubernetes.core.listNamespacedEvent({
       namespace: this.kubernetes.namespace,
     });
@@ -322,8 +329,29 @@ export class ServersService {
 
     return (result.items ?? [])
       .filter((event) => {
-        const objectName = event.involvedObject?.name ?? '';
-        return objectName === name || objectName.startsWith(prefix);
+        const involved = event.involvedObject;
+
+        if (
+          server.metadata.uid !== undefined &&
+          involved?.uid === server.metadata.uid
+        ) {
+          return true;
+        }
+
+        const objectName = involved?.name ?? '';
+        if (objectName !== name && !objectName.startsWith(prefix)) {
+          return false;
+        }
+
+        // A longer server name can share this server's prefix, for example
+        // "foo" and "foo-bar". Exclude objects owned by those servers.
+        return !otherServers.some((other) => {
+          const otherName = other.metadata.name;
+          return (
+            objectName === otherName ||
+            objectName.startsWith(`${otherName}-`)
+          );
+        });
       })
       .map(toServerEvent)
       .sort(

@@ -221,6 +221,7 @@ export interface CreateFactorioServerInput {
   mapGenSettings?: MapGenSettings;
   mapSettings?: MapSettings;
   storage?: StorageSettings;
+  resources?: ResourcesSettings;
   service?: ServiceSettings;
   credentials?: CredentialsInput;
 }
