@@ -231,7 +231,11 @@ export class ServersService {
 
     if (hasCredentialChanges(parsed.data.credentials)) {
       await this.writeCredentialsSecret(existing, parsed.data.credentials);
-      this.applyCredentialRefs(spec, existing.metadata.name, parsed.data.credentials);
+      this.applyCredentialRefs(
+        spec,
+        existing.metadata.name,
+        parsed.data.credentials,
+      );
     }
 
     return this.replace(existing, spec);
@@ -317,9 +321,7 @@ export class ServersService {
 
     const server = await this.get(name);
     const servers = await this.list();
-    const otherServers = servers.filter(
-      (item) => item.metadata.name !== name,
-    );
+    const otherServers = servers.filter((item) => item.metadata.name !== name);
 
     const result = await this.kubernetes.core.listNamespacedEvent({
       namespace: this.kubernetes.namespace,
@@ -348,8 +350,7 @@ export class ServersService {
         return !otherServers.some((other) => {
           const otherName = other.metadata.name;
           return (
-            objectName === otherName ||
-            objectName.startsWith(`${otherName}-`)
+            objectName === otherName || objectName.startsWith(`${otherName}-`)
           );
         });
       })
@@ -385,12 +386,14 @@ export class ServersService {
       throw error;
     }
 
-    const ports: ServicePortInfo[] = (service.spec?.ports ?? []).map((port) => ({
-      name: port.name,
-      port: port.port,
-      protocol: port.protocol ?? 'TCP',
-      nodePort: port.nodePort,
-    }));
+    const ports: ServicePortInfo[] = (service.spec?.ports ?? []).map(
+      (port) => ({
+        name: port.name,
+        port: port.port,
+        protocol: port.protocol ?? 'TCP',
+        nodePort: port.nodePort,
+      }),
+    );
 
     const loadBalancer = (service.status?.loadBalancer?.ingress ?? [])
       .map((ingress) => ingress.ip ?? ingress.hostname)
@@ -483,7 +486,8 @@ export class ServersService {
     }
   }
 
-  async effective(name: string): Promise<EffectiveSettings> {    this.assertName(name);
+  async effective(name: string): Promise<EffectiveSettings> {
+    this.assertName(name);
 
     let configMap;
     try {
@@ -649,16 +653,14 @@ export class ServersService {
    * the form.
    */
   async schema(): Promise<Record<string, unknown>> {
-    if (
-      this.schemaCache !== null &&
-      this.schemaCache.expiresAt > Date.now()
-    ) {
+    if (this.schemaCache !== null && this.schemaCache.expiresAt > Date.now()) {
       return this.schemaCache.value;
     }
 
-    const crd = await this.kubernetes.apiextensions.readCustomResourceDefinition(
-      { name: CRD_NAME },
-    );
+    const crd =
+      await this.kubernetes.apiextensions.readCustomResourceDefinition({
+        name: CRD_NAME,
+      });
     const versions = crd.spec?.versions ?? [];
     const version =
       versions.find((item) => item.name === VERSION) ?? versions[0];
@@ -799,7 +801,8 @@ export class ServersService {
     }
   }
 
-  async operations(name: string): Promise<ServerOperation[]> {    this.assertName(name);
+  async operations(name: string): Promise<ServerOperation[]> {
+    this.assertName(name);
 
     const result = await this.call(() =>
       this.kubernetes.customObjects.listNamespacedCustomObject({
@@ -828,8 +831,7 @@ export class ServersService {
     type: ServerOperationType,
     extra: { saveFile?: string; importUrl?: string },
   ): Promise<string> {
-    const namespace =
-      server.metadata.namespace ?? this.kubernetes.namespace;
+    const namespace = server.metadata.namespace ?? this.kubernetes.namespace;
     const body = {
       apiVersion: `${GROUP}/${VERSION}`,
       kind: 'FactorioOperation',
@@ -855,8 +857,8 @@ export class ServersService {
       }),
     );
 
-    const operationName = (created as { metadata?: { name?: string } })
-      .metadata?.name;
+    const operationName = (created as { metadata?: { name?: string } }).metadata
+      ?.name;
     if (operationName === undefined || operationName === '') {
       throw new InternalServerErrorException('Operation name is missing');
     }
@@ -1016,7 +1018,11 @@ export class ServersService {
     const data: Record<string, string> = { ...existing?.data };
 
     if (credentials.gamePassword !== undefined) {
-      setSecretValue(data, CREDENTIAL_KEYS.gamePassword, credentials.gamePassword);
+      setSecretValue(
+        data,
+        CREDENTIAL_KEYS.gamePassword,
+        credentials.gamePassword,
+      );
     }
     if (credentials.password !== undefined) {
       setSecretValue(data, CREDENTIAL_KEYS.password, credentials.password);
@@ -1077,10 +1083,7 @@ export class ServersService {
       }
     }
 
-    if (
-      credentials.password !== undefined ||
-      credentials.token !== undefined
-    ) {
+    if (credentials.password !== undefined || credentials.token !== undefined) {
       spec.server ??= {};
       spec.server.authentication ??= {};
 
@@ -1206,7 +1209,9 @@ async function writeLimited(body: Readable, path: string): Promise<void> {
     transform(chunk, _encoding, callback) {
       total += chunk.length;
       if (total > MAX_IMPORT_BYTES) {
-        callback(new PayloadTooLargeException('Save file is larger than 1 GiB'));
+        callback(
+          new PayloadTooLargeException('Save file is larger than 1 GiB'),
+        );
         return;
       }
       callback(null, chunk);
@@ -1508,9 +1513,7 @@ function selectPod(pods: V1Pod[]): V1Pod | undefined {
 }
 
 function isPodReady(pod: V1Pod): boolean {
-  return (
-    pod.status?.containerStatuses?.some((status) => status.ready) ?? false
-  );
+  return pod.status?.containerStatuses?.some((status) => status.ready) ?? false;
 }
 
 function podTimestamp(pod: V1Pod): number {
@@ -1520,9 +1523,7 @@ function podTimestamp(pod: V1Pod): number {
 
 function toServerEvent(event: CoreV1Event): ServerEvent {
   const timestamp =
-    event.lastTimestamp ??
-    event.eventTime ??
-    event.metadata?.creationTimestamp;
+    event.lastTimestamp ?? event.eventTime ?? event.metadata?.creationTimestamp;
 
   return {
     type: event.type ?? 'Normal',

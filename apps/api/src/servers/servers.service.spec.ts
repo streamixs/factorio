@@ -518,8 +518,7 @@ describe('ServersService', () => {
       'fetch',
       vi.fn().mockResolvedValue({
         ok: true,
-        text: async () =>
-          '_autosave2.zip 123 1767225600\n_broken.txt 1 1\n',
+        text: async () => '_autosave2.zip 123 1767225600\n_broken.txt 1 1\n',
       }),
     );
 
@@ -561,10 +560,7 @@ describe('ServersService', () => {
       }),
     );
 
-    const backup = await service.downloadBackup(
-      'my-server',
-      '_autosave2.zip',
-    );
+    const backup = await service.downloadBackup('my-server', '_autosave2.zip');
 
     expect(backup.filename).toBe('_autosave2.zip');
     expect(backup.data).toEqual(Buffer.from([1, 2, 3]));
@@ -589,10 +585,7 @@ describe('ServersService', () => {
       metadata: { name: 'my-server-restore-abc' },
     });
 
-    const result = await service.restoreBackup(
-      'my-server',
-      '_autosave2.zip',
-    );
+    const result = await service.restoreBackup('my-server', '_autosave2.zip');
 
     expect(result.operation).toBe('my-server-restore-abc');
     expect(createNamespacedCustomObject).toHaveBeenCalledWith(
@@ -723,18 +716,14 @@ describe('ServersService', () => {
         ).toString('base64'),
       },
     });
-    readNamespacedConfigMap.mockImplementation(
-      (request: { name: string }) => {
-        if (request.name === 'my-server-map-gen-settings') {
-          return Promise.resolve({
-            data: { 'map-gen-settings.json': '{"seed":42}' },
-          });
-        }
-        return Promise.reject(
-          new ApiException(404, 'Not Found', undefined, {}),
-        );
-      },
-    );
+    readNamespacedConfigMap.mockImplementation((request: { name: string }) => {
+      if (request.name === 'my-server-map-gen-settings') {
+        return Promise.resolve({
+          data: { 'map-gen-settings.json': '{"seed":42}' },
+        });
+      }
+      return Promise.reject(new ApiException(404, 'Not Found', undefined, {}));
+    });
 
     const json = await service.settingsJson('my-server');
 
@@ -869,9 +858,7 @@ describe('ServersService', () => {
       items: [
         {
           status: {
-            addresses: [
-              { type: 'InternalIP', address: '192.168.139.2' },
-            ],
+            addresses: [{ type: 'InternalIP', address: '192.168.139.2' }],
           },
         },
       ],
