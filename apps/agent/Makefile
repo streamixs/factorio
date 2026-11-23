@@ -3,6 +3,12 @@ IMG ?= controller:latest
 # YEAR defines the year value used for substituting the YEAR placeholder in the boilerplate header.
 YEAR ?= $(shell date +%Y)
 
+# golangci-lint v2.13.1 cannot read export data produced by Go 1.27+ toolchains.
+# Pin the Make targets to the Go version declared in go.mod. CI overrides this
+# with GOTOOLCHAIN=local after setup-go installs the same version.
+GOTOOLCHAIN ?= go1.26.0
+export GOTOOLCHAIN
+
 # Get the currently used golang install path (in GOPATH/bin, unless GOBIN is set)
 ifeq (,$(shell go env GOBIN))
 GOBIN=$(shell go env GOPATH)/bin
