@@ -36,6 +36,16 @@ spec:
                 secretKeyRef:
                   name: factorio-auth
                   key: api-token
+            - name: WEB_AUTH_USER
+              valueFrom:
+                secretKeyRef:
+                  name: factorio-auth
+                  key: web-user
+            - name: WEB_AUTH_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: factorio-auth
+                  key: web-password
             - name: PORT
               value: "3000"
             - name: HOSTNAME
@@ -45,13 +55,13 @@ spec:
               containerPort: 3000
           readinessProbe:
             httpGet:
-              path: /
+              path: /health
               port: http
             initialDelaySeconds: 3
             periodSeconds: 10
           livenessProbe:
             httpGet:
-              path: /
+              path: /health
               port: http
             initialDelaySeconds: 10
             periodSeconds: 20

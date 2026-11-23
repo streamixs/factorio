@@ -48,6 +48,10 @@ kubectl -n factorio-system create secret generic factorio-auth \
 requires restarting both the API and web deployments so they pick up the new
 value.
 
+The web UI uses HTTP Basic auth. Use TLS for any access beyond localhost or a
+local port-forward: browsers cache Basic credentials and send them on every
+request.
+
 ## Namespace
 
 The API manages `FactorioServer` resources in the `default` namespace. To
