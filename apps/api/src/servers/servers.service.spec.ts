@@ -7,6 +7,17 @@ import {
 import { Test, type TestingModule } from '@nestjs/testing';
 import { ApiException } from '@kubernetes/client-node';
 import type { FactorioServer } from '@factorio/shared';
+import {
+  mkdtemp,
+  readFile,
+  readdir,
+  rm,
+  stat,
+  utimes,
+  writeFile,
+} from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { Readable } from 'node:stream';
 
 import { KubernetesService } from '../kubernetes/kubernetes.service.js';
@@ -34,9 +45,12 @@ describe('ServersService', () => {
   const readCustomResourceDefinition = vi.fn();
 
   let service: ServersService;
+  let importDir: string;
 
   beforeEach(async () => {
     vi.clearAllMocks();
+    importDir = await mkdtemp(join(tmpdir(), 'factorio-imports-test-'));
+    process.env.FACTORIO_IMPORT_DIR = importDir;
 
     const module: TestingModule = await Test.createTestingModule({
       providers: [
@@ -80,8 +94,10 @@ describe('ServersService', () => {
     service = module.get<ServersService>(ServersService);
   });
 
-  afterEach(() => {
+  afterEach(async () => {
     vi.unstubAllGlobals();
+    delete process.env.FACTORIO_IMPORT_DIR;
+    await rm(importDir, { recursive: true, force: true });
   });
 
   it('lists servers in the configured namespace', async () => {
@@ -693,6 +709,102 @@ describe('ServersService', () => {
         }),
       }),
     );
+
+    const request = createNamespacedCustomObject.mock.calls[0][0] as {
+      body: { spec: { importUrl: string } };
+    };
+    const token = request.body.spec.importUrl.split('/').pop();
+    expect(token).toBeDefined();
+
+    const imported = await service.claimImport('my-server', token as string);
+    expect(imported.filename).toBe('my-server.zip');
+    expect((await stat(imported.path)).size).toBe(8);
+  });
+
+  it('resolves imports after a service restart', async () => {
+    getNamespacedCustomObject.mockResolvedValue({
+      metadata: { name: 'my-server', namespace: 'games', uid: 'uid-1' },
+      spec: { version: '2.1.24' },
+    });
+    listNamespacedCustomObject.mockResolvedValue({ items: [] });
+    createNamespacedCustomObject.mockResolvedValue({
+      metadata: { name: 'my-server-import-abc' },
+    });
+
+    await service.importSave(
+      'my-server',
+      Readable.from([Buffer.from([0x50, 0x4b, 0x03, 0x04, 0, 0, 0, 0])]),
+      '8',
+    );
+
+    const request = createNamespacedCustomObject.mock.calls[0][0] as {
+      body: { spec: { importUrl: string } };
+    };
+    const token = request.body.spec.importUrl.split('/').pop() as string;
+
+    const restarted = new ServersService({} as KubernetesService);
+    const imported = await restarted.claimImport('my-server', token);
+
+    expect(imported.path).toBe(join(importDir, `${token}.zip`));
+    expect((await readFile(imported.path)).subarray(0, 4)).toEqual(
+      Buffer.from([0x50, 0x4b, 0x03, 0x04]),
+    );
+  });
+
+  it('removes an expired import', async () => {
+    getNamespacedCustomObject.mockResolvedValue({
+      metadata: { name: 'my-server', namespace: 'games', uid: 'uid-1' },
+      spec: { version: '2.1.24' },
+    });
+    listNamespacedCustomObject.mockResolvedValue({ items: [] });
+    createNamespacedCustomObject.mockResolvedValue({
+      metadata: { name: 'my-server-import-abc' },
+    });
+
+    await service.importSave(
+      'my-server',
+      Readable.from([Buffer.from([0x50, 0x4b, 0x03, 0x04])]),
+      '4',
+    );
+
+    const request = createNamespacedCustomObject.mock.calls[0][0] as {
+      body: { spec: { importUrl: string } };
+    };
+    const token = request.body.spec.importUrl.split('/').pop() as string;
+    const metadataPath = join(importDir, `${token}.json`);
+    const metadata = JSON.parse(await readFile(metadataPath, 'utf8')) as {
+      name: string;
+      expiresAt: number;
+    };
+    metadata.expiresAt = Date.now() - 1;
+    await writeFile(metadataPath, JSON.stringify(metadata));
+
+    await expect(
+      service.claimImport('my-server', token),
+    ).rejects.toBeInstanceOf(NotFoundException);
+
+    await expect(stat(join(importDir, `${token}.zip`))).rejects.toBeDefined();
+    await expect(stat(metadataPath)).rejects.toBeDefined();
+  });
+
+  it('prunes stale orphaned imports', async () => {
+    const token = 'a'.repeat(32);
+    const zipPath = join(importDir, `${token}.zip`);
+    await writeFile(zipPath, Buffer.from('orphan'));
+    const old = new Date(Date.now() - 31 * 60 * 1000);
+    await utimes(zipPath, old, old);
+
+    await (
+      service as unknown as { pruneImports: () => Promise<void> }
+    ).pruneImports();
+
+    await expect(stat(zipPath)).rejects.toBeDefined();
+  });
+
+  it('rejects an invalid import token', async () => {
+    await expect(
+      service.claimImport('my-server', '../etc/passwd'),
+    ).rejects.toBeInstanceOf(NotFoundException);
   });
 
   it('returns the FactorioServer spec schema', async () => {
@@ -834,6 +946,7 @@ describe('ServersService', () => {
     ).rejects.toBeInstanceOf(BadRequestException);
 
     expect(createNamespacedCustomObject).not.toHaveBeenCalled();
+    expect(await readdir(importDir)).toEqual([]);
   });
 
   it('rejects a save larger than the import limit', async () => {

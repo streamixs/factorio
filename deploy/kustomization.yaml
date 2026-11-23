@@ -3,5 +3,6 @@ kind: Kustomization
 resources:
   - namespace.yaml
   - api-rbac.yaml
+  - api-imports-pvc.yaml
   - api.yaml
   - web.yaml
