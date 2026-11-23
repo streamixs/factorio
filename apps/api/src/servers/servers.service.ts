@@ -239,7 +239,12 @@ export class ServersService {
     }
 
     const existing = await this.get(name);
+    await this.assertNoActiveOperation(name);
     const spec = structuredClone(parsed.data.spec);
+    // Suspension is controlled by the start/stop endpoints, never by a
+    // settings update. Preserve the current state to avoid restarting a server
+    // that was stopped externally or is being operated on.
+    spec.suspended = existing.spec.suspended;
 
     if (hasCredentialChanges(parsed.data.credentials)) {
       await this.writeCredentialsSecret(existing, parsed.data.credentials);
@@ -255,6 +260,7 @@ export class ServersService {
 
   async remove(name: string): Promise<void> {
     this.assertName(name);
+    await this.assertNoActiveOperation(name);
 
     await this.call(() =>
       this.kubernetes.customObjects.deleteNamespacedCustomObject({

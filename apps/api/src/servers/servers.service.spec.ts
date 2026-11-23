@@ -231,6 +231,7 @@ describe('ServersService', () => {
     replaceNamespacedCustomObject.mockImplementation(
       (request: { body: FactorioServer }) => Promise.resolve(request.body),
     );
+    listNamespacedCustomObject.mockResolvedValue({ items: [] });
 
     const server = await service.update('my-server', {
       spec: {
@@ -241,6 +242,49 @@ describe('ServersService', () => {
 
     expect(server.spec.server?.identity?.name).toBe('Updated');
     expect(createNamespacedSecret).not.toHaveBeenCalled();
+  });
+
+  it('preserves the live suspended state on update', async () => {
+    getNamespacedCustomObject.mockResolvedValue({
+      apiVersion: 'games.dev.streamixs.com/v1alpha1',
+      kind: 'FactorioServer',
+      metadata: { name: 'my-server', namespace: 'games', uid: 'uid-1' },
+      spec: { version: '2.1.24', suspended: true },
+    });
+    listNamespacedCustomObject.mockResolvedValue({ items: [] });
+    replaceNamespacedCustomObject.mockImplementation(
+      (request: { body: FactorioServer }) => Promise.resolve(request.body),
+    );
+
+    const server = await service.update('my-server', {
+      spec: { version: '2.1.24', suspended: false },
+    });
+
+    expect(server.spec.suspended).toBe(true);
+  });
+
+  it('refuses to update a server while an operation is running', async () => {
+    getNamespacedCustomObject.mockResolvedValue({
+      apiVersion: 'games.dev.streamixs.com/v1alpha1',
+      kind: 'FactorioServer',
+      metadata: { name: 'my-server', namespace: 'games', uid: 'uid-1' },
+      spec: { version: '2.1.24' },
+    });
+    listNamespacedCustomObject.mockResolvedValue({
+      items: [
+        {
+          metadata: { name: 'my-server-restore-abc' },
+          spec: { serverName: 'my-server', type: 'Restore' },
+          status: { phase: 'Running' },
+        },
+      ],
+    });
+
+    await expect(
+      service.update('my-server', { spec: { version: '2.1.24' } }),
+    ).rejects.toBeInstanceOf(ConflictException);
+
+    expect(replaceNamespacedCustomObject).not.toHaveBeenCalled();
   });
 
   it('writes credentials and refs on update', async () => {
@@ -257,6 +301,7 @@ describe('ServersService', () => {
     replaceNamespacedCustomObject.mockImplementation(
       (request: { body: FactorioServer }) => Promise.resolve(request.body),
     );
+    listNamespacedCustomObject.mockResolvedValue({ items: [] });
 
     const server = await service.update('my-server', {
       spec: { version: '2.1.24' },
@@ -315,6 +360,7 @@ describe('ServersService', () => {
     replaceNamespacedCustomObject.mockImplementation(
       (request: { body: FactorioServer }) => Promise.resolve(request.body),
     );
+    listNamespacedCustomObject.mockResolvedValue({ items: [] });
 
     const server = await service.update('my-server', {
       spec: {
@@ -1232,7 +1278,26 @@ describe('ServersService', () => {
     expect(createNamespacedCustomObject).toHaveBeenCalledTimes(1);
   });
 
+  it('refuses to delete a server while an operation is running', async () => {
+    listNamespacedCustomObject.mockResolvedValue({
+      items: [
+        {
+          metadata: { name: 'my-server-restore-abc' },
+          spec: { serverName: 'my-server', type: 'Restore' },
+          status: { phase: 'Running' },
+        },
+      ],
+    });
+
+    await expect(service.remove('my-server')).rejects.toBeInstanceOf(
+      ConflictException,
+    );
+
+    expect(deleteNamespacedCustomObject).not.toHaveBeenCalled();
+  });
+
   it('deletes with background propagation', async () => {
+    listNamespacedCustomObject.mockResolvedValue({ items: [] });
     deleteNamespacedCustomObject.mockResolvedValue(undefined);
 
     await service.remove('my-server');
