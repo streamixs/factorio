@@ -29,7 +29,7 @@ jobs:
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
 
       - name: Set up Go
-        uses: actions/setup-go@4b73464bb391d4059bd26f2b0524d20df3927bd417 # v6.3.0
+        uses: actions/setup-go@v6.3.0
         with:
           go-version-file: apps/agent/go.mod
           cache-dependency-path: apps/agent/go.sum
@@ -112,6 +112,9 @@ jobs:
 
       - name: Lint
         run: pnpm --filter @factorio/web lint
+
+      - name: Generate Next.js types
+        run: pnpm --filter @factorio/web exec next typegen
 
       - name: Typecheck
         run: pnpm --filter @factorio/web exec tsc --noEmit
