@@ -57,7 +57,7 @@ export function CreateServerForm({
 }) {
   const [name, setName] = useState("");
   const [displayName, setDisplayName] = useState("");
-  const [version, setVersion] = useState(DEFAULT_VERSION);
+  const [version, setVersion] = useState("");
   const [maxPlayers, setMaxPlayers] = useState("8");
   const [seed, setSeed] = useState("");
   const [storageSize, setStorageSize] = useState("10Gi");
@@ -74,8 +74,16 @@ export function CreateServerForm({
   const [creating, setCreating] = useState(false);
 
   const versionValue =
-    versions.length > 0 && !versions.includes(version) ? versions[0] : version;
-  const versionOptions = versions.map((value) => ({ value, label: value }));
+    version !== "" ? version : versions[0] ?? DEFAULT_VERSION;
+  const versionOptions =
+    versions.length === 0
+      ? []
+      : versions.includes(versionValue)
+        ? versions.map((value) => ({ value, label: value }))
+        : [
+            { value: versionValue, label: versionValue },
+            ...versions.map((value) => ({ value, label: value })),
+          ];
   const storageClassValue =
     storageClass === "" ? DEFAULT_STORAGE_CLASS : storageClass;
   const storageClassOptions = [
