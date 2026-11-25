@@ -268,6 +268,151 @@ describe('ServersService', () => {
     expect(createNamespacedSecret).not.toHaveBeenCalled();
   });
 
+  it('rejects an update whose generation is stale', async () => {
+    getNamespacedCustomObject.mockResolvedValue({
+      apiVersion: 'games.dev.streamixs.com/v1alpha1',
+      kind: 'FactorioServer',
+      metadata: {
+        name: 'my-server',
+        namespace: 'games',
+        uid: 'uid-1',
+        generation: 4,
+        resourceVersion: '10',
+      },
+      spec: { version: '2.1.24' },
+    });
+    listNamespacedCustomObject.mockResolvedValue({ items: [] });
+
+    await expect(
+      service.update('my-server', {
+        generation: 3,
+        spec: { version: '2.1.24' },
+        credentials: { gamePassword: 'pw' },
+      }),
+    ).rejects.toBeInstanceOf(ConflictException);
+
+    expect(replaceNamespacedCustomObject).not.toHaveBeenCalled();
+    expect(createNamespacedSecret).not.toHaveBeenCalled();
+    expect(replaceNamespacedSecret).not.toHaveBeenCalled();
+  });
+
+  it('updates with the current generation', async () => {
+    getNamespacedCustomObject.mockResolvedValue({
+      apiVersion: 'games.dev.streamixs.com/v1alpha1',
+      kind: 'FactorioServer',
+      metadata: {
+        name: 'my-server',
+        namespace: 'games',
+        uid: 'uid-1',
+        generation: 3,
+        resourceVersion: '10',
+      },
+      spec: { version: '2.1.24' },
+    });
+    replaceNamespacedCustomObject.mockImplementation(
+      (request: { body: FactorioServer }) => Promise.resolve(request.body),
+    );
+    listNamespacedCustomObject.mockResolvedValue({ items: [] });
+
+    const server = await service.update('my-server', {
+      generation: 3,
+      spec: { version: '2.1.24', server: { identity: { name: 'Updated' } } },
+    });
+
+    expect(server.spec.server?.identity?.name).toBe('Updated');
+    expect(replaceNamespacedCustomObject).toHaveBeenCalledWith(
+      expect.objectContaining({
+        body: expect.objectContaining({
+          metadata: expect.objectContaining({
+            generation: 3,
+            resourceVersion: '10',
+          }),
+        }),
+      }),
+    );
+  });
+
+  it('retries a conflict when the generation did not change', async () => {
+    const base = {
+      apiVersion: 'games.dev.streamixs.com/v1alpha1',
+      kind: 'FactorioServer',
+      metadata: {
+        name: 'my-server',
+        namespace: 'games',
+        uid: 'uid-1',
+        generation: 3,
+      },
+      spec: { version: '2.1.24' },
+    };
+    getNamespacedCustomObject
+      .mockResolvedValueOnce({
+        ...base,
+        metadata: { ...base.metadata, resourceVersion: '10' },
+      })
+      .mockResolvedValueOnce({
+        ...base,
+        metadata: { ...base.metadata, resourceVersion: '11' },
+      });
+    replaceNamespacedCustomObject
+      .mockRejectedValueOnce(new ApiException(409, 'Conflict', undefined, {}))
+      .mockImplementationOnce((request: { body: FactorioServer }) =>
+        Promise.resolve(request.body),
+      );
+    listNamespacedCustomObject.mockResolvedValue({ items: [] });
+
+    const server = await service.update('my-server', {
+      generation: 3,
+      spec: { version: '2.1.24' },
+    });
+
+    expect(server.spec.version).toBe('2.1.24');
+    expect(replaceNamespacedCustomObject).toHaveBeenCalledTimes(2);
+    const retried = replaceNamespacedCustomObject.mock.calls[1][0] as {
+      body: FactorioServer;
+    };
+    expect(retried.body.metadata.resourceVersion).toBe('11');
+  });
+
+  it('rejects a conflict when the generation changed', async () => {
+    const base = {
+      apiVersion: 'games.dev.streamixs.com/v1alpha1',
+      kind: 'FactorioServer',
+      metadata: {
+        name: 'my-server',
+        namespace: 'games',
+        uid: 'uid-1',
+        generation: 3,
+      },
+      spec: { version: '2.1.24' },
+    };
+    getNamespacedCustomObject
+      .mockResolvedValueOnce({
+        ...base,
+        metadata: { ...base.metadata, resourceVersion: '10' },
+      })
+      .mockResolvedValueOnce({
+        ...base,
+        metadata: {
+          ...base.metadata,
+          generation: 4,
+          resourceVersion: '11',
+        },
+      });
+    replaceNamespacedCustomObject.mockRejectedValueOnce(
+      new ApiException(409, 'Conflict', undefined, {}),
+    );
+    listNamespacedCustomObject.mockResolvedValue({ items: [] });
+
+    await expect(
+      service.update('my-server', {
+        generation: 3,
+        spec: { version: '2.1.24' },
+      }),
+    ).rejects.toBeInstanceOf(ConflictException);
+
+    expect(replaceNamespacedCustomObject).toHaveBeenCalledTimes(1);
+  });
+
   it('preserves the live suspended state on update', async () => {
     getNamespacedCustomObject.mockResolvedValue({
       apiVersion: 'games.dev.streamixs.com/v1alpha1',

@@ -216,6 +216,7 @@ export const createFactorioServerSchema = factorioServerSpecSchema.extend({
 export const updateFactorioServerSchema = z.strictObject({
   spec: factorioServerSpecSchema,
   credentials: credentialsSchema.optional(),
+  generation: z.number().int().nonnegative().optional(),
 });
 
 export function zodErrorMessage(error: z.ZodError): string {

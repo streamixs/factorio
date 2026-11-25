@@ -96,7 +96,7 @@ function ServerDetail() {
     if (name === "") {
       setError("Nom de serveur manquant");
       setLoading(false);
-      return;
+      return null;
     }
 
     try {
@@ -117,10 +117,12 @@ function ServerDetail() {
 
       setServer(current);
       setSettings(effective);
+      return { server: current, settings: effective };
     } catch (err) {
       setError(
         err instanceof Error ? err.message : "Impossible de charger le serveur",
       );
+      return null;
     } finally {
       setLoading(false);
     }
@@ -422,6 +424,7 @@ function ServerDetail() {
               versions={versions}
               storageClasses={storageClasses}
               operationActive={operationActive}
+              onReload={load}
               onSaved={(updated, merged) => {
                 setServer(updated);
                 setSettings({

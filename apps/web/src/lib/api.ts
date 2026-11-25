@@ -18,6 +18,17 @@ import type { SettingsSchema } from "./settings-schema";
 // receive the internal API token, so it always uses this same-origin path.
 const API_URL = "";
 
+/** Error returned by the API proxy, with the HTTP status preserved. */
+export class ApiError extends Error {
+  readonly status: number;
+
+  constructor(message: string, status: number) {
+    super(message);
+    this.name = "ApiError";
+    this.status = status;
+  }
+}
+
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
   const response = await fetch(`${API_URL}/api/servers${path}`, {
     ...init,
@@ -41,7 +52,7 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
       // The response has no JSON body, keep the generic message.
     }
 
-    throw new Error(message);
+    throw new ApiError(message, response.status);
   }
 
   if (response.status === 204) {

@@ -3,10 +3,11 @@
 import { zodResolver } from "@hookform/resolvers/zod";
 import type {
   CredentialsInput,
+  EffectiveSettings,
   FactorioServer,
   FactorioServerSpec,
 } from "@factorio/shared";
-import { useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   FormProvider,
   useForm,
@@ -15,10 +16,11 @@ import {
 } from "react-hook-form";
 import { toast } from "sonner";
 
+import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 
-import { updateServer } from "@/lib/api";
+import { ApiError, updateServer } from "@/lib/api";
 import {
   SETTINGS_SECTIONS,
   buildSections,
@@ -47,6 +49,7 @@ export function SettingsForm({
   storageClasses,
   operationActive,
   onSaved,
+  onReload,
 }: {
   server: FactorioServer;
   defaults: FactorioServerSpec;
@@ -56,6 +59,10 @@ export function SettingsForm({
   storageClasses: string[];
   operationActive: boolean;
   onSaved: (server: FactorioServer, effective: FactorioServerSpec) => void;
+  onReload: () => Promise<{
+    server: FactorioServer;
+    settings: EffectiveSettings;
+  } | null>;
 }) {
   const allowedVersions = useMemo(() => {
     const current = effective.version ?? "0.0.0";
@@ -82,15 +89,12 @@ export function SettingsForm({
   });
   const { handleSubmit, reset, formState } = form;
   const watched = useWatch({ control: form.control });
-  const baseline = useMemo(
-    () => ({
-      spec: withFormDefaults(effective),
-      credentials: emptyCredentials(),
-    }),
-    [effective],
-  );
 
   const [tab, setTab] = useState<string>(SETTINGS_SECTIONS[0].id);
+  const [baseline, setBaseline] = useState(() => ({
+    spec: withFormDefaults(effective),
+    credentials: emptyCredentials(),
+  }));
   const [rawEditors, setRawEditors] = useState<RawEditors>(() =>
     rawEditorsFrom(effective),
   );
@@ -99,6 +103,12 @@ export function SettingsForm({
   );
   const [rawError, setRawError] = useState<string | null>(null);
   const [saveError, setSaveError] = useState<string | null>(null);
+  const [externalChange, setExternalChange] = useState(false);
+  const [reloading, setReloading] = useState(false);
+
+  const generationRef = useRef(server.metadata.generation);
+  const effectiveKeyRef = useRef(JSON.stringify(effective));
+  const dirtyRef = useRef(false);
 
   const rawDirty =
     rawEditors.server !== initialRaw.server ||
@@ -110,7 +120,55 @@ export function SettingsForm({
     dirty ||
     formState.isSubmitting ||
     saveError !== null ||
+    externalChange ||
     Object.keys(formState.errors).length > 0;
+
+  useEffect(() => {
+    dirtyRef.current = dirty;
+  }, [dirty]);
+
+  const applyBaseline = useCallback(
+    (spec: FactorioServerSpec, generation: number | undefined) => {
+      const next = withFormDefaults(spec);
+      const raw = rawEditorsFrom(spec);
+
+      reset({ spec: next, credentials: emptyCredentials() });
+      setBaseline({ spec: next, credentials: emptyCredentials() });
+      setRawEditors(raw);
+      setInitialRaw(raw);
+      generationRef.current = generation;
+      effectiveKeyRef.current = JSON.stringify(spec);
+      setExternalChange(false);
+      setRawError(null);
+      setSaveError(null);
+    },
+    [reset],
+  );
+
+  useEffect(() => {
+    const nextGeneration = server.metadata.generation;
+    const nextKey = JSON.stringify(effective);
+    const generationChanged = nextGeneration !== generationRef.current;
+    const effectiveChanged = nextKey !== effectiveKeyRef.current;
+
+    if (!generationChanged && !effectiveChanged) {
+      return;
+    }
+
+    if (dirtyRef.current) {
+      setExternalChange(true);
+      return;
+    }
+
+    // Wait until the agent publishes the effective values matching the new
+    // generation. Adopting the generation too early would let a stale form
+    // pass the conflict check.
+    if (!effectiveChanged) {
+      return;
+    }
+
+    applyBaseline(effective, nextGeneration);
+  }, [applyBaseline, effective, server.metadata.generation]);
 
   const secretIsSet: Record<string, boolean> = {
     "credentials.gamePassword":
@@ -210,19 +268,23 @@ export function SettingsForm({
         spec: sparse,
         credentials:
           Object.keys(credentials).length > 0 ? credentials : undefined,
+        generation: generationRef.current,
       });
       const merged = mergeWithDefaults(defaults, updated.spec);
-      const raw = rawEditorsFrom(merged);
 
-      reset({
-        spec: withFormDefaults(merged),
-        credentials: emptyCredentials(),
-      });
-      setRawEditors(raw);
-      setInitialRaw(raw);
+      applyBaseline(merged, updated.metadata.generation);
       onSaved(updated, merged);
       toast.success("Configuration enregistrée");
     } catch (error) {
+      if (error instanceof ApiError && error.status === 409) {
+        setExternalChange(true);
+        const message =
+          "Conflit : la configuration a changé. Recharge les valeurs à jour.";
+        setSaveError(message);
+        toast.error(message);
+        return;
+      }
+
       const message =
         error instanceof Error ? error.message : "Impossible d'enregistrer";
       setSaveError(message);
@@ -231,12 +293,50 @@ export function SettingsForm({
   }
 
   function handleReset() {
-    const raw = rawEditorsFrom(effective);
-    reset({ spec: withFormDefaults(effective), credentials: emptyCredentials() });
-    setRawEditors(raw);
-    setInitialRaw(raw);
-    setRawError(null);
-    setSaveError(null);
+    const effectiveChanged =
+      JSON.stringify(effective) !== effectiveKeyRef.current;
+
+    // If the agent has not published new effective values yet, keep the
+    // generation that matches the displayed values so a later save still
+    // detects the external spec change.
+    applyBaseline(
+      effective,
+      effectiveChanged ? server.metadata.generation : generationRef.current,
+    );
+  }
+
+  async function handleReload() {
+    if (
+      dirty &&
+      !window.confirm(
+        "Recharger la configuration et perdre tes modifications ?",
+      )
+    ) {
+      return;
+    }
+
+    setReloading(true);
+    try {
+      const result = await onReload();
+      if (result === null) {
+        toast.error("Impossible de recharger la configuration");
+        return;
+      }
+
+      applyBaseline(
+        result.settings.effective,
+        result.server.metadata.generation,
+      );
+      toast.success("Configuration rechargée");
+    } catch (error) {
+      toast.error(
+        error instanceof Error
+          ? error.message
+          : "Impossible de recharger la configuration",
+      );
+    } finally {
+      setReloading(false);
+    }
   }
 
   return (
@@ -245,6 +345,26 @@ export function SettingsForm({
         onSubmit={(event) => void handleSubmit(onSubmit, onInvalid)(event)}
         className="flex flex-col gap-4 pb-24"
       >
+        {externalChange && (
+          <Alert>
+            <AlertDescription className="flex flex-wrap items-center gap-3">
+              <span>
+                La configuration a été modifiée ailleurs. Tes modifications
+                n&apos;ont pas été enregistrées.
+              </span>
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                onClick={() => void handleReload()}
+                disabled={reloading || formState.isSubmitting}
+              >
+                {reloading ? "Rechargement…" : "Recharger les valeurs à jour"}
+              </Button>
+            </AlertDescription>
+          </Alert>
+        )}
+
         <Tabs
           value={tab}
           onValueChange={(value) => setTab(String(value))}
@@ -298,9 +418,13 @@ export function SettingsForm({
                 Opération en cours : enregistrement désactivé.
               </span>
             )}
-            {saveError !== null && (
+            {saveError !== null ? (
               <span className="text-sm text-destructive">{saveError}</span>
-            )}
+            ) : externalChange ? (
+              <span className="text-sm text-destructive">
+                Configuration modifiée ailleurs : recharge les valeurs à jour.
+              </span>
+            ) : null}
             {!formState.isSubmitting &&
               Object.keys(formState.errors).length > 0 && (
                 <span className="text-sm text-destructive">
