@@ -32,8 +32,7 @@ import {
   importSave,
   restoreBackup,
 } from "@/lib/api";
-
-const ACTIVE_PHASES = new Set(["Pending", "Suspending", "Running"]);
+import { ACTIVE_OPERATION_PHASES, operationLabel } from "@/lib/operations";
 
 export function BackupsPanel({
   name,
@@ -80,11 +79,6 @@ export function BackupsPanel({
         previous !== latest.phase &&
         (latest.phase === "Completed" || latest.phase === "Failed")
       ) {
-        if (latest.phase === "Completed") {
-          toast.success("Opération terminée");
-        } else {
-          toast.error(latest.message ?? "Opération échouée");
-        }
         void load();
         onRestoreStarted?.();
       }
@@ -94,7 +88,7 @@ export function BackupsPanel({
   }, [name, load, onRestoreStarted]);
 
   const operationActive =
-    operation !== null && ACTIVE_PHASES.has(operation.phase);
+    operation !== null && ACTIVE_OPERATION_PHASES.has(operation.phase);
 
   useEffect(() => {
     // eslint-disable-next-line react-hooks/set-state-in-effect
@@ -311,23 +305,6 @@ export function BackupsPanel({
       </CardContent>
     </Card>
   );
-}
-
-function operationLabel(operation: ServerOperation): string {
-  const type = operation.type === "Import" ? "Importation" : "Restauration";
-
-  switch (operation.phase) {
-    case "Pending":
-      return `${type} en préparation`;
-    case "Suspending":
-      return `${type} : arrêt du serveur`;
-    case "Running":
-      return `${type} : installation de la save`;
-    case "Completed":
-      return `${type} terminée`;
-    case "Failed":
-      return `${type} échouée`;
-  }
 }
 
 function formatBytes(value: number): string {

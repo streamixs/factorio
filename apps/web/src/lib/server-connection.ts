@@ -14,8 +14,19 @@ export function gamePort(
 }
 
 /**
+ * Formats host:port for copy/paste into Factorio. IPv6 addresses are wrapped
+ * in brackets, as the game expects `[fd00::1]:34197`.
+ */
+export function hostPort(host: string, port: number): string {
+  const formatted =
+    host.includes(":") && !host.startsWith("[") ? `[${host}]` : host;
+  return `${formatted}:${port}`;
+}
+
+/**
  * Returns the address a player should use. LoadBalancer wins, then NodePort on
- * the first node address, then the in-cluster ClusterIP.
+ * the first node address, then the in-cluster ClusterIP. The protocol is not
+ * part of the address: Factorio only accepts `host:port`.
  */
 export function primaryGameAddress(
   connection: ServerConnection | null | undefined,
@@ -30,7 +41,7 @@ export function primaryGameAddress(
   }
 
   if (connection.loadBalancer.length > 0) {
-    return `${connection.loadBalancer[0]}:${port.port}/UDP`;
+    return hostPort(connection.loadBalancer[0], port.port);
   }
 
   if (
@@ -41,14 +52,45 @@ export function primaryGameAddress(
     const nodeAddress =
       connection.nodeAddresses.find((address) => !address.includes(":")) ??
       connection.nodeAddresses[0];
-    return `${nodeAddress}:${port.nodePort}/UDP`;
+    return hostPort(nodeAddress, port.nodePort);
   }
 
   if (connection.clusterIP !== undefined) {
-    return `${connection.clusterIP}:${port.port}/UDP (interne)`;
+    return hostPort(connection.clusterIP, port.port);
   }
 
   return undefined;
+}
+
+/**
+ * True when the displayed address is a ClusterIP, which is only reachable from
+ * inside the cluster.
+ */
+export function gameAddressIsInternal(
+  connection: ServerConnection | null | undefined,
+): boolean {
+  if (connection === null || connection === undefined || !connection.available) {
+    return false;
+  }
+
+  const port = gamePort(connection);
+  if (port === undefined) {
+    return false;
+  }
+
+  if (connection.loadBalancer.length > 0) {
+    return false;
+  }
+
+  if (
+    connection.serviceType === "NodePort" &&
+    port.nodePort !== undefined &&
+    connection.nodeAddresses.length > 0
+  ) {
+    return false;
+  }
+
+  return connection.clusterIP !== undefined;
 }
 
 export function formatCpu(millicores: number): string {
