@@ -1,9 +1,13 @@
 package resources
 
 import (
+	"os"
+	"os/exec"
 	"path"
+	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
@@ -620,7 +624,9 @@ func TestBuildOperationJobRestore(t *testing.T) {
 		t.Errorf("TARGET_SAVE is %q", env["TARGET_SAVE"])
 	}
 	if !strings.Contains(container.Command[2], "pre-restore-") ||
-		!strings.Contains(container.Command[2], `cp "/factorio/saves/$SAVE_FILE"`) {
+		!strings.Contains(container.Command[2], `cp "/factorio/saves/$SAVE_FILE"`) ||
+		!strings.Contains(container.Command[2], "prune_saves") ||
+		!strings.Contains(container.Command[2], `prune_saves "/factorio/saves/pre-restore-*.zip"`) {
 		t.Errorf("restore script is %q", container.Command[2])
 	}
 
@@ -652,8 +658,56 @@ func TestBuildOperationJobImport(t *testing.T) {
 		t.Errorf("IMPORT_URL is %q", env["IMPORT_URL"])
 	}
 	if !strings.Contains(container.Command[2], "wget -q -O") ||
-		!strings.Contains(container.Command[2], "pre-import-") {
+		!strings.Contains(container.Command[2], "pre-import-") ||
+		!strings.Contains(container.Command[2], "prune_saves") ||
+		!strings.Contains(container.Command[2], `prune_saves "/factorio/saves/pre-import-*.zip"`) {
 		t.Errorf("import script is %q", container.Command[2])
+	}
+}
+
+func TestPruneSavesKeepsNewestCopies(t *testing.T) {
+	dir := t.TempDir()
+	names := []string{
+		"pre-restore-20260101T000000Z-_autosave1.zip",
+		"pre-restore-20260102T000000Z-_autosave1.zip",
+		"pre-restore-20260103T000000Z-_autosave1.zip",
+		"pre-restore-20260104T000000Z-_autosave1.zip",
+		"pre-restore-20260105T000000Z-_autosave1.zip",
+	}
+	base := time.Now().Add(-time.Hour)
+	for index, name := range names {
+		file := filepath.Join(dir, name)
+		if err := os.WriteFile(file, []byte("zip"), 0o600); err != nil {
+			t.Fatalf("write %s: %v", name, err)
+		}
+		stamp := base.Add(time.Duration(index) * time.Minute)
+		if err := os.Chtimes(file, stamp, stamp); err != nil {
+			t.Fatalf("set timestamp on %s: %v", name, err)
+		}
+	}
+
+	pattern := filepath.Join(dir, "pre-restore-*.zip")
+	cmd := exec.Command("sh", "-c", operationPruneSaves+"\nprune_saves \"$1\"\n", "sh", pattern)
+	if output, err := cmd.CombinedOutput(); err != nil {
+		t.Fatalf("prune_saves failed: %v: %s", err, output)
+	}
+
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		t.Fatalf("read temp dir: %v", err)
+	}
+	if len(entries) != retainedOperationCopies {
+		t.Fatalf("kept %d copies, want %d", len(entries), retainedOperationCopies)
+	}
+
+	remaining := make(map[string]bool, len(entries))
+	for _, entry := range entries {
+		remaining[entry.Name()] = true
+	}
+	for _, name := range names[len(names)-retainedOperationCopies:] {
+		if !remaining[name] {
+			t.Errorf("newest copy %q was pruned", name)
+		}
 	}
 }
 

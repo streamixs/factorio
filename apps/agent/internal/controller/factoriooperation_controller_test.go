@@ -492,4 +492,190 @@ var _ = Describe("FactorioOperation Controller", func() {
 		}, &server)).To(Succeed())
 		Expect(server.Spec.Suspended).To(BeFalse())
 	})
+
+	It("schedules retention for a terminal operation", func() {
+		operation := &gamesv1alpha1.FactorioOperation{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:       "retained-operation",
+				Namespace:  operationNamespace,
+				Finalizers: []string{operationFinalizer},
+			},
+			Spec: gamesv1alpha1.FactorioOperationSpec{
+				ServerName: operationServerName,
+				Type:       gamesv1alpha1.OperationRestore,
+				SaveFile:   testSaveFile,
+			},
+		}
+		Expect(k8sClient.Create(ctx, operation)).To(Succeed())
+
+		completedAt := metav1.Now()
+		operation.Status = gamesv1alpha1.FactorioOperationStatus{
+			Phase:       gamesv1alpha1.OperationPhaseCompleted,
+			CompletedAt: &completedAt,
+		}
+		Expect(k8sClient.Status().Update(ctx, operation)).To(Succeed())
+
+		key := types.NamespacedName{
+			Namespace: operationNamespace,
+			Name:      operation.Name,
+		}
+		result, err := reconciler.Reconcile(ctx, reconcile.Request{NamespacedName: key})
+		Expect(err).NotTo(HaveOccurred())
+		Expect(result.RequeueAfter).To(BeNumerically(">", 0))
+
+		var current gamesv1alpha1.FactorioOperation
+		Expect(k8sClient.Get(ctx, key, &current)).To(Succeed())
+		Expect(current.DeletionTimestamp.IsZero()).To(BeTrue())
+	})
+
+	It("deletes an expired terminal operation", func() {
+		operation := &gamesv1alpha1.FactorioOperation{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:       "expired-operation",
+				Namespace:  operationNamespace,
+				Finalizers: []string{operationFinalizer},
+			},
+			Spec: gamesv1alpha1.FactorioOperationSpec{
+				ServerName: operationServerName,
+				Type:       gamesv1alpha1.OperationRestore,
+				SaveFile:   testSaveFile,
+			},
+		}
+		Expect(k8sClient.Create(ctx, operation)).To(Succeed())
+
+		completedAt := metav1.NewTime(time.Now().Add(-8 * 24 * time.Hour))
+		operation.Status = gamesv1alpha1.FactorioOperationStatus{
+			Phase:        gamesv1alpha1.OperationPhaseFailed,
+			WasSuspended: true,
+			StartedAt:    &completedAt,
+			CompletedAt:  &completedAt,
+		}
+		Expect(k8sClient.Status().Update(ctx, operation)).To(Succeed())
+
+		key := types.NamespacedName{
+			Namespace: operationNamespace,
+			Name:      operation.Name,
+		}
+		_, err := reconciler.Reconcile(ctx, reconcile.Request{NamespacedName: key})
+		Expect(err).NotTo(HaveOccurred())
+
+		// The operation carries a finalizer, so run the deletion reconcile too.
+		_, err = reconciler.Reconcile(ctx, reconcile.Request{NamespacedName: key})
+		Expect(err).NotTo(HaveOccurred())
+
+		Eventually(func() bool {
+			err := k8sClient.Get(ctx, key, &gamesv1alpha1.FactorioOperation{})
+			return apierrors.IsNotFound(err)
+		}, time.Second*5, time.Millisecond*100).Should(BeTrue())
+	})
+
+	It("does not resume a stopped server when deleting an expired operation", func() {
+		var server gamesv1alpha1.FactorioServer
+		Expect(k8sClient.Get(ctx, types.NamespacedName{
+			Namespace: operationNamespace,
+			Name:      operationServerName,
+		}, &server)).To(Succeed())
+		server.Spec.Suspended = true
+		Expect(k8sClient.Update(ctx, &server)).To(Succeed())
+
+		completedAt := metav1.NewTime(time.Now().Add(-8 * 24 * time.Hour))
+		operation := &gamesv1alpha1.FactorioOperation{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      "expired-delete-operation",
+				Namespace: operationNamespace,
+				Annotations: map[string]string{
+					operationExpiredAnnotation: annotationTrue,
+				},
+				Finalizers: []string{operationFinalizer},
+			},
+			Spec: gamesv1alpha1.FactorioOperationSpec{
+				ServerName: operationServerName,
+				Type:       gamesv1alpha1.OperationRestore,
+				SaveFile:   testSaveFile,
+			},
+		}
+		Expect(k8sClient.Create(ctx, operation)).To(Succeed())
+		operation.Status = gamesv1alpha1.FactorioOperationStatus{
+			Phase:       gamesv1alpha1.OperationPhaseFailed,
+			StartedAt:   &completedAt,
+			CompletedAt: &completedAt,
+		}
+		Expect(k8sClient.Status().Update(ctx, operation)).To(Succeed())
+		Expect(k8sClient.Delete(ctx, operation)).To(Succeed())
+
+		key := types.NamespacedName{
+			Namespace: operationNamespace,
+			Name:      operation.Name,
+		}
+		_, err := reconciler.Reconcile(ctx, reconcile.Request{NamespacedName: key})
+		Expect(err).NotTo(HaveOccurred())
+
+		Expect(k8sClient.Get(ctx, types.NamespacedName{
+			Namespace: operationNamespace,
+			Name:      operationServerName,
+		}, &server)).To(Succeed())
+		Expect(server.Spec.Suspended).To(BeTrue())
+
+		Eventually(func() bool {
+			err := k8sClient.Get(ctx, key, &gamesv1alpha1.FactorioOperation{})
+			return apierrors.IsNotFound(err)
+		}, time.Second*5, time.Millisecond*100).Should(BeTrue())
+	})
+
+	It("does not resume a server stopped after a failed operation", func() {
+		var server gamesv1alpha1.FactorioServer
+		Expect(k8sClient.Get(ctx, types.NamespacedName{
+			Namespace: operationNamespace,
+			Name:      operationServerName,
+		}, &server)).To(Succeed())
+		server.Spec.Suspended = true
+		Expect(k8sClient.Update(ctx, &server)).To(Succeed())
+
+		completedAt := metav1.Now()
+		operation := &gamesv1alpha1.FactorioOperation{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:       "resumed-operation",
+				Namespace:  operationNamespace,
+				Finalizers: []string{operationFinalizer},
+			},
+			Spec: gamesv1alpha1.FactorioOperationSpec{
+				ServerName: operationServerName,
+				Type:       gamesv1alpha1.OperationRestore,
+				SaveFile:   testSaveFile,
+			},
+		}
+		Expect(k8sClient.Create(ctx, operation)).To(Succeed())
+		operation.Status = gamesv1alpha1.FactorioOperationStatus{
+			Phase:       gamesv1alpha1.OperationPhaseFailed,
+			StartedAt:   &completedAt,
+			CompletedAt: &completedAt,
+		}
+		Expect(k8sClient.Status().Update(ctx, operation)).To(Succeed())
+
+		key := types.NamespacedName{
+			Namespace: operationNamespace,
+			Name:      operation.Name,
+		}
+		_, err := reconciler.Reconcile(ctx, reconcile.Request{NamespacedName: key})
+		Expect(err).NotTo(HaveOccurred())
+
+		Expect(k8sClient.Get(ctx, types.NamespacedName{
+			Namespace: operationNamespace,
+			Name:      operationServerName,
+		}, &server)).To(Succeed())
+		Expect(server.Spec.Suspended).To(BeFalse())
+
+		// Simulate the user stopping the server after the operation finished.
+		server.Spec.Suspended = true
+		Expect(k8sClient.Update(ctx, &server)).To(Succeed())
+
+		_, err = reconciler.Reconcile(ctx, reconcile.Request{NamespacedName: key})
+		Expect(err).NotTo(HaveOccurred())
+
+		Expect(k8sClient.Get(ctx, types.NamespacedName{
+			Namespace: operationNamespace,
+			Name:      operationServerName,
+		}, &server)).To(Succeed())
+		Expect(server.Spec.Suspended).To(BeTrue())
+	})
 })

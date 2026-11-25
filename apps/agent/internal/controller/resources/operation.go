@@ -3,6 +3,7 @@ package resources
 import (
 	"crypto/sha256"
 	"encoding/hex"
+	"fmt"
 	"strings"
 
 	batchv1 "k8s.io/api/batch/v1"
@@ -13,26 +14,45 @@ import (
 )
 
 const (
-	operationContainer = "operation"
-	operationImage     = "busybox:1.36"
-	operationUserID    = 845
-	targetSaveName     = "_autosave1.zip"
-	maxJobNameLength   = 63
-	operationDeadline  = int64(900)
+	operationContainer      = "operation"
+	operationImage          = "busybox:1.36"
+	operationUserID         = 845
+	targetSaveName          = "_autosave1.zip"
+	maxJobNameLength        = 63
+	operationDeadline       = int64(900)
+	retainedOperationCopies = 3
 )
 
-const operationRestoreScript = `set -eu
+// operationPruneSaves removes the oldest pre-restore/pre-import copies. The
+// platform save names contain no whitespace, so the unquoted pattern is
+// deliberately expanded as a glob by the shell.
+var operationPruneSaves = fmt.Sprintf(`
+
+prune_saves() {
+  pattern="$1"
+  count=0
+  for file in $(ls -1t $pattern 2>/dev/null || true); do
+    count=$((count + 1))
+    if [ "$count" -gt %d ]; then
+      rm -f "$file"
+    fi
+  done
+}
+`, retainedOperationCopies)
+
+var operationRestoreScript = `set -eu
 mkdir -p /factorio/saves
 if [ -f "/factorio/saves/$TARGET_SAVE" ]; then
   cp -p "/factorio/saves/$TARGET_SAVE" "/factorio/saves/pre-restore-$(date -u +%Y%m%dT%H%M%SZ)-$TARGET_SAVE"
 fi
-if [ "$SAVE_FILE" != "$TARGET_SAVE" ]; then
+` + operationPruneSaves + `if [ "$SAVE_FILE" != "$TARGET_SAVE" ]; then
   cp "/factorio/saves/$SAVE_FILE" "/factorio/saves/$TARGET_SAVE"
 fi
 touch "/factorio/saves/$TARGET_SAVE"
+prune_saves "/factorio/saves/pre-restore-*.zip"
 `
 
-const operationImportScript = `set -eu
+var operationImportScript = `set -eu
 mkdir -p /factorio/saves
 target="/factorio/saves/$TARGET_SAVE"
 tmp="/factorio/saves/.import.tmp.zip"
@@ -43,6 +63,7 @@ fi
 wget -q -O "$tmp" "$IMPORT_URL"
 mv "$tmp" "$target"
 touch "$target"
+` + operationPruneSaves + `prune_saves "/factorio/saves/pre-import-*.zip"
 `
 
 // OperationJobName returns the deterministic name of the Job for an

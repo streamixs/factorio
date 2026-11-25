@@ -42,6 +42,15 @@ const (
 	operationFinalizer = "games.dev.streamixs.com/operation-cleanup"
 	operationTimeout   = 20 * time.Minute
 	operationPoll      = 2 * time.Second
+	// Terminal operations are kept for debugging, then garbage collected.
+	operationRetention = 7 * 24 * time.Hour
+	// operationResumedAnnotation prevents a terminal operation from resuming the
+	// server again if the user stopped it after the operation finished.
+	operationResumedAnnotation = "games.dev.streamixs.com/operation-resumed"
+	// operationExpiredAnnotation lets the finalizer skip resume logic for
+	// operations deleted by the retention policy.
+	operationExpiredAnnotation = "games.dev.streamixs.com/operation-expired"
+	annotationTrue             = "true"
 )
 
 // FactorioOperationReconciler runs restore and import operations on the data
@@ -141,11 +150,11 @@ func (r *FactorioOperationReconciler) Reconcile(
 		// actually started and the user had not stopped the server first.
 		if operation.Status.Phase == gamesv1alpha1.OperationPhaseFailed &&
 			operation.Status.StartedAt != nil {
-			if err := r.resumeIfNeeded(ctx, &operation, &server); err != nil {
+			if err := r.resumeIfNeeded(ctx, &operation, &server, true); err != nil {
 				return ctrl.Result{}, err
 			}
 		}
-		return ctrl.Result{}, nil
+		return r.scheduleRetention(ctx, &operation)
 	default:
 		return r.fail(ctx, &operation,
 			fmt.Sprintf("Unknown operation phase %q", operation.Status.Phase))
@@ -203,7 +212,7 @@ func (r *FactorioOperationReconciler) failConflict(
 
 	r.deleteJob(ctx, operation)
 	r.recordEvent(operation, corev1.EventTypeWarning, "Conflict", message)
-	return ctrl.Result{}, nil
+	return r.scheduleRetention(ctx, operation)
 }
 
 // begin records whether the server was already stopped before suspending it.
@@ -341,7 +350,7 @@ func (r *FactorioOperationReconciler) complete(
 	server *gamesv1alpha1.FactorioServer,
 	message string,
 ) (ctrl.Result, error) {
-	if err := r.resumeIfNeeded(ctx, operation, server); err != nil {
+	if err := r.resumeIfNeeded(ctx, operation, server, false); err != nil {
 		return ctrl.Result{}, err
 	}
 
@@ -355,7 +364,7 @@ func (r *FactorioOperationReconciler) complete(
 	// operation a second time.
 	r.deleteJob(ctx, operation)
 	r.recordEvent(operation, corev1.EventTypeNormal, "Completed", message)
-	return ctrl.Result{}, nil
+	return r.scheduleRetention(ctx, operation)
 }
 
 // fail stops the operation. The server is resumed later, once the Job and its
@@ -379,8 +388,16 @@ func (r *FactorioOperationReconciler) resumeIfNeeded(
 	ctx context.Context,
 	operation *gamesv1alpha1.FactorioOperation,
 	server *gamesv1alpha1.FactorioServer,
+	markResumed bool,
 ) error {
+	if operation.Annotations[operationResumedAnnotation] == annotationTrue {
+		return nil
+	}
+
 	if operation.Status.WasSuspended || !server.Spec.Suspended {
+		if markResumed {
+			return r.markResumed(ctx, operation)
+		}
 		return nil
 	}
 
@@ -391,7 +408,69 @@ func (r *FactorioOperationReconciler) resumeIfNeeded(
 
 	r.recordEvent(operation, corev1.EventTypeNormal, "Resumed",
 		fmt.Sprintf("Restarted FactorioServer %q", server.Name))
+
+	if markResumed {
+		return r.markResumed(ctx, operation)
+	}
 	return nil
+}
+
+// markResumed records that the server side of the operation was handled, so a
+// later retention reconcile cannot restart a server the user stopped manually.
+func (r *FactorioOperationReconciler) markResumed(
+	ctx context.Context,
+	operation *gamesv1alpha1.FactorioOperation,
+) error {
+	if operation.Annotations[operationResumedAnnotation] == annotationTrue {
+		return nil
+	}
+	if operation.Annotations == nil {
+		operation.Annotations = map[string]string{}
+	}
+	operation.Annotations[operationResumedAnnotation] = annotationTrue
+	if err := r.Update(ctx, operation); err != nil {
+		return fmt.Errorf("mark FactorioOperation %q as resumed: %w",
+			operation.Name, err)
+	}
+	return nil
+}
+
+// scheduleRetention keeps terminal operations for a fixed period, then deletes
+// them. The expired annotation tells the finalizer not to run the resume logic.
+func (r *FactorioOperationReconciler) scheduleRetention(
+	ctx context.Context,
+	operation *gamesv1alpha1.FactorioOperation,
+) (ctrl.Result, error) {
+	completedAt := operation.CreationTimestamp.Time
+	if operation.Status.CompletedAt != nil {
+		completedAt = operation.Status.CompletedAt.Time
+	}
+	if completedAt.IsZero() {
+		return ctrl.Result{}, nil
+	}
+
+	expiresAt := completedAt.Add(operationRetention)
+	if now := time.Now(); now.Before(expiresAt) {
+		return ctrl.Result{RequeueAfter: expiresAt.Sub(now)}, nil
+	}
+
+	if operation.Annotations[operationExpiredAnnotation] != annotationTrue {
+		if operation.Annotations == nil {
+			operation.Annotations = map[string]string{}
+		}
+		operation.Annotations[operationExpiredAnnotation] = annotationTrue
+		if err := r.Update(ctx, operation); err != nil {
+			return ctrl.Result{}, fmt.Errorf(
+				"mark FactorioOperation %q expired: %w", operation.Name, err)
+		}
+	}
+
+	if err := r.Delete(ctx, operation); err != nil &&
+		!apierrors.IsNotFound(err) {
+		return ctrl.Result{}, fmt.Errorf(
+			"delete expired FactorioOperation %q: %w", operation.Name, err)
+	}
+	return ctrl.Result{}, nil
 }
 
 func (r *FactorioOperationReconciler) finish(
@@ -494,10 +573,11 @@ func (r *FactorioOperationReconciler) finalize(
 		Name:      operation.Spec.ServerName,
 	}, &server)
 	if err == nil {
-		if operation.Status.StartedAt != nil &&
+		if operation.Annotations[operationExpiredAnnotation] != annotationTrue &&
+			operation.Status.StartedAt != nil &&
 			!operation.Status.WasSuspended && operation.Status.Phase !=
 			gamesv1alpha1.OperationPhaseCompleted {
-			if err := r.resumeIfNeeded(ctx, operation, &server); err != nil {
+			if err := r.resumeIfNeeded(ctx, operation, &server, false); err != nil {
 				return ctrl.Result{}, err
 			}
 		}

@@ -216,7 +216,8 @@ export function BackupsPanel({
             Autosaves écrites par Factorio dans /factorio/saves, ou import
             d&apos;un fichier .zip (1 Go maximum). L&apos;intervalle et le
             nombre de slots se règlent dans l&apos;onglet Sauvegarde
-            automatique.
+            automatique. Les 3 dernières copies de sécurité (avant
+            restauration ou import) sont conservées.
           </p>
         </div>
 
@@ -265,46 +266,64 @@ export function BackupsPanel({
           </p>
         ) : (
           <div className="flex flex-col">
-            {data.backups.map((backup, index) => (
-              <div key={backup.name}>
-                {index > 0 && <Separator />}
-                <div className="flex flex-wrap items-center gap-3 py-3">
-                  <div className="min-w-0 flex-1">
-                    <p className="truncate font-mono text-xs">
-                      {backup.name}
-                    </p>
-                    <p className="text-xs text-muted-foreground">
-                      {formatBytes(backup.size)} ·{" "}
-                      {formatTimestamp(backup.createdAt)}
-                    </p>
+            {data.backups.map((backup, index) => {
+              const label = backupLabel(backup.name);
+              return (
+                <div key={backup.name}>
+                  {index > 0 && <Separator />}
+                  <div className="flex flex-wrap items-center gap-3 py-3">
+                    <div className="min-w-0 flex-1">
+                      <div className="flex flex-wrap items-center gap-2">
+                        <p className="truncate font-mono text-xs">
+                          {backup.name}
+                        </p>
+                        {label !== undefined && (
+                          <Badge variant="secondary">{label}</Badge>
+                        )}
+                      </div>
+                      <p className="text-xs text-muted-foreground">
+                        {formatBytes(backup.size)} ·{" "}
+                        {formatTimestamp(backup.createdAt)}
+                      </p>
+                    </div>
+                    <a
+                      href={backupDownloadUrl(name, backup.name)}
+                      download
+                      className={buttonVariants({
+                        variant: "outline",
+                        size: "sm",
+                      })}
+                    >
+                      Télécharger
+                    </a>
+                    <Button
+                      type="button"
+                      variant="secondary"
+                      size="sm"
+                      onClick={() => void handleRestore(backup)}
+                      disabled={restoring !== null || importing || operationActive}
+                    >
+                      {restoring === backup.name ? "Restauration…" : "Restaurer"}
+                    </Button>
                   </div>
-                  <a
-                    href={backupDownloadUrl(name, backup.name)}
-                    download
-                    className={buttonVariants({
-                      variant: "outline",
-                      size: "sm",
-                    })}
-                  >
-                    Télécharger
-                  </a>
-                  <Button
-                    type="button"
-                    variant="secondary"
-                    size="sm"
-                    onClick={() => void handleRestore(backup)}
-                    disabled={restoring !== null || importing || operationActive}
-                  >
-                    {restoring === backup.name ? "Restauration…" : "Restaurer"}
-                  </Button>
                 </div>
-              </div>
-            ))}
+              );
+            })}
           </div>
         )}
       </CardContent>
     </Card>
   );
+}
+
+function backupLabel(name: string): string | undefined {
+  if (name.startsWith("pre-restore-")) {
+    return "avant restauration";
+  }
+  if (name.startsWith("pre-import-")) {
+    return "avant import";
+  }
+  return undefined;
 }
 
 function formatBytes(value: number): string {
