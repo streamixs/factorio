@@ -89,8 +89,14 @@ export function createServer(
   });
 }
 
-export function deleteServer(name: string): Promise<void> {
-  return request<void>(`/${encodeURIComponent(name)}`, { method: "DELETE" });
+export function deleteServer(
+  name: string,
+  keepStorage = false,
+): Promise<void> {
+  const query = keepStorage ? "?keepStorage=true" : "";
+  return request<void>(`/${encodeURIComponent(name)}${query}`, {
+    method: "DELETE",
+  });
 }
 
 export function startServer(name: string): Promise<FactorioServer> {

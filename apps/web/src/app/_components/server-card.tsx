@@ -8,6 +8,7 @@ import {
   type ServerUsage,
 } from "@factorio/shared";
 import Link from "next/link";
+import { useState } from "react";
 
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -29,6 +30,8 @@ import {
 } from "@/lib/server-connection";
 import { serverStatusBadge } from "@/lib/server-status";
 
+import { DeleteServerConfirmation } from "./delete-server-confirmation";
+
 export interface ServerDetails {
   connection: ServerConnection | null;
   usage: ServerUsage | null;
@@ -46,8 +49,9 @@ export function ServerCard({
   details?: ServerDetails;
   pending: boolean;
   onToggle: (server: FactorioServer) => void;
-  onDelete: (name: string) => void;
+  onDelete: (name: string, keepStorage: boolean) => void;
 }) {
+  const [confirmingDelete, setConfirmingDelete] = useState(false);
   const badge = serverStatusBadge(server);
   const suspended = server.spec.suspended === true;
   const degraded = findCondition(server, "Degraded");
@@ -131,26 +135,39 @@ export function ServerCard({
           </>
         )}
       </CardContent>
-      <CardFooter className="justify-end gap-2">
-        <Button
-          type="button"
-          variant="outline"
-          size="sm"
-          onClick={() => onToggle(server)}
-          disabled={pending || operationActive}
-        >
-          {suspended ? "Démarrer" : "Arrêter"}
-        </Button>
-        <Button
-          type="button"
-          variant="destructive"
-          size="sm"
-          onClick={() => onDelete(server.metadata.name)}
-          disabled={pending || operationActive}
-        >
-          Supprimer
-        </Button>
-      </CardFooter>
+      {confirmingDelete ? (
+        <div className="px-6 pb-6">
+          <DeleteServerConfirmation
+            name={server.metadata.name}
+            pending={pending}
+            onConfirm={(keepStorage) =>
+              onDelete(server.metadata.name, keepStorage)
+            }
+            onCancel={() => setConfirmingDelete(false)}
+          />
+        </div>
+      ) : (
+        <CardFooter className="justify-end gap-2">
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            onClick={() => onToggle(server)}
+            disabled={pending || operationActive}
+          >
+            {suspended ? "Démarrer" : "Arrêter"}
+          </Button>
+          <Button
+            type="button"
+            variant="destructive"
+            size="sm"
+            onClick={() => setConfirmingDelete(true)}
+            disabled={pending || operationActive}
+          >
+            Supprimer
+          </Button>
+        </CardFooter>
+      )}
     </Card>
   );
 }

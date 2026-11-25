@@ -36,6 +36,8 @@ import (
 	factorioresources "github.com/streamixs/factorio/apps/agent/internal/controller/resources"
 )
 
+const testServerVersion = "2.1.24"
+
 func drainEvents(recorder *record.FakeRecorder) []string {
 	var events []string
 	for {
@@ -127,7 +129,7 @@ var _ = Describe("FactorioServer Controller", func() {
 				Namespace: resourceNamespace,
 			},
 			Spec: gamesv1alpha1.FactorioServerSpec{
-				Version: "2.1.24",
+				Version: testServerVersion,
 				Server: &gamesv1alpha1.ServerSettingsSpec{
 					Identity: &gamesv1alpha1.ServerIdentitySpec{
 						Name: new("Test Server"),
@@ -333,6 +335,151 @@ var _ = Describe("FactorioServer Controller", func() {
 		Expect(service.Spec.Ports).To(HaveLen(1))
 		Expect(service.Spec.Ports[0].Protocol).To(Equal(corev1.ProtocolUDP))
 		Expect(service.Spec.Ports[0].Port).To(BeEquivalentTo(34197))
+	})
+
+	It("adopts a data PVC kept from a previous server", func() {
+		const adoptedName = "adopted-server"
+		serverKey := types.NamespacedName{
+			Name:      adoptedName,
+			Namespace: resourceNamespace,
+		}
+		adoptedClaimKey := types.NamespacedName{
+			Name:      adoptedName + "-data",
+			Namespace: resourceNamespace,
+		}
+
+		DeferCleanup(func() {
+			var claim corev1.PersistentVolumeClaim
+			if err := k8sClient.Get(ctx, adoptedClaimKey, &claim); err == nil {
+				claim.Finalizers = nil
+				_ = k8sClient.Update(ctx, &claim)
+				_ = k8sClient.Delete(ctx, &claim)
+			}
+			var server gamesv1alpha1.FactorioServer
+			if err := k8sClient.Get(ctx, serverKey, &server); err == nil {
+				_ = k8sClient.Delete(ctx, &server)
+			}
+		})
+
+		server := &gamesv1alpha1.FactorioServer{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      adoptedName,
+				Namespace: resourceNamespace,
+			},
+			Spec: gamesv1alpha1.FactorioServerSpec{Version: testServerVersion},
+		}
+		Expect(k8sClient.Create(ctx, server)).To(Succeed())
+
+		claim, err := factorioresources.BuildPersistentVolumeClaim(server)
+		Expect(err).NotTo(HaveOccurred())
+		claim.Annotations = map[string]string{
+			factorioresources.KeepPVCAnnotation: "true",
+		}
+		Expect(k8sClient.Create(ctx, claim)).To(Succeed())
+
+		Expect(reconciler.reconcilePersistentVolumeClaim(ctx, server)).To(Succeed())
+
+		var current corev1.PersistentVolumeClaim
+		Expect(k8sClient.Get(ctx, adoptedClaimKey, &current)).To(Succeed())
+		Expect(metav1.IsControlledBy(&current, server)).To(BeTrue())
+		Expect(current.Annotations).NotTo(
+			HaveKey(factorioresources.KeepPVCAnnotation))
+		Expect(drainEvents(recorder)).To(ContainElement(
+			ContainSubstring("Adopted PersistentVolumeClaim")))
+	})
+
+	It("does not adopt a kept PVC while the server is being deleted", func() {
+		const pendingName = "pending-server"
+		serverKey := types.NamespacedName{
+			Name:      pendingName,
+			Namespace: resourceNamespace,
+		}
+		pendingClaimKey := types.NamespacedName{
+			Name:      pendingName + "-data",
+			Namespace: resourceNamespace,
+		}
+
+		DeferCleanup(func() {
+			var claim corev1.PersistentVolumeClaim
+			if err := k8sClient.Get(ctx, pendingClaimKey, &claim); err == nil {
+				claim.Finalizers = nil
+				_ = k8sClient.Update(ctx, &claim)
+				_ = k8sClient.Delete(ctx, &claim)
+			}
+			var server gamesv1alpha1.FactorioServer
+			if err := k8sClient.Get(ctx, serverKey, &server); err == nil {
+				_ = k8sClient.Delete(ctx, &server)
+			}
+		})
+
+		server := &gamesv1alpha1.FactorioServer{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      pendingName,
+				Namespace: resourceNamespace,
+				Annotations: map[string]string{
+					factorioresources.KeepPVCPendingAnnotation: annotationTrue,
+				},
+			},
+			Spec: gamesv1alpha1.FactorioServerSpec{Version: testServerVersion},
+		}
+		Expect(k8sClient.Create(ctx, server)).To(Succeed())
+
+		claim, err := factorioresources.BuildPersistentVolumeClaim(server)
+		Expect(err).NotTo(HaveOccurred())
+		claim.Annotations = map[string]string{
+			factorioresources.KeepPVCAnnotation: annotationTrue,
+		}
+		Expect(k8sClient.Create(ctx, claim)).To(Succeed())
+
+		Expect(reconciler.reconcilePersistentVolumeClaim(ctx, server)).To(Succeed())
+
+		var current corev1.PersistentVolumeClaim
+		Expect(k8sClient.Get(ctx, pendingClaimKey, &current)).To(Succeed())
+		Expect(metav1.IsControlledBy(&current, server)).To(BeFalse())
+		Expect(current.Annotations).To(
+			HaveKey(factorioresources.KeepPVCAnnotation))
+	})
+
+	It("refuses to adopt a data PVC without the keep annotation", func() {
+		const foreignName = "foreign-server"
+		serverKey := types.NamespacedName{
+			Name:      foreignName,
+			Namespace: resourceNamespace,
+		}
+		foreignClaimKey := types.NamespacedName{
+			Name:      foreignName + "-data",
+			Namespace: resourceNamespace,
+		}
+
+		DeferCleanup(func() {
+			var claim corev1.PersistentVolumeClaim
+			if err := k8sClient.Get(ctx, foreignClaimKey, &claim); err == nil {
+				claim.Finalizers = nil
+				_ = k8sClient.Update(ctx, &claim)
+				_ = k8sClient.Delete(ctx, &claim)
+			}
+			var server gamesv1alpha1.FactorioServer
+			if err := k8sClient.Get(ctx, serverKey, &server); err == nil {
+				_ = k8sClient.Delete(ctx, &server)
+			}
+		})
+
+		server := &gamesv1alpha1.FactorioServer{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      foreignName,
+				Namespace: resourceNamespace,
+			},
+			Spec: gamesv1alpha1.FactorioServerSpec{Version: testServerVersion},
+		}
+		Expect(k8sClient.Create(ctx, server)).To(Succeed())
+
+		claim, err := factorioresources.BuildPersistentVolumeClaim(server)
+		Expect(err).NotTo(HaveOccurred())
+		Expect(k8sClient.Create(ctx, claim)).To(Succeed())
+
+		err = reconciler.reconcilePersistentVolumeClaim(ctx, server)
+		Expect(err).To(MatchError(ContainSubstring(
+			"already exists and is not owned by")))
 	})
 
 	It("does not update an up-to-date Deployment", func() {

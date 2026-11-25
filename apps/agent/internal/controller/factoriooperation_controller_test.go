@@ -57,7 +57,7 @@ var _ = Describe("FactorioOperation Controller", func() {
 				Name:      operationServerName,
 				Namespace: operationNamespace,
 			},
-			Spec: gamesv1alpha1.FactorioServerSpec{Version: "2.1.24"},
+			Spec: gamesv1alpha1.FactorioServerSpec{Version: testServerVersion},
 		}
 		Expect(k8sClient.Create(ctx, server)).To(Succeed())
 	})

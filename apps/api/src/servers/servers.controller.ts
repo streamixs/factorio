@@ -202,7 +202,10 @@ export class ServersController {
 
   @Delete(':name')
   @HttpCode(HttpStatus.NO_CONTENT)
-  async remove(@Param('name') name: string): Promise<void> {
-    await this.servers.remove(name);
+  async remove(
+    @Param('name') name: string,
+    @Query('keepStorage') keepStorage?: string,
+  ): Promise<void> {
+    await this.servers.remove(name, { keepStorage: keepStorage === 'true' });
   }
 }

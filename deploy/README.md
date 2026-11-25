@@ -68,6 +68,7 @@ The Role in the target namespace allows:
 
 - `factorioservers` CRUD
 - `factoriooperations` create/list/watch (durable restore/import)
+- `persistentvolumeclaims` get/update/patch (detach the data volume when deleting with `keepStorage`)
 - `secrets` get/create/update/delete (managed credentials and RCON)
 - `configmaps` get (effective settings)
 - `customresourcedefinitions` get cluster-wide (settings form schema)
@@ -103,6 +104,15 @@ restart while the operation Job is running.
 - Terminal `FactorioOperation` resources are kept for 7 days for diagnostics,
   then deleted by the agent. Their Jobs are deleted as soon as they finish.
 - Factorio autosaves are capped by `server.autoSave.slots` in the settings.
+
+Deleting a server with “Conserver les données” detaches its PVC and marks it
+with `games.dev.streamixs.com/keep-pvc: "true"`. The agent adopts the claim when
+a server with the same name is created again. A kept volume that is never
+reused can be removed manually:
+
+```sh
+kubectl -n default delete pvc <name>-data
+```
 
 ## Secrets
 
