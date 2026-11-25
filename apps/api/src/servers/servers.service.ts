@@ -11,6 +11,7 @@ import {
 import { ApiException } from '@kubernetes/client-node';
 import type {
   CoreV1Event,
+  V1PersistentVolumeClaim,
   V1Pod,
   V1Secret,
   V1Service,
@@ -86,6 +87,10 @@ const CREDENTIAL_KEYS = {
   password: 'password',
   token: 'token',
 } as const;
+
+const DATA_PVC_SUFFIX = '-data';
+const KEEP_PVC_ANNOTATION = 'games.dev.streamixs.com/keep-pvc';
+const KEEP_PVC_PENDING_ANNOTATION = 'games.dev.streamixs.com/keep-pvc-pending';
 
 const SAVES_HTTP_PORT = 8080;
 const BACKUP_FILE_PATTERN = /^[A-Za-z0-9_][A-Za-z0-9._-]*\.zip$/;
@@ -272,9 +277,24 @@ export class ServersService {
     );
   }
 
-  async remove(name: string): Promise<void> {
+  async remove(
+    name: string,
+    options: { keepStorage?: boolean } = {},
+  ): Promise<void> {
     this.assertName(name);
     await this.assertNoActiveOperation(name);
+
+    const server = await this.get(name);
+
+    if (options.keepStorage === true) {
+      const annotated = await this.annotateServerForKeptPVC(server);
+      try {
+        await this.markPersistentVolumeClaimForRetention(annotated);
+      } catch (error) {
+        await this.clearKeepPVCPendingAnnotation(annotated);
+        throw error;
+      }
+    }
 
     await this.call(() =>
       this.kubernetes.customObjects.deleteNamespacedCustomObject({
@@ -284,6 +304,116 @@ export class ServersService {
         plural: PLURAL,
         name,
         propagationPolicy: 'Background',
+      }),
+    );
+  }
+
+  /**
+   * Marks the server before detaching its PVC. The agent must not adopt the
+   * kept claim while the server still exists, otherwise the claim is owned by
+   * the server again when the API deletes it and is garbage collected.
+   */
+  private async annotateServerForKeptPVC(
+    server: FactorioServer,
+  ): Promise<FactorioServer> {
+    const annotated = structuredClone(server);
+    annotated.metadata = {
+      ...annotated.metadata,
+      annotations: {
+        ...annotated.metadata?.annotations,
+        [KEEP_PVC_PENDING_ANNOTATION]: 'true',
+      },
+    };
+    return this.replace(annotated, annotated.spec);
+  }
+
+  private async clearKeepPVCPendingAnnotation(
+    server: FactorioServer,
+  ): Promise<void> {
+    const cleared = structuredClone(server);
+    const annotations = { ...cleared.metadata?.annotations };
+    delete annotations[KEEP_PVC_PENDING_ANNOTATION];
+    cleared.metadata = {
+      ...cleared.metadata,
+      annotations,
+    };
+
+    try {
+      await this.replace(cleared, cleared.spec);
+    } catch {
+      // Best effort. The delete already failed; a retry will keep the claim.
+    }
+  }
+
+  /**
+   * Detaches the data PVC from the FactorioServer before deleting the custom
+   * resource. The agent adopts it when a server with the same name is created
+   * again. If the update fails, the caller aborts the deletion: keeping a
+   * server is safer than silently losing its data.
+   */
+  private async markPersistentVolumeClaimForRetention(
+    server: FactorioServer,
+  ): Promise<void> {
+    const pvcName = `${server.metadata.name}${DATA_PVC_SUFFIX}`;
+
+    let pvc: V1PersistentVolumeClaim;
+    try {
+      pvc = await this.kubernetes.core.readNamespacedPersistentVolumeClaim({
+        name: pvcName,
+        namespace: this.kubernetes.namespace,
+      });
+    } catch (error) {
+      if (error instanceof ApiException && error.code === 404) {
+        return;
+      }
+      throw error;
+    }
+
+    const ownerReferences = (pvc.metadata?.ownerReferences ?? []).filter(
+      (reference) =>
+        !(
+          reference.kind === 'FactorioServer' &&
+          (reference.uid === server.metadata.uid ||
+            reference.name === server.metadata.name)
+        ),
+    );
+
+    // The Kubernetes client sends application/json-patch+json by default. Test
+    // the resourceVersion so a concurrent change aborts the deletion, then
+    // replace the ownerReferences array and add the keep annotation.
+    const patch: Array<{
+      op: string;
+      path: string;
+      value: unknown;
+    }> = [];
+    if (pvc.metadata?.resourceVersion !== undefined) {
+      patch.push({
+        op: 'test',
+        path: '/metadata/resourceVersion',
+        value: pvc.metadata.resourceVersion,
+      });
+    }
+    patch.push(
+      {
+        op: 'add',
+        path: '/metadata/annotations',
+        value: {
+          ...pvc.metadata?.annotations,
+          [KEEP_PVC_ANNOTATION]: 'true',
+        },
+      },
+      {
+        op: 'add',
+        path: '/metadata/ownerReferences',
+        value: ownerReferences,
+      },
+    );
+
+    await this.call(() =>
+      this.kubernetes.core.patchNamespacedPersistentVolumeClaim({
+        name: pvcName,
+        namespace: this.kubernetes.namespace,
+        body: patch,
       }),
     );
   }

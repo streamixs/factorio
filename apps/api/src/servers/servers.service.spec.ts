@@ -38,6 +38,8 @@ describe('ServersService', () => {
   const listNamespacedEvent = vi.fn();
   const readNamespacedConfigMap = vi.fn();
   const readNamespacedService = vi.fn();
+  const readNamespacedPersistentVolumeClaim = vi.fn();
+  const patchNamespacedPersistentVolumeClaim = vi.fn();
   const listNode = vi.fn();
   const createNamespacedJob = vi.fn();
   const readNamespacedJob = vi.fn();
@@ -76,6 +78,8 @@ describe('ServersService', () => {
               listNamespacedEvent,
               readNamespacedConfigMap,
               readNamespacedService,
+              readNamespacedPersistentVolumeClaim,
+              patchNamespacedPersistentVolumeClaim,
               listNode,
             },
             batch: {
@@ -1466,6 +1470,12 @@ describe('ServersService', () => {
   });
 
   it('deletes with background propagation', async () => {
+    getNamespacedCustomObject.mockResolvedValue({
+      apiVersion: 'games.dev.streamixs.com/v1alpha1',
+      kind: 'FactorioServer',
+      metadata: { name: 'my-server', namespace: 'games', uid: 'uid-1' },
+      spec: { version: '2.1.24' },
+    });
     listNamespacedCustomObject.mockResolvedValue({ items: [] });
     deleteNamespacedCustomObject.mockResolvedValue(undefined);
 
@@ -1477,6 +1487,155 @@ describe('ServersService', () => {
         name: 'my-server',
         propagationPolicy: 'Background',
       }),
+    );
+    expect(readNamespacedPersistentVolumeClaim).not.toHaveBeenCalled();
+    expect(patchNamespacedPersistentVolumeClaim).not.toHaveBeenCalled();
+  });
+
+  it('keeps the data PVC when requested', async () => {
+    getNamespacedCustomObject.mockResolvedValue({
+      apiVersion: 'games.dev.streamixs.com/v1alpha1',
+      kind: 'FactorioServer',
+      metadata: { name: 'my-server', namespace: 'games', uid: 'uid-1' },
+      spec: { version: '2.1.24' },
+    });
+    listNamespacedCustomObject.mockResolvedValue({ items: [] });
+    readNamespacedPersistentVolumeClaim.mockResolvedValue({
+      metadata: {
+        name: 'my-server-data',
+        namespace: 'games',
+        resourceVersion: '42',
+        annotations: { existing: 'value' },
+        ownerReferences: [
+          {
+            apiVersion: 'games.dev.streamixs.com/v1alpha1',
+            kind: 'FactorioServer',
+            name: 'my-server',
+            uid: 'uid-1',
+          },
+          {
+            apiVersion: 'v1',
+            kind: 'ConfigMap',
+            name: 'other',
+            uid: 'uid-2',
+          },
+        ],
+      },
+      spec: {},
+    });
+    patchNamespacedPersistentVolumeClaim.mockResolvedValue({});
+    replaceNamespacedCustomObject.mockImplementation(
+      (request: { body: FactorioServer }) => Promise.resolve(request.body),
+    );
+    deleteNamespacedCustomObject.mockResolvedValue(undefined);
+
+    await service.remove('my-server', { keepStorage: true });
+
+    expect(replaceNamespacedCustomObject).toHaveBeenCalledWith(
+      expect.objectContaining({
+        body: expect.objectContaining({
+          metadata: expect.objectContaining({
+            annotations: expect.objectContaining({
+              'games.dev.streamixs.com/keep-pvc-pending': 'true',
+            }),
+          }),
+        }),
+      }),
+    );
+    expect(replaceNamespacedCustomObject.mock.invocationCallOrder[0]).toBeLessThan(
+      patchNamespacedPersistentVolumeClaim.mock.invocationCallOrder[0],
+    );
+    expect(patchNamespacedPersistentVolumeClaim).toHaveBeenCalledWith({
+      name: 'my-server-data',
+      namespace: 'games',
+      body: [
+        {
+          op: 'test',
+          path: '/metadata/resourceVersion',
+          value: '42',
+        },
+        {
+          op: 'add',
+          path: '/metadata/annotations',
+          value: {
+            existing: 'value',
+            'games.dev.streamixs.com/keep-pvc': 'true',
+          },
+        },
+        {
+          op: 'add',
+          path: '/metadata/ownerReferences',
+          value: [
+            expect.objectContaining({ kind: 'ConfigMap', uid: 'uid-2' }),
+          ],
+        },
+      ],
+    });
+    expect(deleteNamespacedCustomObject).toHaveBeenCalled();
+  });
+
+  it('deletes the server when the data PVC is already gone', async () => {
+    getNamespacedCustomObject.mockResolvedValue({
+      apiVersion: 'games.dev.streamixs.com/v1alpha1',
+      kind: 'FactorioServer',
+      metadata: { name: 'my-server', namespace: 'games', uid: 'uid-1' },
+      spec: { version: '2.1.24' },
+    });
+    listNamespacedCustomObject.mockResolvedValue({ items: [] });
+    readNamespacedPersistentVolumeClaim.mockRejectedValue(
+      new ApiException(404, 'Not Found', undefined, {}),
+    );
+    replaceNamespacedCustomObject.mockImplementation(
+      (request: { body: FactorioServer }) => Promise.resolve(request.body),
+    );
+    deleteNamespacedCustomObject.mockResolvedValue(undefined);
+
+    await service.remove('my-server', { keepStorage: true });
+
+    expect(deleteNamespacedCustomObject).toHaveBeenCalled();
+  });
+
+  it('aborts the deletion when the data PVC cannot be kept', async () => {
+    getNamespacedCustomObject.mockResolvedValue({
+      apiVersion: 'games.dev.streamixs.com/v1alpha1',
+      kind: 'FactorioServer',
+      metadata: { name: 'my-server', namespace: 'games', uid: 'uid-1' },
+      spec: { version: '2.1.24' },
+    });
+    listNamespacedCustomObject.mockResolvedValue({ items: [] });
+    readNamespacedPersistentVolumeClaim.mockResolvedValue({
+      metadata: {
+        name: 'my-server-data',
+        namespace: 'games',
+        resourceVersion: '42',
+        ownerReferences: [
+          {
+            apiVersion: 'games.dev.streamixs.com/v1alpha1',
+            kind: 'FactorioServer',
+            name: 'my-server',
+            uid: 'uid-1',
+          },
+        ],
+      },
+      spec: {},
+    });
+    patchNamespacedPersistentVolumeClaim.mockRejectedValue(
+      new ApiException(409, 'Conflict', undefined, {}),
+    );
+    replaceNamespacedCustomObject.mockImplementation(
+      (request: { body: FactorioServer }) => Promise.resolve(request.body),
+    );
+
+    await expect(
+      service.remove('my-server', { keepStorage: true }),
+    ).rejects.toBeInstanceOf(ConflictException);
+
+    expect(deleteNamespacedCustomObject).not.toHaveBeenCalled();
+    const cleared = replaceNamespacedCustomObject.mock.calls[1][0] as {
+      body: FactorioServer;
+    };
+    expect(cleared.body.metadata.annotations).not.toHaveProperty(
+      'games.dev.streamixs.com/keep-pvc-pending',
     );
   });
 });

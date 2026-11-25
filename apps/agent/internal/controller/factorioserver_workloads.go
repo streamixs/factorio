@@ -129,6 +129,26 @@ func (r *FactorioServerReconciler) reconcilePersistentVolumeClaim(
 	}
 
 	if !metav1.IsControlledBy(&existing, server) {
+		if server.Annotations[factorioresources.KeepPVCPendingAnnotation] == annotationTrue {
+			return nil
+		}
+
+		if existing.Annotations[factorioresources.KeepPVCAnnotation] == annotationTrue {
+			if err := controllerutil.SetControllerReference(server, &existing,
+				r.Scheme); err != nil {
+				return fmt.Errorf("adopt persistentvolumeclaim %q: %w",
+					existing.Name, err)
+			}
+			delete(existing.Annotations, factorioresources.KeepPVCAnnotation)
+			if err := r.Update(ctx, &existing); err != nil {
+				return fmt.Errorf("update adopted persistentvolumeclaim %q: %w",
+					existing.Name, err)
+			}
+			r.recordEvent(server, corev1.EventTypeNormal, "Adopted",
+				fmt.Sprintf("Adopted PersistentVolumeClaim %q", existing.Name))
+			return nil
+		}
+
 		return fmt.Errorf(
 			"persistentvolumeclaim %q already exists and is not owned by "+
 				"FactorioServer %q", existing.Name, server.Name)

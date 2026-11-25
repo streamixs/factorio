@@ -41,6 +41,7 @@ import { activeOperation, operationLabel } from "@/lib/operations";
 import { serverStatusBadge } from "@/lib/server-status";
 import type { SettingsSchema } from "@/lib/settings-schema";
 
+import { DeleteServerConfirmation } from "../../_components/delete-server-confirmation";
 import { BackupsPanel } from "./backups";
 import { ConnectionPanel } from "./connection";
 import { ConsolePanel } from "./console";
@@ -90,6 +91,7 @@ function ServerDetail() {
   const [loading, setLoading] = useState(true);
   const [pending, setPending] = useState(false);
   const [view, setView] = useState<string>("config");
+  const [deleteOpen, setDeleteOpen] = useState(false);
   const previousActiveOperation = useRef<ServerOperation | null>(null);
 
   const load = useCallback(async () => {
@@ -244,21 +246,17 @@ function ServerDetail() {
     }
   }
 
-  async function handleDelete() {
-    if (
-      !window.confirm(
-        `Supprimer ${name} ? Son volume persistant sera supprimé avec lui.`,
-      )
-    ) {
-      return;
-    }
-
+  async function handleDelete(keepStorage: boolean) {
     setPending(true);
     setError(null);
 
     try {
-      await deleteServer(name);
-      toast.success("Serveur supprimé");
+      await deleteServer(name, keepStorage);
+      toast.success(
+        keepStorage
+          ? "Serveur supprimé, données conservées"
+          : "Serveur et données supprimés",
+      );
       router.push("/");
     } catch (err) {
       const message =
@@ -346,13 +344,22 @@ function ServerDetail() {
             type="button"
             variant="destructive"
             size="sm"
-            onClick={() => void handleDelete()}
+            onClick={() => setDeleteOpen(true)}
             disabled={pending || operationActive}
           >
             Supprimer
           </Button>
         </div>
       </header>
+
+      {deleteOpen && (
+        <DeleteServerConfirmation
+          name={name}
+          pending={pending}
+          onConfirm={(keepStorage) => void handleDelete(keepStorage)}
+          onCancel={() => setDeleteOpen(false)}
+        />
+      )}
 
       {error !== null && (
         <Alert variant="destructive">

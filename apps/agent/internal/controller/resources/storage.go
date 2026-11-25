@@ -12,6 +12,16 @@ import (
 
 const defaultStorageSize = "10Gi"
 
+// KeepPVCAnnotation marks a claim intentionally detached from a deleted
+// FactorioServer. The controller adopts it when a server with the same name is
+// created again.
+const KeepPVCAnnotation = "games.dev.streamixs.com/keep-pvc"
+
+// KeepPVCPendingAnnotation is set on the FactorioServer while the API detaches
+// its claim before deletion. The controller must not adopt the claim during
+// that window.
+const KeepPVCPendingAnnotation = "games.dev.streamixs.com/keep-pvc-pending"
+
 // PersistentVolumeClaimName returns the name of the claim holding the server
 // data.
 func PersistentVolumeClaimName(server *gamesv1alpha1.FactorioServer) string {

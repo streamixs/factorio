@@ -124,20 +124,12 @@ export default function Home() {
     }
   }
 
-  async function handleDelete(serverName: string) {
-    if (
-      !window.confirm(
-        `Supprimer ${serverName} ? Son volume persistant sera supprimé avec lui.`,
-      )
-    ) {
-      return;
-    }
-
+  async function handleDelete(serverName: string, keepStorage: boolean) {
     setPending(serverName);
     setError(null);
 
     try {
-      await deleteServer(serverName);
+      await deleteServer(serverName, keepStorage);
       await refresh();
       toast.success("Serveur supprimé");
     } catch (err) {
@@ -197,7 +189,9 @@ export default function Home() {
                   details={details[server.metadata.name]}
                   pending={pending === server.metadata.name}
                   onToggle={(value) => void handleToggle(value)}
-                  onDelete={(name) => void handleDelete(name)}
+                  onDelete={(name, keepStorage) =>
+                    void handleDelete(name, keepStorage)
+                  }
                 />
               ))}
             </div>
