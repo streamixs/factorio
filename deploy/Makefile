@@ -33,6 +33,7 @@ deploy: check-auth-secret
 	kubectl apply -k .
 	kubectl -n factorio-system set image deployment/factorio-api api=$(API_IMG)
 	kubectl -n factorio-system set image deployment/factorio-web web=$(WEB_IMG)
+	kubectl -n factorio-system rollout restart deployment/factorio-api deployment/factorio-web
 	kubectl -n factorio-system rollout status deployment/factorio-api --timeout=180s
 	kubectl -n factorio-system rollout status deployment/factorio-web --timeout=180s
 
