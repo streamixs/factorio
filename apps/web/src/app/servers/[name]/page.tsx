@@ -4,10 +4,12 @@ import {
   findCondition,
   type EffectiveSettings,
   type FactorioServer,
+  type ServerOperation,
 } from "@factorio/shared";
 import {
   ArrowLeft,
   Bell,
+  Loader2,
   Network,
   Save,
   ScrollText,
@@ -16,7 +18,7 @@ import {
 } from "lucide-react";
 import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
-import { Suspense, useCallback, useEffect, useState } from "react";
+import { Suspense, useCallback, useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
 
 import { Alert, AlertDescription } from "@/components/ui/alert";
@@ -28,12 +30,14 @@ import {
   deleteServer,
   getEffectiveSettings,
   getServer,
+  getServerOperations,
   getSettingsSchema,
   getStorageClasses,
   getVersions,
   startServer,
   stopServer,
 } from "@/lib/api";
+import { activeOperation, operationLabel } from "@/lib/operations";
 import { serverStatusBadge } from "@/lib/server-status";
 import type { SettingsSchema } from "@/lib/settings-schema";
 
@@ -77,6 +81,7 @@ function ServerDetail() {
 
   const [server, setServer] = useState<FactorioServer | null>(null);
   const [settings, setSettings] = useState<EffectiveSettings | null>(null);
+  const [operation, setOperation] = useState<ServerOperation | null>(null);
   const [schema, setSchema] = useState<SettingsSchema | null>(null);
   const [versions, setVersions] = useState<string[]>([]);
   const [storageClasses, setStorageClasses] = useState<string[]>([]);
@@ -85,6 +90,7 @@ function ServerDetail() {
   const [loading, setLoading] = useState(true);
   const [pending, setPending] = useState(false);
   const [view, setView] = useState<string>("config");
+  const previousActiveOperation = useRef<ServerOperation | null>(null);
 
   const load = useCallback(async () => {
     if (name === "") {
@@ -119,6 +125,35 @@ function ServerDetail() {
       setLoading(false);
     }
   }, [name]);
+
+  const loadOperations = useCallback(async () => {
+    try {
+      const operations = await getServerOperations(name);
+      const current = activeOperation(operations) ?? null;
+      const previous = previousActiveOperation.current;
+      previousActiveOperation.current = current;
+      setOperation(current);
+
+      if (previous !== null && current === null) {
+        const latest = operations[0];
+        if (latest?.phase === "Failed") {
+          toast.error(latest.message ?? "Opération échouée");
+        } else {
+          toast.success("Opération terminée");
+        }
+        await load();
+      }
+    } catch {
+      // Operation polling must not hide the server load errors.
+    }
+  }, [name, load]);
+
+  const handleOperationStarted = useCallback(() => {
+    void loadOperations();
+    window.setTimeout(() => {
+      void load();
+    }, 15000);
+  }, [loadOperations, load]);
 
   useEffect(() => {
     let active = true;
@@ -170,6 +205,17 @@ function ServerDetail() {
 
     return () => clearInterval(interval);
   }, [load]);
+
+  useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    void loadOperations();
+
+    const interval = setInterval(() => {
+      void loadOperations();
+    }, 5000);
+
+    return () => clearInterval(interval);
+  }, [loadOperations]);
 
   async function handleToggle() {
     if (server === null) {
@@ -246,6 +292,7 @@ function ServerDetail() {
 
   const badge = serverStatusBadge(server);
   const suspended = server.spec.suspended === true;
+  const operationActive = operation !== null;
   const degraded = findCondition(server, "Degraded");
   const displayName =
     server.spec.server?.identity?.name ?? server.metadata.name;
@@ -289,7 +336,7 @@ function ServerDetail() {
             variant={suspended ? "default" : "secondary"}
             size="sm"
             onClick={() => void handleToggle()}
-            disabled={pending}
+            disabled={pending || operationActive}
           >
             {pending ? "…" : suspended ? "Démarrer" : "Arrêter"}
           </Button>
@@ -298,7 +345,7 @@ function ServerDetail() {
             variant="destructive"
             size="sm"
             onClick={() => void handleDelete()}
-            disabled={pending}
+            disabled={pending || operationActive}
           >
             Supprimer
           </Button>
@@ -314,6 +361,24 @@ function ServerDetail() {
       {warning !== null && (
         <Alert>
           <AlertDescription>{warning}</AlertDescription>
+        </Alert>
+      )}
+
+      {operation !== null && (
+        <Alert>
+          <AlertDescription className="flex flex-wrap items-center gap-2">
+            <Loader2 className="size-4 animate-spin" aria-hidden />
+            <span>{operationLabel(operation)}</span>
+            {operation.message !== undefined && (
+              <span className="text-muted-foreground">
+                — {operation.message}
+              </span>
+            )}
+            <span className="text-muted-foreground">
+              Les actions sont désactivées jusqu&apos;à la fin de
+              l&apos;opération.
+            </span>
+          </AlertDescription>
         </Alert>
       )}
 
@@ -356,6 +421,7 @@ function ServerDetail() {
               schema={schema}
               versions={versions}
               storageClasses={storageClasses}
+              operationActive={operationActive}
               onSaved={(updated, merged) => {
                 setServer(updated);
                 setSettings({
@@ -388,11 +454,7 @@ function ServerDetail() {
           <TabsContent value="backups" className="mt-0">
             <BackupsPanel
               name={server.metadata.name}
-              onRestoreStarted={() => {
-                window.setTimeout(() => {
-                  void load();
-                }, 15000);
-              }}
+              onRestoreStarted={handleOperationStarted}
             />
           </TabsContent>
         </div>

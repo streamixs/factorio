@@ -45,6 +45,7 @@ export function SettingsForm({
   schema,
   versions,
   storageClasses,
+  operationActive,
   onSaved,
 }: {
   server: FactorioServer;
@@ -53,6 +54,7 @@ export function SettingsForm({
   schema: SettingsSchema | null;
   versions: string[];
   storageClasses: string[];
+  operationActive: boolean;
   onSaved: (server: FactorioServer, effective: FactorioServerSpec) => void;
 }) {
   const allowedVersions = useMemo(() => {
@@ -127,6 +129,13 @@ export function SettingsForm({
 
   async function onSubmit(values: FormValues) {
     setSaveError(null);
+
+    if (operationActive) {
+      setSaveError(
+        "Une opération est en cours. Attends qu'elle se termine avant d'enregistrer.",
+      );
+      return;
+    }
 
     let serverRaw: Record<string, unknown> | undefined;
     let mapGenRaw: Record<string, unknown> | undefined;
@@ -270,17 +279,25 @@ export function SettingsForm({
 
         {showActions && (
           <div className="sticky bottom-4 z-10 flex flex-wrap items-center gap-3 rounded-xl border bg-background/95 p-3 shadow-lg backdrop-blur">
-            <Button type="submit" disabled={!dirty || formState.isSubmitting}>
+            <Button
+              type="submit"
+              disabled={!dirty || formState.isSubmitting || operationActive}
+            >
               {formState.isSubmitting ? "Enregistrement…" : "Enregistrer"}
             </Button>
             <Button
               type="button"
               variant="outline"
               onClick={handleReset}
-              disabled={!dirty || formState.isSubmitting}
+              disabled={!dirty || formState.isSubmitting || operationActive}
             >
               Annuler
             </Button>
+            {operationActive && (
+              <span className="text-sm text-muted-foreground">
+                Opération en cours : enregistrement désactivé.
+              </span>
+            )}
             {saveError !== null && (
               <span className="text-sm text-destructive">{saveError}</span>
             )}

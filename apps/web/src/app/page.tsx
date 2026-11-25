@@ -12,11 +12,13 @@ import { Skeleton } from "@/components/ui/skeleton";
 import {
   deleteServer,
   getServerConnection,
+  getServerOperations,
   getServerUsage,
   listServers,
   startServer,
   stopServer,
 } from "@/lib/api";
+import { activeOperation } from "@/lib/operations";
 
 import { CreateServerForm } from "./_components/create-server-form";
 import { ServerCard, type ServerDetails } from "./_components/server-card";
@@ -37,11 +39,15 @@ export default function Home() {
 
       const entries = await Promise.all(
         list.map(async (server) => {
-          const [connection, usage] = await Promise.all([
+          const [connection, usage, operations] = await Promise.all([
             getServerConnection(server.metadata.name).catch(() => null),
             getServerUsage(server.metadata.name).catch(() => null),
+            getServerOperations(server.metadata.name).catch(() => []),
           ]);
-          return [server.metadata.name, { connection, usage }] as const;
+          return [
+            server.metadata.name,
+            { connection, usage, operation: activeOperation(operations) },
+          ] as const;
         }),
       );
       setDetails(Object.fromEntries(entries));

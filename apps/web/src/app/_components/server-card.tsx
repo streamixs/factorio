@@ -4,6 +4,7 @@ import {
   findCondition,
   type FactorioServer,
   type ServerConnection,
+  type ServerOperation,
   type ServerUsage,
 } from "@factorio/shared";
 import Link from "next/link";
@@ -19,16 +20,19 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import { Separator } from "@/components/ui/separator";
-import { serverStatusBadge } from "@/lib/server-status";
+import { operationLabel } from "@/lib/operations";
 import {
   formatBytes,
   formatCpu,
+  gameAddressIsInternal,
   primaryGameAddress,
 } from "@/lib/server-connection";
+import { serverStatusBadge } from "@/lib/server-status";
 
 export interface ServerDetails {
   connection: ServerConnection | null;
   usage: ServerUsage | null;
+  operation?: ServerOperation;
 }
 
 export function ServerCard({
@@ -53,6 +57,9 @@ export function ServerCard({
   const display =
     server.spec.server?.identity?.name ?? server.metadata.name;
   const address = primaryGameAddress(details?.connection);
+  const internal = gameAddressIsInternal(details?.connection);
+  const operation = details?.operation;
+  const operationActive = operation !== undefined;
   const usage = details?.usage;
   const usageText = suspended
     ? "Arrêté"
@@ -77,9 +84,16 @@ export function ServerCard({
               {display} · v{server.spec.version ?? "unknown"}
             </CardDescription>
           </div>
-          <Badge variant="outline" className={badge.className}>
-            {badge.label}
-          </Badge>
+          <div className="flex flex-col items-end gap-1">
+            <Badge variant="outline" className={badge.className}>
+              {badge.label}
+            </Badge>
+            {operation !== undefined && (
+              <Badge variant="secondary" title={operationLabel(operation)}>
+                opération
+              </Badge>
+            )}
+          </div>
         </div>
       </CardHeader>
       <CardContent className="grid grid-cols-2 gap-x-4 gap-y-2 text-sm">
@@ -99,7 +113,9 @@ export function ServerCard({
         <div className="col-span-2 flex items-center justify-between gap-3 pt-1">
           <span className="text-xs text-muted-foreground">Connexion</span>
           <span className="text-right font-mono text-xs break-all">
-            {address ?? "—"}
+            {address === undefined
+              ? "—"
+              : `${address} · UDP${internal ? " (interne)" : ""}`}
           </span>
         </div>
         <div className="col-span-2 flex items-center justify-between gap-3">
@@ -121,7 +137,7 @@ export function ServerCard({
           variant="outline"
           size="sm"
           onClick={() => onToggle(server)}
-          disabled={pending}
+          disabled={pending || operationActive}
         >
           {suspended ? "Démarrer" : "Arrêter"}
         </Button>
@@ -130,7 +146,7 @@ export function ServerCard({
           variant="destructive"
           size="sm"
           onClick={() => onDelete(server.metadata.name)}
-          disabled={pending}
+          disabled={pending || operationActive}
         >
           Supprimer
         </Button>

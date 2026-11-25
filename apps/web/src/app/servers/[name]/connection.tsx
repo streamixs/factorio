@@ -23,6 +23,7 @@ import { getServerConnection, getServerUsage } from "@/lib/api";
 import {
   formatBytes,
   formatCpu,
+  gameAddressIsInternal,
   gamePort,
   primaryGameAddress,
 } from "@/lib/server-connection";
@@ -79,6 +80,7 @@ export function ConnectionPanel({
 
   const address = primaryGameAddress(connection);
   const port = connection === null ? undefined : gamePort(connection);
+  const internal = gameAddressIsInternal(connection);
 
   return (
     <div className="flex flex-col gap-4">
@@ -117,17 +119,25 @@ export function ConnectionPanel({
                     {address ?? "—"}
                   </code>
                   {address !== undefined && (
-                    <Button
-                      type="button"
-                      variant="ghost"
-                      size="icon-sm"
-                      onClick={() => void copy(address)}
-                      aria-label="Copier l'adresse"
-                    >
-                      <Copy className="size-4" />
-                    </Button>
+                    <>
+                      <Badge variant="outline">UDP</Badge>
+                      {internal && <Badge variant="secondary">interne</Badge>}
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="icon-sm"
+                        onClick={() => void copy(address)}
+                        aria-label="Copier l'adresse"
+                      >
+                        <Copy className="size-4" />
+                      </Button>
+                    </>
                   )}
                 </div>
+                <p className="mt-2 text-xs text-muted-foreground">
+                  Colle cette adresse dans Factorio (« Ajouter un serveur »).
+                  Le port UDP est déjà inclus.
+                </p>
                 {suspended && (
                   <p className="mt-2 text-xs text-amber-600 dark:text-amber-400">
                     Serveur arrêté : l&apos;adresse reste valide, mais le
