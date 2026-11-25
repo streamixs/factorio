@@ -239,6 +239,11 @@ export interface RconCommandInput {
 export interface UpdateFactorioServerInput {
   spec: FactorioServerSpec;
   credentials?: CredentialsInput;
+  /**
+   * metadata.generation of the server the form was loaded from. The API
+   * rejects the update if the spec has changed since then.
+   */
+  generation?: number;
 }
 
 export interface ServerLogs {

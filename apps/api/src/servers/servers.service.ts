@@ -240,6 +240,16 @@ export class ServersService {
 
     const existing = await this.get(name);
     await this.assertNoActiveOperation(name);
+
+    if (
+      parsed.data.generation !== undefined &&
+      parsed.data.generation !== existing.metadata.generation
+    ) {
+      throw new ConflictException(
+        'Server configuration changed since it was loaded; reload and retry',
+      );
+    }
+
     const spec = structuredClone(parsed.data.spec);
     // Suspension is controlled by the start/stop endpoints, never by a
     // settings update. Preserve the current state to avoid restarting a server
@@ -255,7 +265,11 @@ export class ServersService {
       );
     }
 
-    return this.replace(existing, spec);
+    return this.replaceWithGenerationRetry(
+      existing,
+      spec,
+      parsed.data.generation,
+    );
   }
 
   async remove(name: string): Promise<void> {
@@ -1161,6 +1175,37 @@ export class ServersService {
     );
 
     return result as FactorioServer;
+  }
+
+  /**
+   * Replaces the server, retrying once when Kubernetes rejects the write
+   * because only the status (and therefore resourceVersion) changed. A real
+   * spec change bumps metadata.generation and is reported as a conflict.
+   */
+  private async replaceWithGenerationRetry(
+    server: FactorioServer,
+    spec: FactorioServerSpec,
+    expectedGeneration: number | undefined,
+  ): Promise<FactorioServer> {
+    try {
+      return await this.replace(server, spec);
+    } catch (error) {
+      if (
+        !(error instanceof ConflictException) ||
+        expectedGeneration === undefined
+      ) {
+        throw error;
+      }
+
+      const latest = await this.get(server.metadata.name);
+      if (latest.metadata.generation !== expectedGeneration) {
+        throw new ConflictException(
+          'Server configuration changed since it was loaded; reload and retry',
+        );
+      }
+
+      return this.replace(latest, spec);
+    }
   }
 
   /**
