@@ -1542,7 +1542,9 @@ describe('ServersService', () => {
         }),
       }),
     );
-    expect(replaceNamespacedCustomObject.mock.invocationCallOrder[0]).toBeLessThan(
+    expect(
+      replaceNamespacedCustomObject.mock.invocationCallOrder[0],
+    ).toBeLessThan(
       patchNamespacedPersistentVolumeClaim.mock.invocationCallOrder[0],
     );
     expect(patchNamespacedPersistentVolumeClaim).toHaveBeenCalledWith({
@@ -1565,9 +1567,7 @@ describe('ServersService', () => {
         {
           op: 'add',
           path: '/metadata/ownerReferences',
-          value: [
-            expect.objectContaining({ kind: 'ConfigMap', uid: 'uid-2' }),
-          ],
+          value: [expect.objectContaining({ kind: 'ConfigMap', uid: 'uid-2' })],
         },
       ],
     });
