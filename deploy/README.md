@@ -96,6 +96,14 @@ Imports and their metadata expire after 30 minutes and are pruned
 automatically. Keeping them on the volume means an import survives an API
 restart while the operation Job is running.
 
+## Data retention
+
+- The agent keeps the three newest `pre-restore-*` and `pre-import-*` copies
+  per server. The operation Job prunes older copies after installing the save.
+- Terminal `FactorioOperation` resources are kept for 7 days for diagnostics,
+  then deleted by the agent. Their Jobs are deleted as soon as they finish.
+- Factorio autosaves are capped by `server.autoSave.slots` in the settings.
+
 ## Secrets
 
 The agent re-renders a server's settings every 10 minutes. A rotated Secret
@@ -146,5 +154,5 @@ Without `metrics-server` the UI still works; the load card shows
 ## Ingress
 
 For a real cluster, expose the web Service with an Ingress or a LoadBalancer.
-Do not expose the API directly: the web proxies it, and the API has no
-authentication yet.
+Do not expose the API directly: the web proxies it, and the API only accepts
+the internal bearer token.
