@@ -14,6 +14,8 @@ import {
   getServerConnection,
   getServerOperations,
   getServerUsage,
+  getStorageClasses,
+  getVersions,
   listServers,
   startServer,
   stopServer,
@@ -30,6 +32,8 @@ export default function Home() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [pending, setPending] = useState<string | null>(null);
+  const [versions, setVersions] = useState<string[]>([]);
+  const [storageClasses, setStorageClasses] = useState<string[]>([]);
 
   const refresh = useCallback(async () => {
     try {
@@ -58,6 +62,34 @@ export default function Home() {
     } finally {
       setLoading(false);
     }
+  }, []);
+
+  useEffect(() => {
+    let active = true;
+
+    getVersions()
+      .then((value) => {
+        if (active) {
+          setVersions(value);
+        }
+      })
+      .catch(() => {
+        // The form falls back to a plain version input.
+      });
+
+    getStorageClasses()
+      .then((value) => {
+        if (active) {
+          setStorageClasses(value);
+        }
+      })
+      .catch(() => {
+        // The form falls back to a plain StorageClass input.
+      });
+
+    return () => {
+      active = false;
+    };
   }, []);
 
   useEffect(() => {
@@ -173,6 +205,8 @@ export default function Home() {
         </section>
 
         <CreateServerForm
+          versions={versions}
+          storageClasses={storageClasses}
           onCreated={(created) => {
             toast.success("Serveur créé");
             router.push(
