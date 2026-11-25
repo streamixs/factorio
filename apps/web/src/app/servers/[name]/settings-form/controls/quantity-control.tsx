@@ -12,6 +12,7 @@ import {
 } from "@/components/ui/select";
 
 import type { FieldDefinition, FormValues } from "@/lib/settings-registry";
+import { parseCpu, parseMemory } from "@/lib/resource-quantities";
 
 import {
   CUSTOM_SELECT_VALUE,
@@ -19,7 +20,6 @@ import {
   inputValue,
   type EditableField,
 } from "../helpers";
-import { parseCpu, parseMemory } from "../validation";
 import { EditableInput } from "./editable-input";
 
 export function QuantityControl({
