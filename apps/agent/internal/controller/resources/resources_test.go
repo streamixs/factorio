@@ -689,6 +689,24 @@ func TestOperationJobNameTruncatesAndHashes(t *testing.T) {
 	}
 }
 
+func TestSavesSidecarHandlesSigterm(t *testing.T) {
+	container := savesContainerFileServer()
+	if len(container.Command) != 3 {
+		t.Fatalf("unexpected saves command: %v", container.Command)
+	}
+
+	script := container.Command[2]
+	for _, expected := range []string{
+		"trap shutdown TERM INT",
+		"httpd_supervisor_pid",
+		"wait $!",
+	} {
+		if !strings.Contains(script, expected) {
+			t.Errorf("saves script does not contain %q", expected)
+		}
+	}
+}
+
 func envMap(values []corev1.EnvVar) map[string]string {
 	result := make(map[string]string, len(values))
 	for _, value := range values {

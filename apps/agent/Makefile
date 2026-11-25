@@ -178,6 +178,8 @@ uninstall: manifests kustomize ## Uninstall CRDs from the K8s cluster specified 
 deploy: install ## Deploy controller to the K8s cluster specified in ~/.kube/config.
 	cd config/manager && "$(KUSTOMIZE)" edit set image controller=${IMG}
 	"$(KUSTOMIZE)" build config/default | "$(KUBECTL)" apply -f -
+	"$(KUBECTL)" -n agent-system rollout restart deployment/agent-controller-manager
+	"$(KUBECTL)" -n agent-system rollout status deployment/agent-controller-manager --timeout=180s
 
 .PHONY: undeploy
 undeploy: kustomize ## Undeploy controller from the K8s cluster specified in ~/.kube/config. Call with ignore-not-found=true to ignore resource not found errors during deletion.

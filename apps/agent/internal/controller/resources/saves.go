@@ -18,9 +18,27 @@ const (
 // serves that directory on the pod network. Factorio owns the saves
 // directory: the sidecar only adds index.txt and .index.tmp, which Factorio
 // ignores. The index loop is the container's main process and supervises
-// httpd in the background, so neither dies silently.
+// httpd in the background, so neither dies silently. SIGTERM shuts both down
+// immediately, otherwise the pod would wait for terminationGracePeriodSeconds.
 const savesScript = `set -u
-( while true; do httpd -f -p 8080 -h /factorio/saves; sleep 5; done ) &
+
+httpd_supervisor_pid=""
+shutdown() {
+  if [ -n "$httpd_supervisor_pid" ]; then
+    kill "$httpd_supervisor_pid" 2>/dev/null || true
+  fi
+  exit 0
+}
+trap shutdown TERM INT
+
+(
+  while true; do
+    httpd -f -p 8080 -h /factorio/saves
+    sleep 5
+  done
+) &
+httpd_supervisor_pid=$!
+
 echo "saves sidecar started"
 while true; do
   tmp=/factorio/saves/.index.tmp
@@ -34,7 +52,8 @@ while true; do
     printf '%s %s %s\n' "$name" "$size" "$mtime" >> "$tmp"
   done
   mv "$tmp" /factorio/saves/index.txt
-  sleep 30
+  sleep 30 &
+  wait $! || true
 done
 `
 
