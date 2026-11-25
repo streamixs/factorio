@@ -42,6 +42,12 @@ describe('AppController (e2e)', () => {
     return request(app.getHttpServer()).get('/health').expect(200);
   });
 
+  it('allows the one-time import download without a bearer token', () => {
+    return request(app.getHttpServer())
+      .get(`/api/servers/my-server/imports/${'a'.repeat(32)}`)
+      .expect(404);
+  });
+
   afterEach(async () => {
     await app.close();
   });

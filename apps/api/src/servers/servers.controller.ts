@@ -30,6 +30,7 @@ import type {
   UpdateFactorioServerInput,
 } from '@factorio/shared';
 
+import { Public } from '../auth/public.decorator.js';
 import { ServersService } from './servers.service.js';
 
 @Controller('api/servers')
@@ -148,6 +149,7 @@ export class ServersController {
     return this.servers.importSave(name, request, contentLength);
   }
 
+  @Public()
   @Get(':name/imports/:token')
   async downloadImport(
     @Param('name') name: string,

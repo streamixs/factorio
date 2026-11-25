@@ -118,6 +118,11 @@ The game policy is written for the `default` namespace. If you change
 depends on the cluster CNI; verify from a pod outside `factorio-system` that
 the API is unreachable.
 
+The import download URL is a short-lived signed URL (random token, 30-minute
+TTL). It is the only API route besides health that does not require the bearer
+token, so the operation Job can fetch the uploaded save. NetworkPolicy limits
+that route to web and operation pods.
+
 ## Audit
 
 RCON commands are logged with the server name and a truncated,
