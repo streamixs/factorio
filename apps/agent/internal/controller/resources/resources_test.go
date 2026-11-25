@@ -711,6 +711,36 @@ func TestPruneSavesKeepsNewestCopies(t *testing.T) {
 	}
 }
 
+func TestOperationScriptsAreValidShell(t *testing.T) {
+	for name, script := range map[string]string{
+		"restore": operationRestoreScript,
+		"import":  operationImportScript,
+	} {
+		cmd := exec.Command("sh", "-n", "-c", script)
+		if output, err := cmd.CombinedOutput(); err != nil {
+			t.Errorf("%s script is not valid shell: %v: %s", name, err, output)
+		}
+	}
+}
+
+func TestOperationScriptsPruneAfterInstall(t *testing.T) {
+	restoreCopy := strings.Index(operationRestoreScript,
+		`cp "/factorio/saves/$SAVE_FILE" "/factorio/saves/$TARGET_SAVE"`)
+	restorePrune := strings.Index(operationRestoreScript,
+		`prune_saves "/factorio/saves/pre-restore-*.zip"`)
+	if restoreCopy < 0 || restorePrune < 0 || restorePrune < restoreCopy {
+		t.Errorf("restore script prunes before installing the selected save")
+	}
+
+	importInstall := strings.Index(operationImportScript,
+		`mv "$tmp" "$target"`)
+	importPrune := strings.Index(operationImportScript,
+		`prune_saves "/factorio/saves/pre-import-*.zip"`)
+	if importInstall < 0 || importPrune < 0 || importPrune < importInstall {
+		t.Errorf("import script prunes before installing the uploaded save")
+	}
+}
+
 func TestOperationJobNameKeepsShortNames(t *testing.T) {
 	operation := &gamesv1alpha1.FactorioOperation{
 		ObjectMeta: metav1.ObjectMeta{Name: "demo-restore-abcde"},
