@@ -167,6 +167,9 @@ jobs:
       - name: Lint
         run: pnpm --filter @factorio/web lint
 
+      - name: Test
+        run: pnpm --filter @factorio/web test
+
       - name: Generate Next.js types
         run: pnpm --filter @factorio/web exec next typegen
 
