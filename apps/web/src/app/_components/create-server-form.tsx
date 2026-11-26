@@ -6,7 +6,7 @@ import type {
   ServiceType,
 } from "@factorio/shared";
 import { Check, ChevronLeft, ChevronRight } from "lucide-react";
-import { useState, type FormEvent } from "react";
+import { useState, type FormEvent, type KeyboardEvent } from "react";
 import { cn } from "cn";
 
 import { Button } from "@/components/ui/button";
@@ -27,6 +27,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { createServer } from "@/lib/api";
+import { shouldBlockCreateSubmit } from "@/lib/create-form";
 import {
   validateResourceQuantities,
   type ResourceField,
@@ -237,6 +238,26 @@ export function CreateServerForm({
     setStep((current) => Math.max(1, current - 1));
   }
 
+  /**
+   * Enter advances the two first steps, but must not create the server from
+   * the resources step. Operators often press Enter after filling a field;
+   * only the explicit "Créer le serveur" button should submit the form.
+   */
+  function handleKeyDown(event: KeyboardEvent<HTMLFormElement>) {
+    const tagName =
+      event.target instanceof HTMLElement ? event.target.tagName : "";
+    if (
+      shouldBlockCreateSubmit(
+        step,
+        STEP_LABELS.length,
+        event.key,
+        tagName,
+      )
+    ) {
+      event.preventDefault();
+    }
+  }
+
   async function handleCreate(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
 
@@ -309,6 +330,7 @@ export function CreateServerForm({
   const form = (
     <form
       onSubmit={(event) => void handleCreate(event)}
+      onKeyDown={handleKeyDown}
       className="flex flex-col gap-5"
       noValidate
     >
