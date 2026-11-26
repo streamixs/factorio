@@ -4,10 +4,9 @@
 
 ## Vérifications
 
-- [ ] `pnpm test` (API + web)
-- [ ] `pnpm --filter @factorio/api format:check`
-- [ ] `make -C apps/agent fmt lint test`
+- [ ] `make check` (lint + tests + builds)
 - [ ] UI vérifiée manuellement (capture ou description) si applicable
+- [ ] Documentation mise à jour si le comportement change
 
 ## Déploiement
 

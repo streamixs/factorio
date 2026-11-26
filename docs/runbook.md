@@ -2,6 +2,8 @@
 
 Ce document décrit les opérations courantes sur la plateforme. Le
 déploiement initial est dans [`../deploy/README.md`](../deploy/README.md).
+Les décisions d’architecture sont dans
+[`decisions.md`](decisions.md).
 
 ## Conventions
 
