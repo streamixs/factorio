@@ -92,7 +92,7 @@ func savesContainerFileServer() corev1.Container {
 			ReadOnlyRootFilesystem:   &readOnlyRoot,
 			AllowPrivilegeEscalation: &allowPrivilegeEscalation,
 			Capabilities: &corev1.Capabilities{
-				Drop: []corev1.Capability{"ALL"},
+				Drop: []corev1.Capability{allCapabilities},
 			},
 		},
 	}

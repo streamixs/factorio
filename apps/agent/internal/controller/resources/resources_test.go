@@ -63,13 +63,13 @@ func TestBuildDeploymentMountsConfiguredFiles(t *testing.T) {
 		t.Fatal("config hash annotation is empty")
 	}
 
-	if len(deployment.Spec.Template.Spec.Volumes) != 4 {
-		t.Fatalf("got %d volumes, want 4",
+	if len(deployment.Spec.Template.Spec.Volumes) != 6 {
+		t.Fatalf("got %d volumes, want 6",
 			len(deployment.Spec.Template.Spec.Volumes))
 	}
 
-	if len(container.VolumeMounts) != 4 {
-		t.Fatalf("got %d volume mounts, want 4", len(container.VolumeMounts))
+	if len(container.VolumeMounts) != 6 {
+		t.Fatalf("got %d volume mounts, want 6", len(container.VolumeMounts))
 	}
 
 	mounts := make(map[string]corev1.VolumeMount, len(container.VolumeMounts))
@@ -121,9 +121,15 @@ func TestBuildDeploymentUsesRecreateAndPreparesData(t *testing.T) {
 			initContainers[0].Name)
 	}
 
-	if len(initContainers[0].VolumeMounts) != 1 ||
-		initContainers[0].VolumeMounts[0].MountPath != dataDir {
-		t.Error("init container does not mount the data volume")
+	if len(initContainers[0].VolumeMounts) != 2 ||
+		initContainers[0].VolumeMounts[0].MountPath != dataDir ||
+		initContainers[0].VolumeMounts[1].MountPath != baseConfigSeedDir {
+		t.Error("init container does not mount the data and base config volumes")
+	}
+
+	if !strings.Contains(initContainers[0].Command[2], baseConfigSeedDir+"/config.ini") ||
+		!strings.Contains(initContainers[0].Command[2], "write-data=/factorio") {
+		t.Error("init container does not seed the base config")
 	}
 }
 
@@ -195,6 +201,98 @@ func TestBuildDeploymentRunsAsFactorioUser(t *testing.T) {
 	}
 }
 
+func TestBuildDeploymentHardensPod(t *testing.T) {
+	deployment := BuildDeployment(testServer(), ConfigFiles{}, testRconPassword, testResourceRequirements())
+	pod := deployment.Spec.Template.Spec
+
+	if pod.SecurityContext == nil {
+		t.Fatal("pod security context is nil")
+	}
+
+	if pod.SecurityContext.SeccompProfile == nil ||
+		pod.SecurityContext.SeccompProfile.Type != corev1.SeccompProfileTypeRuntimeDefault {
+		t.Error("pod does not use the RuntimeDefault seccomp profile")
+	}
+
+	if pod.SecurityContext.FSGroup == nil ||
+		*pod.SecurityContext.FSGroup != serverUserID {
+		t.Errorf("fsGroup is %v, want %d",
+			pod.SecurityContext.FSGroup, serverUserID)
+	}
+
+	for _, container := range pod.Containers {
+		assertContainerHardened(t, container)
+	}
+
+	serverContainer := pod.Containers[0]
+	if !hasVolumeMount(serverContainer, tmpVolume, tmpDir) {
+		t.Error("server container does not mount the writable /tmp volume")
+	}
+
+	if !hasVolumeMount(serverContainer, baseConfigVolume, factorioConfigDir) {
+		t.Error("server container does not shadow the writable base config directory")
+	}
+
+	initContainer := pod.InitContainers[0]
+	assertContainerHardened(t, initContainer)
+	if initContainer.SecurityContext.RunAsUser == nil ||
+		*initContainer.SecurityContext.RunAsUser != 0 {
+		t.Error("prepare-data must run as root to chown the data volume")
+	}
+
+	wantCaps := map[corev1.Capability]bool{
+		"CHOWN":        true,
+		"DAC_OVERRIDE": true,
+		"FOWNER":       true,
+	}
+
+	addedCaps := initContainer.SecurityContext.Capabilities.Add
+	if len(addedCaps) != len(wantCaps) {
+		t.Errorf("prepare-data adds capabilities %v, want %v", addedCaps, wantCaps)
+	}
+
+	for _, capability := range addedCaps {
+		if !wantCaps[capability] {
+			t.Errorf("prepare-data adds unexpected capability %s", capability)
+		}
+	}
+}
+
+func assertContainerHardened(t *testing.T, container corev1.Container) {
+	t.Helper()
+
+	securityContext := container.SecurityContext
+	if securityContext == nil {
+		t.Fatalf("%s security context is nil", container.Name)
+	}
+
+	if securityContext.ReadOnlyRootFilesystem == nil ||
+		!*securityContext.ReadOnlyRootFilesystem {
+		t.Errorf("%s root filesystem is writable", container.Name)
+	}
+
+	if securityContext.AllowPrivilegeEscalation == nil ||
+		*securityContext.AllowPrivilegeEscalation {
+		t.Errorf("%s allows privilege escalation", container.Name)
+	}
+
+	if securityContext.Capabilities == nil ||
+		len(securityContext.Capabilities.Drop) != 1 ||
+		securityContext.Capabilities.Drop[0] != "ALL" {
+		t.Errorf("%s does not drop all capabilities", container.Name)
+	}
+}
+
+func hasVolumeMount(container corev1.Container, name, mountPath string) bool {
+	for _, mount := range container.VolumeMounts {
+		if mount.Name == name && mount.MountPath == mountPath {
+			return true
+		}
+	}
+
+	return false
+}
+
 func TestPodTemplateHashChangesWithTemplate(t *testing.T) {
 	files := ConfigFiles{}
 	deployment := BuildDeployment(testServer(), files, testRconPassword, testResourceRequirements())
@@ -233,13 +331,13 @@ func TestBuildDeploymentWithoutSettings(t *testing.T) {
 	deployment := BuildDeployment(server, ConfigFiles{}, testRconPassword, testResourceRequirements())
 	container := deployment.Spec.Template.Spec.Containers[0]
 
-	if len(deployment.Spec.Template.Spec.Volumes) != 2 {
-		t.Errorf("got %d volumes, want 2",
+	if len(deployment.Spec.Template.Spec.Volumes) != 4 {
+		t.Errorf("got %d volumes, want 4",
 			len(deployment.Spec.Template.Spec.Volumes))
 	}
 
-	if len(container.VolumeMounts) != 2 {
-		t.Errorf("got %d volume mounts, want 2", len(container.VolumeMounts))
+	if len(container.VolumeMounts) != 4 {
+		t.Errorf("got %d volume mounts, want 4", len(container.VolumeMounts))
 	}
 
 	if got := container.VolumeMounts[0].MountPath; got != dataDir {
@@ -341,14 +439,19 @@ func TestUpdateDeploymentCopiesConfigAndKeepsAnnotations(t *testing.T) {
 		t.Error("unrelated annotation was lost")
 	}
 
-	if len(existing.Spec.Template.Spec.Volumes) != 3 {
-		t.Errorf("got %d volumes, want 3",
+	if len(existing.Spec.Template.Spec.Volumes) != 5 {
+		t.Errorf("got %d volumes, want 5",
 			len(existing.Spec.Template.Spec.Volumes))
 	}
 
 	if len(existing.Spec.Template.Spec.InitContainers) != 1 {
 		t.Errorf("got %d init containers, want 1",
 			len(existing.Spec.Template.Spec.InitContainers))
+	}
+
+	if existing.Spec.Template.Spec.SecurityContext == nil ||
+		existing.Spec.Template.Spec.SecurityContext.SeccompProfile == nil {
+		t.Error("pod security context was not copied to the existing deployment")
 	}
 }
 

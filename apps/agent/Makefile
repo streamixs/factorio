@@ -7,8 +7,9 @@ YEAR ?= $(shell date +%Y)
 
 # golangci-lint v2.13.1 cannot read export data produced by Go 1.27+ toolchains.
 # Pin the Make targets to the Go version declared in go.mod. CI overrides this
-# with GOTOOLCHAIN=local after setup-go installs the same version.
-GOTOOLCHAIN ?= go1.26.0
+# with GOTOOLCHAIN=local after setup-go installs the same version. Keep the
+# patch level current: it carries standard-library security fixes.
+GOTOOLCHAIN ?= go1.26.11
 export GOTOOLCHAIN
 
 # Get the currently used golang install path (in GOPATH/bin, unless GOBIN is set)
@@ -114,6 +115,10 @@ lint-fix: golangci-lint ## Run golangci-lint linter and perform fixes
 lint-config: golangci-lint ## Verify golangci-lint linter configuration
 	"$(GOLANGCI_LINT)" config verify
 
+.PHONY: vulncheck
+vulncheck: ## Scan modules and the standard library for known vulnerabilities.
+	go run golang.org/x/vuln/cmd/govulncheck@$(GOVULNCHECK_VERSION) ./...
+
 ##@ Build
 
 .PHONY: build
@@ -217,6 +222,7 @@ ENVTEST_K8S_VERSION ?= $(shell v='$(call gomodver,k8s.io/api)'; \
   printf '%s\n' "$$v" | sed -E 's/^v?[0-9]+\.([0-9]+).*/1.\1/')
 
 GOLANGCI_LINT_VERSION ?= v2.13.1
+GOVULNCHECK_VERSION ?= v1.10.0
 .PHONY: kustomize
 kustomize: $(KUSTOMIZE) ## Download kustomize locally if necessary.
 $(KUSTOMIZE): $(LOCALBIN)

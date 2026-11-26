@@ -20,6 +20,7 @@ test/e2e/                           optional Kind e2e tests (not in CI)
 
 ```sh
 make fmt lint test                   # reference checks
+make vulncheck                       # govulncheck, including the standard library
 make test
 make manifests generate              # after editing types or markers
 make run                             # local process, current kubeconfig
