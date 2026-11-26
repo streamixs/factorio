@@ -191,3 +191,19 @@ a deliberate choice. Add a new section when a durable behavior changes.
   must carry a reason and a revisit condition. CRD, shared-type and API
   contracts land before parallel implementation. Creating the project board
   requires the `project` GitHub scope or a manual setup.
+
+## Main save and autosave rotation
+
+- **Status:** accepted.
+- **Decision:** the main save is `world.zip` and Factorio writes the autosaves
+  as `_autosave1..N.zip`. The Factorio container starts with
+  `LOAD_LATEST_SAVE=false`, restore/import operations write `world.zip`, and
+  the `prepare-data` init container copies the newest `_autosave*.zip` (or the
+  newest non-safety save) to `world.zip` when it is missing.
+- **Why:** naming the main save `_autosave1` collided with the first autosave
+  slot. Every graceful stop rewrote that file, so the operator could not see
+  the expected autosave rotation.
+- **Consequences:** existing servers are migrated once on their next start;
+  the old autosaves remain on the volume. A graceful stop updates `world.zip`
+  only. Autosaves do not run while the server is paused, so an empty server
+  needs the auto-pause setting disabled to rotate saves.

@@ -23,7 +23,9 @@ const (
 	configDir      = "/factorio/config"
 	dataDir        = "/factorio"
 	gamePort       = 34197
-	saveName       = "_autosave1"
+	saveName       = "world"
+	mainSaveFile   = "world.zip"
+	loadLatestSave = "false"
 	prepareImage   = "busybox:1.36"
 	serverUserID   = 845
 
@@ -44,6 +46,18 @@ const (
 	prepareDataCommand = "mkdir -p /factorio/config /factorio/saves /factorio/mods && " +
 		"printf '[path]\\nread-data=__PATH__executable__/../../data\\nwrite-data=/factorio\\n' > " +
 		baseConfigSeedDir + "/config.ini && " +
+		// Migrate the old main save (_autosave1.zip or the newest autosave)
+		// to world.zip before the server starts. This keeps the main save
+		// distinct from the Factorio autosave slots.
+		"if [ ! -f /factorio/saves/" + mainSaveFile + " ]; then " +
+		"latest=$(ls -1t /factorio/saves/_autosave*.zip 2>/dev/null | head -n 1); " +
+		"if [ -z \"$latest\" ]; then " +
+		"latest=$(ls -1t /factorio/saves/*.zip 2>/dev/null | " +
+		"grep -v '/" + mainSaveFile + "$' | grep -v '\\.tmp\\.zip$' | " +
+		"grep -v '/pre-restore-' | grep -v '/pre-import-' | head -n 1); " +
+		"fi; " +
+		"if [ -n \"$latest\" ]; then cp -p \"$latest\" /factorio/saves/" + mainSaveFile + "; fi; " +
+		"fi && " +
 		"chown -R 845:845 /factorio " + baseConfigSeedDir
 	healthcheckPath = "/docker-healthcheck.sh"
 )
@@ -120,6 +134,7 @@ func BuildDeployment(
 			},
 			Env: []corev1.EnvVar{
 				{Name: "GENERATE_NEW_SAVE", Value: "true"},
+				{Name: "LOAD_LATEST_SAVE", Value: loadLatestSave},
 				{Name: "SAVE_NAME", Value: saveName},
 				{Name: "PORT", Value: strconv.Itoa(gamePort)},
 			},
