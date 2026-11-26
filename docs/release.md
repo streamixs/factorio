@@ -58,17 +58,28 @@ script tags the current commit without an empty release commit.
 The workflow needs `contents: write` and `packages: write`, already declared in
 the workflow. It uses the repository `GITHUB_TOKEN`.
 
+## Main-branch images
+
+Every push to `main` also publishes development images from the CI Docker job:
+
+- `ghcr.io/<owner>/factorio-api:main` and `:main-<short-sha>`
+- `ghcr.io/<owner>/factorio-web:main` and `:main-<short-sha>`
+- `ghcr.io/<owner>/factorio-agent:main` and `:main-<short-sha>`
+
+The image is built with `APP_VERSION=main-<short-sha>` (or `VERSION` for the
+agent), so the sidebar and the agent report the exact commit. These tags are
+for development and testing; releases keep the immutable `vX.Y.Z` tag.
+`make deploy` defaults to `main-<short-sha>` for the current commit.
+
 ## Deploy a release
 
 ```sh
-make -C apps/agent deploy \
-  IMG=ghcr.io/<owner>/factorio-agent:v0.1.0
-
-make -C deploy deploy \
-  TAG=v0.1.0 \
-  API_IMG=ghcr.io/<owner>/factorio-api:v0.1.0 \
-  WEB_IMG=ghcr.io/<owner>/factorio-web:v0.1.0
+make deploy TAG=v0.4.0
 ```
+
+The script resolves the three GHCR images, checks their availability and the
+pull access, then deploys the agent, API and web. It refuses to continue if a
+required image or the `factorio-auth` Secret is missing.
 
 Verify:
 
@@ -90,15 +101,22 @@ docker run --rm ghcr.io/<owner>/factorio-agent:vX.Y.Z --version
 
 ## GHCR visibility
 
-The workflow pushes to GHCR. Depending on the repository/package settings, the
-packages may be private. Choose one:
+The workflow pushes to GHCR. **Repository visibility does not change package
+visibility**: a public repository can still have private container packages.
+Choose one:
 
-- make the three GHCR packages public in their GitHub package settings; or
+- make the three GHCR packages public; or
 - keep them private and create the `ghcr-pull` image pull secret.
 
-The API, web and agent Deployments reference `ghcr-pull`. A missing secret only
-logs a warning and does not block local `:dev` images. For private packages,
-create it in both namespaces:
+To make a package public: open the organization or user **Packages** page,
+select the package, open **Package settings**, then **Danger Zone → Change
+visibility → Public**. Repeat for `factorio-api`, `factorio-web` and
+`factorio-agent`.
+
+`make deploy` verifies anonymous access first. If the packages are private it
+requires `ghcr-pull` in both namespaces. The API, web and agent Deployments
+reference that secret; a missing secret only logs a warning and does not block
+local `:dev` images. For private packages, create it in both namespaces:
 
 ```sh
 kubectl -n factorio-system create secret docker-registry ghcr-pull \
@@ -113,13 +131,10 @@ kubectl -n agent-system create secret docker-registry ghcr-pull \
 
 ## Rollback
 
-Deploy the previous tag with the same commands:
+Deploy the previous tag with the same command:
 
 ```sh
-make -C deploy deploy \
-  TAG=v0.0.9 \
-  API_IMG=ghcr.io/<owner>/factorio-api:v0.0.9 \
-  WEB_IMG=ghcr.io/<owner>/factorio-web:v0.0.9
+make deploy TAG=v0.3.0
 ```
 
 The database is the Kubernetes CRDs and PVCs; no schema migration is performed
@@ -138,8 +153,8 @@ make release VERSION=0.1.1
 Local images keep `:dev` tags and the `dev` version:
 
 ```sh
-make docker
-make -C deploy deploy
+make deploy-local
 ```
 
-Only tagged releases get immutable GHCR tags and a platform version.
+This builds and deploys `factorio-{api,web,agent}:dev`. Main-branch images use
+`main-<short-sha>`; only tagged releases get immutable `vX.Y.Z` tags.

@@ -33,6 +33,8 @@ make test-agent
 make lint
 make build
 make docker             # build local :dev images
+make deploy             # deploy published GHCR images (TAG defaults to main-<sha>)
+make deploy-local       # build and deploy local :dev images
 make fmt                # API Prettier + agent gofmt
 make version            # print VERSION
 make version-check      # VERSION, package versions and tag consistency
@@ -144,8 +146,9 @@ and pushes. The tag workflow publishes GHCR images and the GitHub Release. See
 
 ## Known pitfalls
 
-- `make -C deploy deploy` and agent `make deploy` force a rollout. A rebuilt
-  `:dev` image is not loaded without it.
+- `make deploy` uses the published GHCR images (`main-<sha>` by default, or
+  `TAG=vX.Y.Z`). `make deploy-local` builds the local `:dev` images and forces
+  a rollout; a rebuilt `:dev` image is not loaded without it.
 - Settings updates use `metadata.generation`, not `resourceVersion` (status
   updates bump `resourceVersion`). A stale generation must produce 409.
 - Operations suspend the server, run a Job and resume it. Terminal operations

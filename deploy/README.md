@@ -1,27 +1,58 @@
 # Deployment
 
-Runs the API and the web UI inside Kubernetes. The agent and its CRDs must
-already be installed (`apps/agent: make install && make deploy`).
+Runs the API and the web UI inside Kubernetes. `make deploy` and
+`make deploy-local` at the repository root also install the agent and its CRDs.
+For an agent-only deploy, use `apps/agent: make install && make deploy`.
 
 Vue d’ensemble : [`../README.md`](../README.md). Exploitation et dépannage :
 [`../docs/runbook.md`](../docs/runbook.md). Releases et images GHCR :
 [`../docs/release.md`](../docs/release.md).
 
-## Build and deploy
+## Deployment paths
 
-From this directory:
+### Published GHCR images (recommended)
+
+From the repository root:
+
+```sh
+make deploy                  # current main image: main-<short-sha>
+make deploy TAG=v0.4.0       # release image
+```
+
+The `make deploy` target resolves
+`ghcr.io/<owner>/factorio-{api,web,agent}:<tag>`, checks that the images are
+reachable, and deploys the agent first, then the API and web. The tag defaults
+to `main-<short-sha>` for the current commit.
+
+Every push to `main` publishes `main` and `main-<short-sha>`. Tags publish the
+immutable `vX.Y.Z` image used by releases.
+
+The GHCR packages must be public, or the `ghcr-pull` secret must exist in
+`factorio-system` and `agent-system`. Repository visibility does not change
+package visibility; see
+[`../docs/release.md`](../docs/release.md#ghcr-visibility).
+
+### Local development images
+
+From the repository root:
+
+```sh
+make deploy-local
+```
+
+This builds `factorio-api:dev`, `factorio-web:dev` and `factorio-agent:dev`,
+then deploys them. They are available to OrbStack's Kubernetes. For another
+cluster, push them to a registry and pass the full image references.
+
+The equivalent manual flow from this directory remains:
 
 ```sh
 make build
 make deploy
 ```
 
-Images are built locally (`factorio-api:dev`, `factorio-web:dev`) and are
-available to OrbStack's Kubernetes. For another cluster, push them to a
-registry and pass `TAG`/`API_IMG`/`WEB_IMG` to `make deploy`.
-
-For private GHCR images, create the `ghcr-pull` secret in `factorio-system`
-first; see [`../docs/release.md`](../docs/release.md#ghcr-visibility).
+`make deploy` from this directory still deploys local images; the root
+`make deploy` uses GHCR.
 
 Open the UI:
 

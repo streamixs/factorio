@@ -164,23 +164,35 @@ kubectl -n default get factoriooperation <name> -o yaml
 
 ## Rebuild et redéploiement
 
-```sh
-# Agent
-make -C apps/agent docker-build IMG=factorio-agent:dev
-make -C apps/agent deploy IMG=factorio-agent:dev
+### Images publiées (recommandé)
 
-# API + web
-make -C deploy build
-make -C deploy deploy
+Depuis la racine du dépôt :
+
+```sh
+make deploy                  # image main-<short-sha> du commit courant
+make deploy TAG=v0.4.0       # image d’une release
 ```
 
-`make deploy` redémarre explicitement l’API et le web : un rebuild avec le
-même tag `:dev` est donc bien pris en compte. Un changement du template des
+Le script `scripts/deploy-ghcr.sh` résout les trois images
+`ghcr.io/<owner>/factorio-{api,web,agent}:<tag>`, vérifie leur accès, puis
+déploie l’agent avant l’API et le web. Il refuse de continuer si une image ou
+le Secret `factorio-auth` manque. Les packages GHCR doivent être publics, ou
+le Secret `ghcr-pull` doit exister dans les deux namespaces.
+
+### Build local
+
+```sh
+make deploy-local
+```
+
+Cette commande construit `factorio-{api,web,agent}:dev` puis déploie l’agent,
+l’API et le web. Le tag `:dev` est reconstruit et un rollout explicite est
+forcé, donc la nouvelle image est bien chargée. Un changement du template des
 pods Factorio (script du sidecar, réglages) déclenche un rollout des serveurs
 existants.
 
-Pour une release versionnée, suivre [`release.md`](release.md) et déployer les
-images `vX.Y.Z` avec `IMG`, `TAG`, `API_IMG` et `WEB_IMG`.
+Pour une release versionnée, suivre [`release.md`](release.md) et utiliser
+`make deploy TAG=vX.Y.Z`.
 
 ## Vérification après déploiement
 

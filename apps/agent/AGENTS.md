@@ -91,6 +91,9 @@ Do not move this logic into the API.
 - The manager Deployment references the `ghcr-pull` secret. Create it in
   `agent-system` when the release image is private; local `:dev` images still
   work without it.
+- `make deploy IMG=...` applies the manifests and then sets the manager image
+  with `kubectl set image`; it no longer edits the tracked
+  `config/manager/kustomization.yaml`.
 
 ## Documentation
 
