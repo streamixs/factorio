@@ -150,12 +150,17 @@ dans le namespace cible.
 ### Tests et lint
 
 ```sh
-pnpm test                          # API + web
-pnpm --filter @factorio/api test
-pnpm --filter @factorio/web test
-pnpm lint
-make -C apps/agent fmt lint test
+make check                         # référence : lint + tests + builds
+make test                          # API + web + agent
+make test-api
+make test-web
+make test-agent
+make lint
+make build
 ```
+
+Les commandes détaillées par composant restent disponibles dans leurs
+`AGENTS.md` respectifs.
 
 ## Utilisation
 
@@ -199,10 +204,14 @@ Les merges se font en **squash**. Les checks obligatoires ne peuvent pas être
 activés sur ce dépôt privé sans GitHub Pro ; les noms de jobs sont stables
 pour pouvoir les activer plus tard.
 
-Un template de PR rappelle les vérifications minimales.
+`make check` est la vérification de référence avant une PR. Le template de PR
+rappelle les vérifications minimales.
 
 ## Documentation
 
+- [`AGENTS.md`](AGENTS.md) — guide des agents IA : commandes, conventions,
+  recettes de tâches et pièges.
+- [`docs/decisions.md`](docs/decisions.md) — décisions d’architecture.
 - [`deploy/README.md`](deploy/README.md) — déploiement, auth, RBAC,
   NetworkPolicies, imports, metrics et ingress.
 - [`docs/runbook.md`](docs/runbook.md) — exploitation et dépannage.
