@@ -148,10 +148,12 @@ a deliberate choice. Add a new section when a durable behavior changes.
   and never hydrated. A client shell/footer in the root layout produced the
   same symptom. A static query page hydrates like the dashboard.
 - **Consequences:** detail URLs carry a query parameter and old
-  `/servers/<name>` links are redirected. Revisit the routing when Next fixes
-  the dynamic route (or if Cache Components is disabled). Do not reintroduce
-  the app footer in the root layout or `useParams` on the detail without
-  validating a production build.
+  `/servers/<name>` links are redirected. The detail resolves the query with
+  `useSearchParams` under a Suspense boundary and keys `ServerDetail` by name,
+  so client navigation resets the per-server state (including the delete
+  confirmation). Revisit the routing when Next fixes the dynamic route (or if
+  Cache Components is disabled). Do not reintroduce the app footer in the root
+  layout or `useParams` on the detail without validating a production build.
 
 ## Workload hardening and vulnerability gates
 

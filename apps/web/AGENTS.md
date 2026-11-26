@@ -55,11 +55,13 @@ status labels, date formatting or another pure function.
   Cache Components (the footer was removed for this reason).
 - The home dashboard is a client page. It polls every 30 seconds and shows its
   own skeleton; do not assume a server-rendered server list.
-- The server detail is the static `/servers/view?name=<name>` page. `proxy.ts`
-  redirects `/servers/<name>` to it. Keep the detail name in a child effect and
-  do not reintroduce `useParams` or a server `params` page without verifying a
-  production build: that route stayed in a loading shell under
-  Cache Components.
+- The server detail is the static `/servers/view?name=<name>` page. `ViewRoute`
+  resolves the name with `useSearchParams`/`usePathname` under a Suspense
+  boundary, and `ServerDetail` is keyed by name so client navigation resets the
+  per-server state. `proxy.ts` redirects `/servers/<name>` to it. Do not
+  reintroduce `useParams` or a server `params` page without verifying a
+  production build: that route stayed in a loading shell under Cache
+  Components.
 - Server detail pages poll operations every 5 seconds and disable actions while
   an operation is active. Do not bypass this lock in new buttons.
 - Settings updates use `metadata.generation`. On 409, keep local edits and show

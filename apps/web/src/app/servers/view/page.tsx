@@ -1,10 +1,12 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { usePathname, useSearchParams } from "next/navigation";
+import { Suspense } from "react";
 
 import { ServerDetailPage } from "@/app/_components/server-detail";
 import { AppShell } from "@/components/app-shell";
 import { Skeleton } from "@/components/ui/skeleton";
+import { serverNameFromLocation } from "@/lib/server-route";
 
 function DetailSkeleton() {
   return (
@@ -18,24 +20,9 @@ function DetailSkeleton() {
 }
 
 function ViewRoute() {
-  const [name, setName] = useState("");
-
-  useEffect(() => {
-    // The detail is a static page with a query parameter so the shell and the
-    // client data hooks hydrate like the dashboard. Avoid useParams here.
-    // The /servers/<name> URL is rewritten to this page with ?name=<name>.
-    const search = new URLSearchParams(window.location.search);
-    const segments = window.location.pathname.split("/").filter(Boolean);
-    const fromPath =
-      segments[0] === "servers" &&
-      segments[1] !== undefined &&
-      segments[1] !== "view" &&
-      segments[1] !== "new"
-        ? decodeURIComponent(segments[1])
-        : undefined;
-    // eslint-disable-next-line react-hooks/set-state-in-effect
-    setName(search.get("name") ?? fromPath ?? "");
-  }, []);
+  const pathname = usePathname();
+  const searchParams = useSearchParams();
+  const name = serverNameFromLocation(searchParams.toString(), pathname);
 
   return name === "" ? (
     <DetailSkeleton />
@@ -47,7 +34,9 @@ function ViewRoute() {
 export default function Page() {
   return (
     <AppShell>
-      <ViewRoute />
+      <Suspense fallback={<DetailSkeleton />}>
+        <ViewRoute />
+      </Suspense>
     </AppShell>
   );
 }
