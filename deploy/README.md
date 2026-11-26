@@ -97,6 +97,10 @@ Imports and their metadata expire after 30 minutes and are pruned
 automatically. Keeping them on the volume means an import survives an API
 restart while the operation Job is running.
 
+Before writing, the API checks the import volume free space and keeps a 256 MiB
+safety margin. A write that hits `ENOSPC` is rejected with a clear error instead
+of an internal server error.
+
 ## Data retention
 
 - The agent keeps the three newest `pre-restore-*` and `pre-import-*` copies
@@ -104,6 +108,7 @@ restart while the operation Job is running.
 - Terminal `FactorioOperation` resources are kept for 7 days for diagnostics,
   then deleted by the agent. Their Jobs are deleted as soon as they finish.
 - Factorio autosaves are capped by `server.autoSave.slots` in the settings.
+- The backups tab shows the saves directory size and the data volume usage.
 
 Deleting a server with “Conserver les données” detaches its PVC and marks it
 with `games.dev.streamixs.com/keep-pvc: "true"`. The agent adopts the claim when

@@ -268,9 +268,21 @@ export interface ServerBackup {
   createdAt: string;
 }
 
+export interface ServerStorage {
+  /** Bytes used by the saves directory. */
+  savesBytes: number;
+  /** Bytes used by the whole data directory on the PVC. */
+  usedBytes: number;
+  /** Capacity of the data PVC, when known. */
+  totalBytes?: number;
+  /** Free bytes on the data PVC, when the capacity is known. */
+  freeBytes?: number;
+}
+
 export interface ServerBackups {
   available: boolean;
   backups: ServerBackup[];
+  storage?: ServerStorage;
 }
 
 export type ServerOperationType = "Restore" | "Import";

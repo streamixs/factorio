@@ -33,6 +33,7 @@ import {
   restoreBackup,
 } from "@/lib/api";
 import { ACTIVE_OPERATION_PHASES, operationLabel } from "@/lib/operations";
+import { formatBytes } from "@/lib/server-connection";
 
 export function BackupsPanel({
   name,
@@ -89,6 +90,13 @@ export function BackupsPanel({
 
   const operationActive =
     operation !== null && ACTIVE_OPERATION_PHASES.has(operation.phase);
+  const volumeUsed = data?.storage?.usedBytes ?? 0;
+  const volumeTotal = data?.storage?.totalBytes;
+  const volumeFree = data?.storage?.freeBytes;
+  const volumePercent =
+    volumeTotal !== undefined && volumeTotal > 0
+      ? Math.min(100, Math.max(0, (volumeUsed / volumeTotal) * 100))
+      : 0;
 
   useEffect(() => {
     // eslint-disable-next-line react-hooks/set-state-in-effect
@@ -245,6 +253,33 @@ export function BackupsPanel({
           </Alert>
         )}
 
+        {data?.storage !== undefined && (
+          <div className="rounded-lg border bg-muted/40 p-3">
+            <div className="flex flex-wrap items-center justify-between gap-2 text-sm">
+              <span className="text-muted-foreground">Sauvegardes</span>
+              <span>{formatBytes(data.storage.savesBytes)}</span>
+            </div>
+            {volumeTotal !== undefined && volumeFree !== undefined && (
+              <>
+                <div className="mt-1 flex flex-wrap items-center justify-between gap-2 text-xs text-muted-foreground">
+                  <span>Volume</span>
+                  <span>
+                    {formatBytes(volumeUsed)} utilisés /{" "}
+                    {formatBytes(volumeTotal)} · {formatBytes(volumeFree)}{" "}
+                    libres
+                  </span>
+                </div>
+                <div className="mt-2 h-2 overflow-hidden rounded-full bg-muted">
+                  <div
+                    className="h-full rounded-full bg-primary"
+                    style={{ width: `${volumePercent}%` }}
+                  />
+                </div>
+              </>
+            )}
+          </div>
+        )}
+
         {loading && data === null ? (
           <div className="flex flex-col gap-2">
             <Skeleton className="h-14 w-full" />
@@ -324,16 +359,6 @@ function backupLabel(name: string): string | undefined {
     return "avant import";
   }
   return undefined;
-}
-
-function formatBytes(value: number): string {
-  if (value < 1024) {
-    return `${value} o`;
-  }
-  if (value < 1024 * 1024) {
-    return `${(value / 1024).toFixed(1)} Ko`;
-  }
-  return `${(value / (1024 * 1024)).toFixed(1)} Mo`;
 }
 
 function formatTimestamp(value: string): string {

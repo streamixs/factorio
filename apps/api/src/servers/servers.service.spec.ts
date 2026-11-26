@@ -751,11 +751,24 @@ describe('ServersService', () => {
     });
     vi.stubGlobal(
       'fetch',
-      vi.fn().mockResolvedValue({
-        ok: true,
-        text: async () => '_autosave2.zip 123 1767225600\n_broken.txt 1 1\n',
+      vi.fn().mockImplementation((url: string) => {
+        if (url.endsWith('/usage.txt')) {
+          return Promise.resolve({
+            ok: true,
+            text: async () => '524288\n600000\n',
+          });
+        }
+        return Promise.resolve({
+          ok: true,
+          text: async () => '_autosave2.zip 123 1767225600\n_broken.txt 1 1\n',
+        });
       }),
     );
+    readNamespacedPersistentVolumeClaim.mockResolvedValue({
+      metadata: { name: 'my-server-data' },
+      spec: {},
+      status: { capacity: { storage: '10Gi' } },
+    });
 
     const backups = await service.backups('my-server');
 
@@ -767,6 +780,78 @@ describe('ServersService', () => {
         createdAt: '2026-01-01T00:00:00.000Z',
       },
     ]);
+    expect(backups.storage).toEqual({
+      savesBytes: 524288 * 1024,
+      usedBytes: 600000 * 1024,
+      totalBytes: 10 * 1024 ** 3,
+      freeBytes: 10 * 1024 ** 3 - 600000 * 1024,
+    });
+  });
+
+  it('keeps the backup list when the PVC capacity is unknown', async () => {
+    listNamespacedPod.mockResolvedValue({
+      items: [
+        {
+          metadata: { name: 'pod' },
+          status: { podIP: '10.0.0.1', containerStatuses: [{ ready: true }] },
+        },
+      ],
+    });
+    readNamespacedPersistentVolumeClaim.mockRejectedValue(
+      new ApiException(404, 'Not Found', undefined, {}),
+    );
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockImplementation((url: string) => {
+        if (url.endsWith('/usage.txt')) {
+          return Promise.resolve({
+            ok: true,
+            text: async () => '524288\n600000\n',
+          });
+        }
+        return Promise.resolve({
+          ok: true,
+          text: async () => '_autosave1.zip 100 1767225600\n',
+        });
+      }),
+    );
+
+    const backups = await service.backups('my-server');
+
+    expect(backups.available).toBe(true);
+    expect(backups.storage).toEqual({
+      savesBytes: 524288 * 1024,
+      usedBytes: 600000 * 1024,
+    });
+  });
+
+  it('keeps the backup list when storage usage is unavailable', async () => {
+    listNamespacedPod.mockResolvedValue({
+      items: [
+        {
+          metadata: { name: 'pod' },
+          status: { podIP: '10.0.0.1', containerStatuses: [{ ready: true }] },
+        },
+      ],
+    });
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockImplementation((url: string) => {
+        if (url.endsWith('/usage.txt')) {
+          return Promise.resolve({ ok: false, status: 404 });
+        }
+        return Promise.resolve({
+          ok: true,
+          text: async () => '_autosave1.zip 100 1767225600\n',
+        });
+      }),
+    );
+
+    const backups = await service.backups('my-server');
+
+    expect(backups.available).toBe(true);
+    expect(backups.backups).toHaveLength(1);
+    expect(backups.storage).toBeUndefined();
   });
 
   it('returns unavailable when no pod is running', async () => {
@@ -1178,6 +1263,26 @@ describe('ServersService', () => {
     ).rejects.toBeInstanceOf(PayloadTooLargeException);
 
     expect(getNamespacedCustomObject).not.toHaveBeenCalled();
+  });
+
+  it('rejects an import when the volume runs out of space', async () => {
+    getNamespacedCustomObject.mockResolvedValue({
+      metadata: { name: 'my-server', namespace: 'games' },
+      spec: { version: '2.1.24' },
+    });
+    listNamespacedCustomObject.mockResolvedValue({ items: [] });
+
+    async function* failingBody() {
+      yield Buffer.from([0x50, 0x4b, 0x03, 0x04]);
+      throw Object.assign(new Error('no space'), { code: 'ENOSPC' });
+    }
+
+    await expect(
+      service.importSave('my-server', Readable.from(failingBody()), '0'),
+    ).rejects.toBeInstanceOf(PayloadTooLargeException);
+
+    expect(createNamespacedCustomObject).not.toHaveBeenCalled();
+    expect(await readdir(importDir)).toEqual([]);
   });
 
   it('rejects an empty RCON command', async () => {
