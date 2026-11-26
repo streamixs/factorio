@@ -1389,6 +1389,67 @@ describe('ServersService', () => {
     });
   });
 
+  it('reports uptime from the current pod', async () => {
+    const now = Date.parse('2026-01-01T12:00:00Z');
+    const nowSpy = vi.spyOn(Date, 'now').mockReturnValue(now);
+
+    try {
+      listNamespacedPod.mockResolvedValue({
+        items: [
+          {
+            metadata: {
+              name: 'pod',
+              creationTimestamp: '2026-01-01T10:00:00Z',
+            },
+            status: {
+              podIP: '10.0.0.1',
+              containerStatuses: [{ ready: true }],
+            },
+          },
+        ],
+      });
+      getNamespacedCustomObject.mockResolvedValue({ containers: [] });
+
+      const usage = await service.usage('my-server');
+
+      expect(usage.startedAt).toBe('2026-01-01T10:00:00.000Z');
+      expect(usage.uptimeSeconds).toBe(7200);
+    } finally {
+      nowSpy.mockRestore();
+    }
+  });
+
+  it('reports players as unavailable when the server is stopped', async () => {
+    getNamespacedCustomObject.mockResolvedValue({
+      metadata: { name: 'my-server', namespace: 'games' },
+      spec: { version: '2.1.24' },
+    });
+    listNamespacedPod.mockResolvedValue({ items: [] });
+
+    await expect(service.players('my-server')).resolves.toMatchObject({
+      available: false,
+      players: [],
+    });
+  });
+
+  it('rejects a kick with an invalid player name', async () => {
+    await expect(
+      service.kickPlayer('my-server', { player: '   ' }),
+    ).rejects.toBeInstanceOf(BadRequestException);
+  });
+
+  it('rejects a kick when the server is stopped', async () => {
+    getNamespacedCustomObject.mockResolvedValue({
+      metadata: { name: 'my-server', namespace: 'games' },
+      spec: { version: '2.1.24' },
+    });
+    listNamespacedPod.mockResolvedValue({ items: [] });
+
+    await expect(
+      service.kickPlayer('my-server', { player: 'Alice' }),
+    ).rejects.toBeInstanceOf(NotFoundException);
+  });
+
   it('maps a 404 to NotFoundException', async () => {
     getNamespacedCustomObject.mockRejectedValue(
       new ApiException(404, 'Not Found', undefined, {}),

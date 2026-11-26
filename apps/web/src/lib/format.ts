@@ -63,3 +63,38 @@ export function formatRelativeTime(value: string, now = Date.now()): string {
 
   return relativeFormatter.format(Math.round(deltaSeconds / 86400), "day");
 }
+
+/**
+ * Formats an elapsed time in seconds using short French units, for example
+ * `3 h 12 min` or `2 j 4 h`. Returns an em dash for missing or invalid values.
+ */
+export function formatUptime(seconds: number | null | undefined): string {
+  if (
+    seconds === null ||
+    seconds === undefined ||
+    !Number.isFinite(seconds) ||
+    seconds < 0
+  ) {
+    return "—";
+  }
+
+  const totalSeconds = Math.floor(seconds);
+  if (totalSeconds < 60) {
+    return "< 1 min";
+  }
+
+  const totalMinutes = Math.floor(totalSeconds / 60);
+  if (totalMinutes < 60) {
+    return `${totalMinutes} min`;
+  }
+
+  const hours = Math.floor(totalMinutes / 60);
+  const minutes = totalMinutes % 60;
+  if (hours < 24) {
+    return minutes === 0 ? `${hours} h` : `${hours} h ${minutes} min`;
+  }
+
+  const days = Math.floor(hours / 24);
+  const remainingHours = hours % 24;
+  return remainingHours === 0 ? `${days} j` : `${days} j ${remainingHours} h`;
+}

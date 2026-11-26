@@ -37,6 +37,7 @@ import type { ReadableStream as NodeReadableStream } from 'node:stream/web';
 import { pipeline } from 'node:stream/promises';
 import {
   createFactorioServerSchema,
+  kickPlayerSchema,
   rconCommandSchema,
   updateFactorioServerSchema,
   zodErrorMessage,
@@ -56,6 +57,7 @@ import type {
   ServerOperation,
   ServerOperationPhase,
   ServerOperationType,
+  ServerPlayers,
   ServerSettingsJson,
   ServerStorage,
   ServerUsage,
@@ -65,6 +67,7 @@ import type {
 
 import { KubernetesService } from '../kubernetes/kubernetes.service.js';
 import { importSpaceIssue } from './import-space.js';
+import { parsePlayersOutput } from './players.js';
 
 const GROUP = 'games.dev.streamixs.com';
 const VERSION = 'v1alpha1';
@@ -567,6 +570,11 @@ export class ServersService {
 
     const pod = await this.findServerPod(name);
     const podName = pod?.metadata?.name;
+    const startedAt = toISOString(pod?.metadata?.creationTimestamp);
+    const uptimeSeconds =
+      startedAt === ''
+        ? undefined
+        : Math.max(0, Math.floor((Date.now() - Date.parse(startedAt)) / 1000));
 
     if (podName === undefined) {
       return {
@@ -609,6 +617,8 @@ export class ServersService {
           0,
         ),
         containers,
+        startedAt: startedAt === '' ? undefined : startedAt,
+        uptimeSeconds,
       };
     } catch {
       return {
@@ -616,6 +626,8 @@ export class ServersService {
         cpuMillicores: 0,
         memoryBytes: 0,
         containers: [],
+        startedAt: startedAt === '' ? undefined : startedAt,
+        uptimeSeconds,
       };
     }
   }
@@ -1161,6 +1173,21 @@ export class ServersService {
       throw new BadRequestException(zodErrorMessage(parsed.error));
     }
 
+    return {
+      output: await this.executeRcon(name, parsed.data.command, true),
+    };
+  }
+
+  /**
+   * Runs a command over RCON. Polling commands disable the audit log so the
+   * player list does not flood the API logs.
+   */
+  private async executeRcon(
+    name: string,
+    command: string,
+    logCommand: boolean,
+    timeoutMs = RCON_TIMEOUT_MS,
+  ): Promise<string> {
     await this.get(name);
 
     const pod = await this.findServerPod(name);
@@ -1191,14 +1218,17 @@ export class ServersService {
         podIP,
         RCON_PORT,
         password,
-        parsed.data.command,
+        command,
+        timeoutMs,
       );
-      this.logger.log(
-        `RCON command for ${name}: ${parsed.data.command
-          .replace(/\s+/g, ' ')
-          .slice(0, 200)}`,
-      );
-      return { output };
+      if (logCommand) {
+        this.logger.log(
+          `RCON command for ${name}: ${command
+            .replace(/\s+/g, ' ')
+            .slice(0, 200)}`,
+        );
+      }
+      return output;
     } catch (error) {
       this.logger.error(
         `RCON command failed for ${name}`,
@@ -1208,6 +1238,62 @@ export class ServersService {
         error instanceof Error ? error.message : 'RCON command failed',
       );
     }
+  }
+
+  /**
+   * Returns the players currently online. A stopped server is reported as an
+   * unavailable empty list rather than an error so the dashboard can poll it.
+   */
+  async players(name: string): Promise<ServerPlayers> {
+    this.assertName(name);
+    await this.get(name);
+
+    try {
+      const output = await this.executeRcon(
+        name,
+        '/players online',
+        false,
+        5000,
+      );
+      return {
+        available: true,
+        players: parsePlayersOutput(output),
+        fetchedAt: new Date().toISOString(),
+      };
+    } catch (error) {
+      if (error instanceof NotFoundException) {
+        return {
+          available: false,
+          players: [],
+          fetchedAt: new Date().toISOString(),
+        };
+      }
+      throw error;
+    }
+  }
+
+  /**
+   * Kicks a player that is currently online. The name is validated against the
+   * RCON player list before it is interpolated into the command.
+   */
+  async kickPlayer(name: string, input: unknown): Promise<{ output: string }> {
+    this.assertName(name);
+
+    const parsed = kickPlayerSchema.safeParse(input);
+    if (!parsed.success) {
+      throw new BadRequestException(zodErrorMessage(parsed.error));
+    }
+
+    const current = await this.players(name);
+    if (!current.available) {
+      throw new NotFoundException('Server is not running');
+    }
+
+    if (!current.players.includes(parsed.data.player)) {
+      throw new BadRequestException('Player is not online');
+    }
+
+    return this.rcon(name, { command: `/kick ${parsed.data.player}` });
   }
 
   private importPaths(token: string): { zip: string; metadata: string } {
@@ -1715,6 +1801,7 @@ function rconExec(
   port: number,
   password: string,
   command: string,
+  timeoutMs: number,
 ): Promise<string> {
   return new Promise((resolve, reject) => {
     const socket = new Socket();
@@ -1726,7 +1813,7 @@ function rconExec(
 
     const timer = setTimeout(() => {
       fail(new Error('RCON timed out'));
-    }, RCON_TIMEOUT_MS);
+    }, timeoutMs);
 
     function cleanup(): void {
       clearTimeout(timer);
@@ -1754,7 +1841,7 @@ function rconExec(
       resolve(value);
     }
 
-    socket.setTimeout(RCON_TIMEOUT_MS);
+    socket.setTimeout(timeoutMs);
     socket.on('timeout', () => fail(new Error('RCON timed out')));
     socket.on('error', (error) => fail(error));
     socket.on('connect', () => {

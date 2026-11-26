@@ -72,6 +72,10 @@ status labels, date formatting or another pure function.
   commit it if it changes.
 - The sidebar shows `NEXT_PUBLIC_APP_VERSION`, baked at build time. Local builds
   fall back to `dev`; release images receive the Git tag.
+- The players panel polls `/api/servers/<name>/players` every 10 seconds. The
+  dashboard only polls online servers. Kick actions go through the API, which
+  checks the player against the live RCON list; never send `/kick` from the
+  browser.
 
 See the root [`AGENTS.md`](../../AGENTS.md) for cross-component recipes and
 [`docs/working-agreements.md`](../../docs/working-agreements.md) for the work

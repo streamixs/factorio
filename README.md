@@ -180,6 +180,11 @@ Les commandes détaillées par composant restent disponibles dans leurs
   configuration a changé ailleurs ; rechargez les valeurs à jour.
 - **Console** : commandes RCON. Les commandes sont auditées dans les logs de
   l’API, jamais leur sortie.
+- **Joueurs** : la vue d’ensemble affiche les joueurs en ligne et permet de
+  les expulser après confirmation. L’API vérifie que le joueur est bien
+  connecté avant d’envoyer `/kick`.
+- **Charge** : uptime du pod courant, CPU et mémoire. L’uptime reste visible
+  si metrics-server est indisponible.
 - **Sauvegardes** : autosaves Factorio, copies de sécurité, restauration et
   import. Un import est limité à 1 GiB et à l’espace libre du volume.
 - **Suppression** : l’option « Conserver les données » détache le PVC. Un

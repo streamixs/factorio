@@ -25,6 +25,7 @@ import type {
   ServerEvent,
   ServerLogs,
   ServerOperation,
+  ServerPlayers,
   ServerSettingsJson,
   ServerUsage,
   UpdateFactorioServerInput,
@@ -100,6 +101,11 @@ export class ServersController {
     return this.servers.usage(name);
   }
 
+  @Get(':name/players')
+  players(@Param('name') name: string): Promise<ServerPlayers> {
+    return this.servers.players(name);
+  }
+
   @Get(':name/backups')
   backups(@Param('name') name: string): Promise<ServerBackups> {
     return this.servers.backups(name);
@@ -172,6 +178,15 @@ export class ServersController {
     @Body() input: unknown,
   ): Promise<{ output: string }> {
     return this.servers.rcon(name, input);
+  }
+
+  @Post(':name/players/kick')
+  @HttpCode(HttpStatus.OK)
+  kickPlayer(
+    @Param('name') name: string,
+    @Body() input: unknown,
+  ): Promise<{ output: string }> {
+    return this.servers.kickPlayer(name, input);
   }
 
   @Post()
