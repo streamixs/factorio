@@ -2,7 +2,7 @@
 
 ARG APP_VERSION=dev
 
-FROM node:24-alpine AS builder
+FROM node:26-alpine AS builder
 
 WORKDIR /app
 
@@ -22,7 +22,7 @@ RUN pnpm --filter @factorio/shared build \
     && pnpm --filter @factorio/api build \
     && pnpm --filter @factorio/api --prod deploy /prod/api
 
-FROM node:24-alpine AS runner
+FROM node:26-alpine AS runner
 
 ARG APP_VERSION=dev
 

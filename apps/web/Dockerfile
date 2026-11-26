@@ -2,7 +2,7 @@
 
 ARG APP_VERSION=dev
 
-FROM node:24-alpine AS builder
+FROM node:26-alpine AS builder
 
 ARG APP_VERSION
 ENV NEXT_PUBLIC_APP_VERSION=${APP_VERSION}
@@ -24,7 +24,7 @@ COPY apps/web apps/web
 RUN pnpm --filter @factorio/shared build \
     && pnpm --filter @factorio/web build
 
-FROM node:24-alpine AS runner
+FROM node:26-alpine AS runner
 
 ARG APP_VERSION=dev
 
