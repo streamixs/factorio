@@ -87,9 +87,43 @@ jobs:
           cache-from: type=gha,scope=release-${{ matrix.name }}
           cache-to: type=gha,mode=max,scope=release-${{ matrix.name }}
 
+  verify-images:
+    name: Verify published images
+    needs: build
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: read
+      packages: read
+    steps:
+      - name: Log in to GHCR
+        uses: docker/login-action@8aa5831fb8d48d8f76594c7ddde61ae58019f550 # v4.8.0
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Verify the agent version
+        env:
+          TAG: ${{ github.ref_name }}
+        run: |
+          image="ghcr.io/${{ github.repository_owner }}/factorio-agent:${TAG}"
+          test "$(docker run --rm "$image" --version)" = "$TAG"
+
+      - name: Verify multi-arch manifests
+        env:
+          TAG: ${{ github.ref_name }}
+        run: |
+          for name in api web agent; do
+            image="ghcr.io/${{ github.repository_owner }}/factorio-${name}:${TAG}"
+            for platform in linux/amd64 linux/arm64; do
+              docker buildx imagetools inspect "$image" | grep -q "$platform"
+            done
+          done
+
   release:
     name: Create GitHub release
-    needs: build
+    needs: [build, verify-images]
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:

@@ -49,6 +49,8 @@ script tags the current commit without an empty release commit.
   - `X.Y`
   - `latest`
   - `sha-<short>`
+- verifies the published images are pullable, multi-arch and that the agent
+  binary reports the tag;
 - creates the GitHub Release with auto-generated notes;
 - builds the agent `install.yaml` with the released image and attaches it to
   the release.
