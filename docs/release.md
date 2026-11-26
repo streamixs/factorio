@@ -81,7 +81,7 @@ kubectl -n factorio-system port-forward svc/factorio-api 3001:3001
 curl -s http://localhost:3001/health
 ```
 
-The API health response and the web footer must show `vX.Y.Z`. The agent logs
+The API health response and the sidebar version must show `vX.Y.Z`. The agent logs
 `version=vX.Y.Z` at startup and supports:
 
 ```sh
