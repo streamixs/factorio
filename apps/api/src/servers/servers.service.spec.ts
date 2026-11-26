@@ -751,9 +751,17 @@ describe('ServersService', () => {
     });
     vi.stubGlobal(
       'fetch',
-      vi.fn().mockResolvedValue({
-        ok: true,
-        text: async () => '_autosave2.zip 123 1767225600\n_broken.txt 1 1\n',
+      vi.fn().mockImplementation((url: string) => {
+        if (url.endsWith('/usage.txt')) {
+          return Promise.resolve({
+            ok: true,
+            text: async () => '1048576 524288 524288\n524288\n',
+          });
+        }
+        return Promise.resolve({
+          ok: true,
+          text: async () => '_autosave2.zip 123 1767225600\n_broken.txt 1 1\n',
+        });
       }),
     );
 
@@ -767,6 +775,40 @@ describe('ServersService', () => {
         createdAt: '2026-01-01T00:00:00.000Z',
       },
     ]);
+    expect(backups.storage).toEqual({
+      savesBytes: 524288 * 1024,
+      totalBytes: 1048576 * 1024,
+      freeBytes: 524288 * 1024,
+    });
+  });
+
+  it('keeps the backup list when storage usage is unavailable', async () => {
+    listNamespacedPod.mockResolvedValue({
+      items: [
+        {
+          metadata: { name: 'pod' },
+          status: { podIP: '10.0.0.1', containerStatuses: [{ ready: true }] },
+        },
+      ],
+    });
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockImplementation((url: string) => {
+        if (url.endsWith('/usage.txt')) {
+          return Promise.resolve({ ok: false, status: 404 });
+        }
+        return Promise.resolve({
+          ok: true,
+          text: async () => '_autosave1.zip 100 1767225600\n',
+        });
+      }),
+    );
+
+    const backups = await service.backups('my-server');
+
+    expect(backups.available).toBe(true);
+    expect(backups.backups).toHaveLength(1);
+    expect(backups.storage).toBeUndefined();
   });
 
   it('returns unavailable when no pod is running', async () => {
@@ -1178,6 +1220,26 @@ describe('ServersService', () => {
     ).rejects.toBeInstanceOf(PayloadTooLargeException);
 
     expect(getNamespacedCustomObject).not.toHaveBeenCalled();
+  });
+
+  it('rejects an import when the volume runs out of space', async () => {
+    getNamespacedCustomObject.mockResolvedValue({
+      metadata: { name: 'my-server', namespace: 'games' },
+      spec: { version: '2.1.24' },
+    });
+    listNamespacedCustomObject.mockResolvedValue({ items: [] });
+
+    async function* failingBody() {
+      yield Buffer.from([0x50, 0x4b, 0x03, 0x04]);
+      throw Object.assign(new Error('no space'), { code: 'ENOSPC' });
+    }
+
+    await expect(
+      service.importSave('my-server', Readable.from(failingBody()), '0'),
+    ).rejects.toBeInstanceOf(PayloadTooLargeException);
+
+    expect(createNamespacedCustomObject).not.toHaveBeenCalled();
+    expect(await readdir(importDir)).toEqual([]);
   });
 
   it('rejects an empty RCON command', async () => {

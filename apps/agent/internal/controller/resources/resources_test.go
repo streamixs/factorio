@@ -784,10 +784,25 @@ func TestSavesSidecarHandlesSigterm(t *testing.T) {
 		"trap shutdown TERM INT",
 		"httpd_supervisor_pid",
 		"wait $!",
+		"usage.txt",
+		"df -kP",
+		"du -sk",
 	} {
 		if !strings.Contains(script, expected) {
 			t.Errorf("saves script does not contain %q", expected)
 		}
+	}
+}
+
+func TestSavesScriptIsValidShell(t *testing.T) {
+	container := savesContainerFileServer()
+	if len(container.Command) != 3 {
+		t.Fatalf("unexpected saves command: %v", container.Command)
+	}
+
+	cmd := exec.Command("sh", "-n", "-c", container.Command[2])
+	if output, err := cmd.CombinedOutput(); err != nil {
+		t.Errorf("saves script is not valid shell: %v: %s", err, output)
 	}
 }
 

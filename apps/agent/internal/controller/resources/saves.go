@@ -52,6 +52,14 @@ while true; do
     printf '%s %s %s\n' "$name" "$size" "$mtime" >> "$tmp"
   done
   mv "$tmp" /factorio/saves/index.txt
+
+  usage_tmp=/factorio/saves/.usage.tmp
+  {
+    df -kP /factorio/saves | awk 'NR==2 {printf "%s %s %s\n", $2, $3, $4}'
+    du -sk /factorio/saves | cut -f1
+  } > "$usage_tmp"
+  mv "$usage_tmp" /factorio/saves/usage.txt
+
   sleep 30 &
   wait $! || true
 done

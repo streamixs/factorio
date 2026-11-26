@@ -25,6 +25,7 @@ import {
   readdir,
   rename,
   stat,
+  statfs,
   unlink,
   writeFile,
 } from 'node:fs/promises';
@@ -56,12 +57,14 @@ import type {
   ServerOperationPhase,
   ServerOperationType,
   ServerSettingsJson,
+  ServerStorage,
   ServerUsage,
   ServicePortInfo,
   UpdateFactorioServerInput,
 } from '@factorio/shared';
 
 import { KubernetesService } from '../kubernetes/kubernetes.service.js';
+import { importSpaceIssue } from './import-space.js';
 
 const GROUP = 'games.dev.streamixs.com';
 const VERSION = 'v1alpha1';
@@ -682,12 +685,16 @@ export class ServersService {
     }
 
     try {
-      const response = await this.fetchFromPod(podIP, '/index.txt');
-      if (!response.ok) {
+      const [indexResponse, usageResponse] = await Promise.all([
+        this.fetchFromPod(podIP, '/index.txt'),
+        this.fetchFromPod(podIP, '/usage.txt').catch(() => null),
+      ]);
+
+      if (!indexResponse.ok) {
         return { available: false, backups: [] };
       }
 
-      const backups = (await response.text())
+      const backups = (await indexResponse.text())
         .split('\n')
         .map(parseBackupLine)
         .filter((backup): backup is ServerBackup => backup !== undefined)
@@ -696,7 +703,16 @@ export class ServersService {
             Date.parse(right.createdAt) - Date.parse(left.createdAt),
         );
 
-      return { available: true, backups };
+      let storage: ServerStorage | undefined;
+      if (usageResponse !== null && usageResponse.ok) {
+        try {
+          storage = parseStorageUsage(await usageResponse.text());
+        } catch {
+          storage = undefined;
+        }
+      }
+
+      return { available: true, backups, storage };
     } catch {
       return { available: false, backups: [] };
     }
@@ -785,6 +801,19 @@ export class ServersService {
     const tempPath = `${filePath}.tmp`;
 
     await mkdir(this.importDir, { recursive: true });
+
+    let freeBytes: number | undefined;
+    try {
+      const stats = await statfs(this.importDir);
+      freeBytes = stats.bavail * stats.bsize;
+    } catch {
+      // The write stream and ENOSPC handling remain the fallback.
+    }
+
+    const spaceIssue = importSpaceIssue(declared, freeBytes);
+    if (spaceIssue !== undefined) {
+      throw new PayloadTooLargeException(spaceIssue);
+    }
 
     try {
       await writeLimited(body, tempPath);
@@ -1577,8 +1606,22 @@ async function writeLimited(body: Readable, path: string): Promise<void> {
     if (error instanceof PayloadTooLargeException) {
       throw error;
     }
+    if (isNoSpaceError(error)) {
+      throw new PayloadTooLargeException(
+        'Not enough space on the import volume',
+      );
+    }
     throw new BadRequestException('Could not read the uploaded save');
   }
+}
+
+function isNoSpaceError(error: unknown): boolean {
+  return (
+    typeof error === 'object' &&
+    error !== null &&
+    'code' in error &&
+    (error as { code?: unknown }).code === 'ENOSPC'
+  );
 }
 
 async function hasZipMagic(path: string): Promise<boolean> {
@@ -1770,6 +1813,26 @@ function parseBackupLine(line: string): ServerBackup | undefined {
     name,
     size: sizeValue,
     createdAt: new Date(mtimeValue * 1000).toISOString(),
+  };
+}
+
+function parseStorageUsage(text: string): ServerStorage | undefined {
+  const lines = text.trim().split('\n');
+  if (lines.length < 2) {
+    return undefined;
+  }
+
+  const [totalKb, usedKb, freeKb] = lines[0].trim().split(/\s+/).map(Number);
+  const savesKb = Number(lines[1].trim().split(/\s+/)[0]);
+  const values = [totalKb, usedKb, freeKb, savesKb];
+  if (values.some((value) => !Number.isFinite(value) || value < 0)) {
+    return undefined;
+  }
+
+  return {
+    savesBytes: savesKb * 1024,
+    totalBytes: totalKb * 1024,
+    freeBytes: freeKb * 1024,
   };
 }
 

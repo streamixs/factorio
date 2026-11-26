@@ -268,9 +268,19 @@ export interface ServerBackup {
   createdAt: string;
 }
 
+export interface ServerStorage {
+  /** Bytes used by the saves directory. */
+  savesBytes: number;
+  /** Total size of the data volume. */
+  totalBytes: number;
+  /** Free bytes on the data volume. */
+  freeBytes: number;
+}
+
 export interface ServerBackups {
   available: boolean;
   backups: ServerBackup[];
+  storage?: ServerStorage;
 }
 
 export type ServerOperationType = "Restore" | "Import";
