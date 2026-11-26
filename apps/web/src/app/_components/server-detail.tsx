@@ -64,7 +64,7 @@ const VIEWS = [
 export function ServerDetailPage({ name }: { name: string }) {
   return (
     <Suspense fallback={<DetailSkeleton />}>
-      <ServerDetail name={name} />
+      <ServerDetail key={name} name={name} />
     </Suspense>
   );
 }
