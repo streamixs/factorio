@@ -9,21 +9,23 @@ import {
 import {
   ArrowLeft,
   Bell,
+  LayoutDashboard,
   Loader2,
-  Network,
   Save,
   ScrollText,
   SlidersHorizontal,
   Terminal,
+  Trash2,
 } from "lucide-react";
 import Link from "next/link";
-import { useParams, useRouter } from "next/navigation";
+import { useRouter } from "next/navigation";
 import { Suspense, useCallback, useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
 
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
 import { Button, buttonVariants } from "@/components/ui/button";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
@@ -38,36 +40,37 @@ import {
   stopServer,
 } from "@/lib/api";
 import { activeOperation, operationLabel } from "@/lib/operations";
+import { formatDate } from "@/lib/format";
 import { serverStatusBadge } from "@/lib/server-status";
 import type { SettingsSchema } from "@/lib/settings-schema";
 
-import { DeleteServerConfirmation } from "../../_components/delete-server-confirmation";
-import { BackupsPanel } from "./backups";
-import { ConnectionPanel } from "./connection";
-import { ConsolePanel } from "./console";
-import { EventsPanel, LogsPanel } from "./diagnostics";
-import { SettingsForm } from "./settings-form";
+import { DeleteServerConfirmation } from "./delete-server-confirmation";
+import { BackupsPanel } from "../servers/[name]/backups";
+import { ConnectionPanel } from "../servers/[name]/connection";
+import { ConsolePanel } from "../servers/[name]/console";
+import { EventsPanel, LogsPanel } from "../servers/[name]/diagnostics";
+import { SettingsForm } from "../servers/[name]/settings-form";
 
 const VIEWS = [
-  { id: "config", label: "Configuration", icon: SlidersHorizontal },
-  { id: "connection", label: "Connexion", icon: Network },
-  { id: "logs", label: "Logs", icon: ScrollText },
-  { id: "events", label: "Events", icon: Bell },
+  { id: "overview", label: "Vue d'ensemble", icon: LayoutDashboard },
   { id: "console", label: "Console", icon: Terminal },
+  { id: "logs", label: "Logs", icon: ScrollText },
   { id: "backups", label: "Sauvegardes", icon: Save },
+  { id: "config", label: "Configuration", icon: SlidersHorizontal },
+  { id: "events", label: "Événements", icon: Bell },
 ] as const;
 
-export default function ServerDetailPage() {
+export function ServerDetailPage({ name }: { name: string }) {
   return (
     <Suspense fallback={<DetailSkeleton />}>
-      <ServerDetail />
+      <ServerDetail name={name} />
     </Suspense>
   );
 }
 
 function DetailSkeleton() {
   return (
-    <main className="mx-auto flex w-full max-w-7xl flex-1 flex-col gap-6 px-4 py-10 sm:px-6 lg:px-8">
+    <main className="mx-auto flex w-full max-w-[1460px] flex-1 flex-col gap-6 px-4 py-6 sm:px-6 lg:px-8">
       <Skeleton className="h-5 w-32" />
       <Skeleton className="h-10 w-64" />
       <Skeleton className="h-96 w-full" />
@@ -75,9 +78,7 @@ function DetailSkeleton() {
   );
 }
 
-function ServerDetail() {
-  const params = useParams<{ name: string }>();
-  const name = typeof params.name === "string" ? params.name : "";
+function ServerDetail({ name }: { name: string }) {
   const router = useRouter();
 
   const [server, setServer] = useState<FactorioServer | null>(null);
@@ -90,7 +91,7 @@ function ServerDetail() {
   const [warning, setWarning] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [pending, setPending] = useState(false);
-  const [view, setView] = useState<string>("config");
+  const [view, setView] = useState<string>("overview");
   const [deleteOpen, setDeleteOpen] = useState(false);
   const previousActiveOperation = useRef<ServerOperation | null>(null);
 
@@ -269,7 +270,7 @@ function ServerDetail() {
 
   if (loading) {
     return (
-      <main className="mx-auto flex w-full max-w-7xl flex-1 flex-col gap-6 px-4 py-10 sm:px-6 lg:px-8">
+      <main className="mx-auto flex w-full max-w-[1460px] flex-1 flex-col gap-6 px-4 py-6 sm:px-6 lg:px-8">
         <DetailSkeleton />
       </main>
     );
@@ -277,7 +278,7 @@ function ServerDetail() {
 
   if (server === null || settings === null) {
     return (
-      <main className="mx-auto flex w-full max-w-7xl flex-1 flex-col gap-4 px-4 py-10 sm:px-6 lg:px-8">
+      <main className="mx-auto flex w-full max-w-[1460px] flex-1 flex-col gap-4 px-4 py-6 sm:px-6 lg:px-8">
         <Link href="/" className={buttonVariants({ variant: "ghost", size: "sm" })}>
           ← Tous les serveurs
         </Link>
@@ -298,7 +299,7 @@ function ServerDetail() {
     server.spec.server?.identity?.name ?? server.metadata.name;
 
   return (
-    <main className="mx-auto flex w-full max-w-7xl flex-1 flex-col gap-6 px-4 py-10 sm:px-6 lg:px-8">
+    <main className="mx-auto flex w-full max-w-[1460px] flex-1 flex-col gap-6 px-4 py-6 sm:px-6 lg:px-8">
       <header className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
         <div className="min-w-0">
           <div className="flex flex-wrap items-center gap-3">
@@ -309,7 +310,7 @@ function ServerDetail() {
             >
               <ArrowLeft className="size-4" />
             </Link>
-            <h1 className="truncate font-mono text-2xl font-semibold tracking-tight">
+            <h1 className="truncate text-2xl font-semibold tracking-tight sm:text-3xl">
               {server.metadata.name}
             </h1>
             <Badge variant="outline" className={badge.className}>
@@ -317,7 +318,9 @@ function ServerDetail() {
             </Badge>
           </div>
           <p className="mt-1 text-sm text-muted-foreground">
-            {displayName} · v{server.spec.version ?? "unknown"}
+            {displayName} · namespace {server.metadata.namespace ?? "default"} ·
+            v{server.spec.version ?? "inconnue"} · créé le{" "}
+            {formatDate(server.metadata.creationTimestamp)}
           </p>
         </div>
 
@@ -342,12 +345,14 @@ function ServerDetail() {
           </Button>
           <Button
             type="button"
-            variant="destructive"
+            variant="ghost"
             size="sm"
+            className="text-destructive hover:bg-destructive/10 hover:text-destructive"
             onClick={() => setDeleteOpen(true)}
             disabled={pending || operationActive}
           >
-            Supprimer
+            <Trash2 className="size-4" aria-hidden />
+            <span className="hidden sm:inline">Supprimer</span>
           </Button>
         </div>
       </header>
@@ -397,22 +402,19 @@ function ServerDetail() {
         </Alert>
       )}
 
-      <div className="flex flex-col gap-6 lg:flex-row lg:items-start">
-        <Tabs
-          value={view}
-          onValueChange={(value) => setView(String(value))}
-          className="contents"
-        >
-        <TabsList
-          className="group-data-horizontal/tabs:h-auto h-auto w-full flex-wrap justify-start gap-1 rounded-xl border bg-muted/40 p-2 lg:sticky lg:top-6 lg:w-56 lg:shrink-0 lg:flex-col lg:flex-nowrap lg:items-stretch"
-        >
+      <Tabs
+        value={view}
+        onValueChange={(value) => setView(String(value))}
+        className="gap-4"
+      >
+        <TabsList className="group-data-horizontal/tabs:h-auto h-auto w-full flex-wrap justify-start gap-1 rounded-xl border bg-muted/40 p-2">
           {VIEWS.map((item) => {
             const Icon = item.icon;
             return (
               <TabsTrigger
                 key={item.id}
                 value={item.id}
-                className="justify-start gap-2 data-active:bg-primary/10 data-active:text-primary dark:data-active:bg-primary/10 dark:data-active:text-primary lg:w-full lg:flex-none"
+                className="justify-start gap-2 data-active:bg-primary/10 data-active:text-primary dark:data-active:bg-primary/10 dark:data-active:text-primary"
               >
                 <Icon className="size-4 shrink-0" aria-hidden />
                 <span className="truncate">{item.label}</span>
@@ -421,7 +423,59 @@ function ServerDetail() {
           })}
         </TabsList>
 
-        <div className="min-w-0 flex-1">
+        <div className="min-w-0">
+          <TabsContent value="overview" className="mt-0">
+            <div className="grid gap-4 xl:grid-cols-[minmax(0,1.5fr)_minmax(280px,0.8fr)]">
+              <ConnectionPanel
+                name={server.metadata.name}
+                suspended={suspended}
+              />
+              <Card>
+                <CardHeader>
+                  <CardTitle className="text-sm">Accès rapide</CardTitle>
+                </CardHeader>
+                <CardContent className="grid gap-2">
+                  <Button
+                    type="button"
+                    variant="outline"
+                    className="justify-start gap-2"
+                    onClick={() => setView("console")}
+                  >
+                    <Terminal className="size-4" aria-hidden />
+                    Console
+                  </Button>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    className="justify-start gap-2"
+                    onClick={() => setView("logs")}
+                  >
+                    <ScrollText className="size-4" aria-hidden />
+                    Logs
+                  </Button>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    className="justify-start gap-2"
+                    onClick={() => setView("backups")}
+                  >
+                    <Save className="size-4" aria-hidden />
+                    Sauvegardes
+                  </Button>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    className="justify-start gap-2"
+                    onClick={() => setView("config")}
+                  >
+                    <SlidersHorizontal className="size-4" aria-hidden />
+                    Configuration
+                  </Button>
+                </CardContent>
+              </Card>
+            </div>
+          </TabsContent>
+
           <TabsContent value="config" keepMounted className="mt-0">
             <SettingsForm
               server={server}
@@ -439,13 +493,6 @@ function ServerDetail() {
                   effective: merged,
                 });
               }}
-            />
-          </TabsContent>
-
-          <TabsContent value="connection" className="mt-0">
-            <ConnectionPanel
-              name={server.metadata.name}
-              suspended={suspended}
             />
           </TabsContent>
 
@@ -468,8 +515,7 @@ function ServerDetail() {
             />
           </TabsContent>
         </div>
-        </Tabs>
-      </div>
+      </Tabs>
     </main>
   );
 }

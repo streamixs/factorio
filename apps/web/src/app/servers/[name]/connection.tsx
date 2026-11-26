@@ -215,7 +215,7 @@ export function ConnectionPanel({
         <CardHeader>
           <CardTitle className="flex flex-wrap items-center gap-2">
             Charge
-            {usage?.available === true && <Badge variant="secondary">Live</Badge>}
+            {usage?.available === true && <Badge variant="secondary">Temps réel</Badge>}
           </CardTitle>
         </CardHeader>
         <CardContent className="flex flex-col gap-4">

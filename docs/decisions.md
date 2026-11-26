@@ -126,3 +126,21 @@ a deliberate choice. Add a new section when a durable behavior changes.
   releases must be reproducible.
 - **Consequences:** production deploys should pass explicit `IMG`/`TAG`
   values, not rely on local images.
+
+## Web shell and server detail route
+
+- **Status:** accepted.
+- **Decision:** the root layout only provides the theme provider and the toast
+  host. Each page composes the `AppShell` (sidebar, topbar and content). The
+  server detail is the static `/servers/view?name=<name>` page; `proxy.ts`
+  redirects `/servers/<name>` to it. The app footer was removed; the sidebar
+  shows the platform version.
+- **Why:** with Next 16 and Cache Components, a client detail page using
+  `useParams` (or a server page awaiting `params`) stayed in the loading shell
+  and never hydrated. A client shell/footer in the root layout produced the
+  same symptom. A static query page hydrates like the dashboard.
+- **Consequences:** detail URLs carry a query parameter and old
+  `/servers/<name>` links are redirected. Revisit the routing when Next fixes
+  the dynamic route (or if Cache Components is disabled). Do not reintroduce
+  the app footer in the root layout or `useParams` on the detail without
+  validating a production build.
