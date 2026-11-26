@@ -2,10 +2,15 @@
 
 ARG APP_VERSION=dev
 
-FROM node:26-alpine AS builder
+# Build on the build platform: Turbopack's native binary and some dependency
+# install scripts are not reliable under QEMU for the arm64 image, while the
+# Next.js server output is architecture-independent. The runner stage stays
+# target-specific. This mirrors the agent Dockerfile.
+FROM --platform=$BUILDPLATFORM node:26-alpine AS builder
 
 ARG APP_VERSION
 ENV NEXT_PUBLIC_APP_VERSION=${APP_VERSION}
+ENV NEXT_TELEMETRY_DISABLED=1
 
 WORKDIR /app
 
@@ -22,7 +27,9 @@ COPY libs/shared libs/shared
 COPY apps/web apps/web
 
 RUN pnpm --filter @factorio/shared build \
-    && pnpm --filter @factorio/web build
+    && pnpm --filter @factorio/web build \
+    && rm -rf apps/web/.next/standalone/node_modules/.pnpm/sharp@* \
+              apps/web/.next/standalone/node_modules/.pnpm/@img+sharp-*
 
 FROM node:26-alpine AS runner
 
