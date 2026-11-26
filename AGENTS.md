@@ -1,7 +1,9 @@
 # AGENTS.md
 
 Instructions for AI coding agents working on this repository. Read
-[`README.md`](README.md), [`deploy/README.md`](deploy/README.md),
+[`README.md`](README.md), [`CONTRIBUTING.md`](CONTRIBUTING.md),
+[`docs/working-agreements.md`](docs/working-agreements.md),
+[`docs/roadmap.md`](docs/roadmap.md), [`deploy/README.md`](deploy/README.md),
 [`docs/runbook.md`](docs/runbook.md) and
 [`docs/decisions.md`](docs/decisions.md) before changing behavior.
 
@@ -14,7 +16,8 @@ Instructions for AI coding agents working on this repository. Read
 | `apps/web` | Next.js 16 UI. Server-side `/api` proxy, Basic auth, French UI. |
 | `libs/shared` | Shared TypeScript types and Zod schemas. Build it before API/web tests or builds. |
 | `deploy` | Kustomize manifests for the API, web, NetworkPolicies and import PVC. |
-| `docs` | Runbook and architecture decisions. |
+| `docs` | Roadmap, working agreements, GitHub conventions, runbook and architecture decisions. |
+| `SECURITY.md` | Security model and private vulnerability disclosure. |
 
 ## Golden commands
 
@@ -66,6 +69,19 @@ cluster and may restart running Factorio servers.
   the only place that injects it.
 - Do not edit generated agent files (`config/crd/bases`, generated RBAC,
   `zz_generated.*`, `PROJECT`). Use `make manifests` / `make generate`.
+
+## Work organization
+
+- Read [`docs/working-agreements.md`](docs/working-agreements.md) and
+  [`docs/roadmap.md`](docs/roadmap.md) before planning or starting work.
+- One issue maps to one branch, one worktree and one pull request. Use
+  [`docs/github.md`](docs/github.md) for labels and milestones.
+- Contract first: CRD, shared-type and API changes land before parallel
+  implementation.
+- Agents do not deploy or create releases. A human approves merges and
+  releases.
+- On handoff, leave an issue comment with the changes, tests, remaining work,
+  risks and links.
 
 ## Task recipes
 
@@ -164,5 +180,6 @@ and pushes. The tag workflow publishes GHCR images and the GitHub Release. See
 - `make audit` passes; a new reachable vulnerability blocks the PR.
 - New pure logic has a unit test.
 - Shared types and docs are updated when behavior changes.
+- The PR links its issue and follows `docs/working-agreements.md`.
 - The PR template validation/deployment sections are filled.
 - No secret, token, or generated file is committed accidentally.

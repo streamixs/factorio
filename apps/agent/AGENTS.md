@@ -95,6 +95,8 @@ Do not move this logic into the API.
 ## Documentation
 
 - Root [`AGENTS.md`](../../AGENTS.md).
+- [`docs/working-agreements.md`](../../docs/working-agreements.md) and
+  [`docs/roadmap.md`](../../docs/roadmap.md).
 - [`deploy/README.md`](../../deploy/README.md).
 - [`docs/runbook.md`](../../docs/runbook.md) and
   [`docs/decisions.md`](../../docs/decisions.md).

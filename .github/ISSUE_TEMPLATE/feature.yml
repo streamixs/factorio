@@ -1,0 +1,109 @@
+name: Feature or task
+description: Propose a scoped, testable change.
+title: "feat: "
+labels: ["kind/feature"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Read the [working agreements](https://github.com/streamixs/factorio/blob/main/docs/working-agreements.md)
+        before submitting. An issue is ready for an agent only when the acceptance
+        criteria and affected areas are explicit.
+  - type: textarea
+    id: context
+    attributes:
+      label: Context
+      description: What problem does this solve? Who is affected?
+      placeholder: The current behavior is...
+    validations:
+      required: true
+  - type: textarea
+    id: outcome
+    attributes:
+      label: Expected outcome
+      description: Describe the result, not the implementation.
+      placeholder: An operator can...
+    validations:
+      required: true
+  - type: textarea
+    id: scope
+    attributes:
+      label: Scope and non-goals
+      description: What is in scope, and what should explicitly stay out?
+      placeholder: |
+        In scope:
+        - ...
+        Out of scope:
+        - ...
+    validations:
+      required: true
+  - type: textarea
+    id: acceptance
+    attributes:
+      label: Acceptance criteria
+      description: A checklist that can be verified.
+      placeholder: |
+        - [ ] ...
+        - [ ] ...
+    validations:
+      required: true
+  - type: dropdown
+    id: area
+    attributes:
+      label: Affected area
+      multiple: true
+      options:
+        - Agent
+        - API
+        - Web
+        - Deploy
+        - CI
+        - Docs
+        - Cross-cutting
+    validations:
+      required: true
+  - type: dropdown
+    id: size
+    attributes:
+      label: Estimated size
+      options:
+        - S
+        - M
+        - L
+    validations:
+      required: true
+  - type: textarea
+    id: dependencies
+    attributes:
+      label: Dependencies and contracts
+      description: Link blocking issues, ADRs or shared types. Use "Blocked by #..." when relevant.
+      placeholder: Depends on #...
+  - type: textarea
+    id: test-plan
+    attributes:
+      label: Test plan
+      description: Unit, integration, end-to-end or manual verification.
+      placeholder: |
+        - Unit: ...
+        - Manual: ...
+    validations:
+      required: true
+  - type: textarea
+    id: rollout
+    attributes:
+      label: Rollout and rollback
+      description: Deployment impact, migration, feature flag or rollback steps.
+      placeholder: No deployment impact / Requires an agent rollout / ...
+  - type: checkboxes
+    id: ready
+    attributes:
+      label: Ready checklist
+      options:
+        - label: The scope and non-goals are explicit.
+          required: true
+        - label: The acceptance criteria are testable.
+          required: true
+        - label: The affected areas are identified.
+          required: true
+        - label: No unresolved design question remains.
+          required: true

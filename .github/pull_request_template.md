@@ -4,7 +4,10 @@
 
 ## Vérifications
 
+- [ ] Issue liée (`Closes #...`)
 - [ ] `make check` (lint + tests + builds)
+- [ ] `make audit` (npm + Go)
+- [ ] Changement limité à un seul sujet
 - [ ] UI vérifiée manuellement (capture ou description) si applicable
 - [ ] Documentation mise à jour si le comportement change
 

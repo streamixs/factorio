@@ -1,0 +1,58 @@
+name: Architecture decision
+description: Propose a durable technical decision and record its consequences.
+title: "adr: "
+labels: ["kind/adr", "needs-design"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Use this template when a choice should not be rediscovered later. The
+        accepted decision is added to
+        [docs/decisions.md](https://github.com/streamixs/factorio/blob/main/docs/decisions.md).
+  - type: textarea
+    id: context
+    attributes:
+      label: Context
+      description: What problem, constraint or risk forces a decision?
+    validations:
+      required: true
+  - type: textarea
+    id: decision
+    attributes:
+      label: Proposed decision
+      description: State the choice in one or two sentences.
+    validations:
+      required: true
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives considered
+      description: What else was evaluated, and why was it rejected?
+    validations:
+      required: true
+  - type: textarea
+    id: consequences
+    attributes:
+      label: Consequences
+      description: What becomes easier, harder, required or forbidden?
+    validations:
+      required: true
+  - type: dropdown
+    id: area
+    attributes:
+      label: Affected area
+      multiple: true
+      options:
+        - Agent
+        - API
+        - Web
+        - Deploy
+        - CI
+        - Cross-cutting
+    validations:
+      required: true
+  - type: textarea
+    id: links
+    attributes:
+      label: Links
+      description: Related issues, pull requests, documentation or prior decisions.
