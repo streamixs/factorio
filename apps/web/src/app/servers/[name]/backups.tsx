@@ -33,6 +33,7 @@ import {
   restoreBackup,
 } from "@/lib/api";
 import { ACTIVE_OPERATION_PHASES, operationLabel } from "@/lib/operations";
+import { formatDateTime } from "@/lib/format";
 import { formatBytes } from "@/lib/server-connection";
 
 export function BackupsPanel({
@@ -318,7 +319,7 @@ export function BackupsPanel({
                       </div>
                       <p className="text-xs text-muted-foreground">
                         {formatBytes(backup.size)} ·{" "}
-                        {formatTimestamp(backup.createdAt)}
+                        {formatDateTime(backup.createdAt)}
                       </p>
                     </div>
                     <a
@@ -359,9 +360,4 @@ function backupLabel(name: string): string | undefined {
     return "avant import";
   }
   return undefined;
-}
-
-function formatTimestamp(value: string): string {
-  const date = new Date(value);
-  return Number.isNaN(date.getTime()) ? value : date.toLocaleString();
 }

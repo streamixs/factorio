@@ -5,7 +5,9 @@ import type {
   ResourcesSettings,
   ServiceType,
 } from "@factorio/shared";
+import { Check, ChevronLeft, ChevronRight } from "lucide-react";
 import { useState, type FormEvent } from "react";
+import { cn } from "cn";
 
 import { Button } from "@/components/ui/button";
 import {
@@ -38,10 +40,104 @@ const SERVICE_OPTIONS = SERVICE_TYPES.map((type) => ({
 }));
 const DEFAULT_STORAGE_CLASS = "__cluster_default__";
 const DEFAULT_VERSION = "2.1.24";
+const NAME_PATTERN = /^[a-z0-9]([-a-z0-9]*[a-z0-9])?$/;
+const STEP_LABELS = ["Identité", "Monde", "Ressources"] as const;
+
+interface ResourcePreset {
+  id: string;
+  label: string;
+  description: string;
+  values: Required<
+    Pick<
+      ResourcesSettings,
+      "cpuRequest" | "cpuLimit" | "memoryRequest" | "memoryLimit"
+    >
+  >;
+}
+
+const RESOURCE_PRESETS: ResourcePreset[] = [
+  {
+    id: "small",
+    label: "Petit",
+    description: "2 joueurs · 1 cœur / 2 Gi",
+    values: {
+      cpuRequest: "250m",
+      cpuLimit: "1",
+      memoryRequest: "512Mi",
+      memoryLimit: "2Gi",
+    },
+  },
+  {
+    id: "standard",
+    label: "Standard",
+    description: "8 joueurs · 2 cœurs / 4 Gi",
+    values: {
+      cpuRequest: "500m",
+      cpuLimit: "2",
+      memoryRequest: "1Gi",
+      memoryLimit: "4Gi",
+    },
+  },
+  {
+    id: "large",
+    label: "Grand",
+    description: "20 joueurs · 4 cœurs / 8 Gi",
+    values: {
+      cpuRequest: "1",
+      cpuLimit: "4",
+      memoryRequest: "2Gi",
+      memoryLimit: "8Gi",
+    },
+  },
+];
 
 function trimmed(value: string | undefined): string | undefined {
   const result = value?.trim() ?? "";
   return result === "" ? undefined : result;
+}
+
+function Stepper({ current }: { current: number }) {
+  return (
+    <div className="flex items-center gap-2">
+      {STEP_LABELS.map((label, index) => {
+        const value = index + 1;
+        const done = current > value;
+        const active = current === value;
+
+        return (
+          <div key={label} className="contents">
+            <div className="flex shrink-0 items-center gap-2">
+              <span
+                className={cn(
+                  "grid size-5 place-items-center rounded-full border font-mono text-[10px] font-semibold",
+                  active &&
+                    "border-primary/40 bg-primary/10 text-primary",
+                  done &&
+                    "border-emerald-500/30 bg-emerald-500/10 text-emerald-700 dark:text-emerald-400",
+                  !active && !done && "border-border text-muted-foreground",
+                )}
+              >
+                {done ? <Check className="size-3" /> : value}
+              </span>
+              <span
+                className={cn(
+                  "hidden text-xs font-medium sm:inline",
+                  active && "text-primary",
+                  done && "text-emerald-700 dark:text-emerald-400",
+                  !active && !done && "text-muted-foreground",
+                )}
+              >
+                {label}
+              </span>
+            </div>
+            {value < STEP_LABELS.length && (
+              <span className="h-px flex-1 bg-border" aria-hidden />
+            )}
+          </div>
+        );
+      })}
+    </div>
+  );
 }
 
 export function CreateServerForm({
@@ -49,12 +145,16 @@ export function CreateServerForm({
   storageClasses,
   onCreated,
   onError,
+  embedded = false,
 }: {
   versions: string[];
   storageClasses: string[];
   onCreated: (server: FactorioServer) => void;
   onError: (message: string) => void;
+  embedded?: boolean;
 }) {
+  const [step, setStep] = useState(1);
+  const [stepError, setStepError] = useState<string | null>(null);
   const [name, setName] = useState("");
   const [displayName, setDisplayName] = useState("");
   const [version, setVersion] = useState("");
@@ -70,7 +170,9 @@ export function CreateServerForm({
     memoryRequest: "1Gi",
     memoryLimit: "4Gi",
   });
-  const [resourceError, setResourceError] = useState<ResourceIssue | null>(null);
+  const [resourceError, setResourceError] = useState<ResourceIssue | null>(
+    null,
+  );
   const [creating, setCreating] = useState(false);
 
   const versionValue =
@@ -98,8 +200,57 @@ export function CreateServerForm({
     }
   }
 
+  function applyPreset(values: ResourcesSettings) {
+    setResources(values);
+    setResourceError(null);
+  }
+
+  function presetSelected(values: ResourcesSettings): boolean {
+    return (Object.keys(values) as ResourceField[]).every(
+      (field) => (resources[field] ?? "") === (values[field] ?? ""),
+    );
+  }
+
+  function identityError(): string | null {
+    if (!NAME_PATTERN.test(name.trim())) {
+      return "Le nom technique doit contenir des minuscules, des chiffres et des tirets (DNS-1123), sans tiret au début ni à la fin.";
+    }
+    return null;
+  }
+
+  function goNext() {
+    if (step === 1) {
+      const problem = identityError();
+      if (problem !== null) {
+        setStepError(problem);
+        return;
+      }
+      setName(name.trim());
+    }
+
+    setStepError(null);
+    setStep((current) => Math.min(STEP_LABELS.length, current + 1));
+  }
+
+  function goBack() {
+    setStepError(null);
+    setStep((current) => Math.max(1, current - 1));
+  }
+
   async function handleCreate(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
+
+    if (step < STEP_LABELS.length) {
+      goNext();
+      return;
+    }
+
+    const problem = identityError();
+    if (problem !== null) {
+      setStep(1);
+      setStepError(problem);
+      return;
+    }
 
     const normalized: ResourcesSettings = {
       cpuRequest: trimmed(resources.cpuRequest),
@@ -112,6 +263,8 @@ export function CreateServerForm({
       setResourceError(issue);
       return;
     }
+
+    setStepError(null);
     setResourceError(null);
     setCreating(true);
 
@@ -153,30 +306,46 @@ export function CreateServerForm({
     }
   }
 
-  return (
-    <Card className="h-fit">
-      <CardHeader>
-        <CardTitle>Nouveau serveur</CardTitle>
-        <CardDescription>
-          La ressource est créée dans le namespace configuré sur l&apos;API.
-        </CardDescription>
-      </CardHeader>
-      <CardContent>
-        <form
-          onSubmit={(event) => void handleCreate(event)}
-          className="flex flex-col gap-4"
+  const form = (
+    <form
+      onSubmit={(event) => void handleCreate(event)}
+      className="flex flex-col gap-5"
+      noValidate
+    >
+      <Stepper current={step} />
+
+      {stepError !== null && (
+        <p
+          role="alert"
+          className="rounded-lg border border-destructive/30 bg-destructive/10 px-3 py-2 text-xs text-destructive"
         >
+          {stepError}
+        </p>
+      )}
+
+      {step === 1 && (
+        <div className="flex flex-col gap-4">
           <div className="flex flex-col gap-2">
-            <Label htmlFor="create-name">Nom</Label>
+            <Label htmlFor="create-name">Nom technique</Label>
             <Input
+              autoFocus
               id="create-name"
               value={name}
-              onChange={(event) => setName(event.target.value)}
+              onChange={(event) => {
+                setName(event.target.value);
+                if (stepError !== null) {
+                  setStepError(null);
+                }
+              }}
               placeholder="my-factorio"
               pattern={"[a-z0-9]([\\-a-z0-9]*[a-z0-9])?"}
               maxLength={63}
               required
             />
+            <p className="text-xs text-muted-foreground">
+              DNS-1123 : minuscules, chiffres et tirets. Il ne pourra plus être
+              modifié.
+            </p>
           </div>
 
           <div className="flex flex-col gap-2">
@@ -188,11 +357,14 @@ export function CreateServerForm({
               placeholder="My Factorio Server"
               maxLength={64}
             />
+            <p className="text-xs text-muted-foreground">
+              Utilisé dans l&apos;interface et par les joueurs.
+            </p>
           </div>
 
           <div className="grid grid-cols-2 gap-3">
             <div className="flex flex-col gap-2">
-              <Label htmlFor="create-version">Version</Label>
+              <Label htmlFor="create-version">Version Factorio</Label>
               {versionOptions.length > 0 ? (
                 <Select
                   items={versionOptions}
@@ -232,6 +404,77 @@ export function CreateServerForm({
                 value={maxPlayers}
                 onChange={(event) => setMaxPlayers(event.target.value)}
               />
+              <p className="text-xs text-muted-foreground">0 = illimité.</p>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {step === 2 && (
+        <div className="flex flex-col gap-4">
+          <div className="flex flex-col gap-2">
+            <Label htmlFor="create-seed">Seed</Label>
+            <Input
+              id="create-seed"
+              type="number"
+              min={0}
+              max={4294967295}
+              value={seed}
+              onChange={(event) => setSeed(event.target.value)}
+              placeholder="aléatoire"
+            />
+            <p className="text-xs text-muted-foreground">
+              Laisse vide pour générer un monde aléatoire. Les réglages avancés
+              de la map restent disponibles après la création.
+            </p>
+          </div>
+
+          <div className="flex flex-col gap-2">
+            <Label htmlFor="create-password">Mot de passe de partie</Label>
+            <Input
+              id="create-password"
+              type="password"
+              value={gamePassword}
+              onChange={(event) => setGamePassword(event.target.value)}
+              placeholder="Optionnel"
+            />
+          </div>
+
+          <div className="rounded-lg border border-primary/20 bg-primary/5 px-3 py-2 text-xs leading-relaxed text-muted-foreground">
+            Le mot de passe est écrit dans un Secret Kubernetes. Il
+            n&apos;apparaît jamais dans les réponses de l&apos;API.
+          </div>
+        </div>
+      )}
+
+      {step === 3 && (
+        <div className="flex flex-col gap-4">
+          <div className="flex flex-col gap-2">
+            <Label>Preset de ressources</Label>
+            <div className="grid grid-cols-1 gap-2 sm:grid-cols-3">
+              {RESOURCE_PRESETS.map((preset) => {
+                const selected = presetSelected(preset.values);
+                return (
+                  <button
+                    key={preset.id}
+                    type="button"
+                    onClick={() => applyPreset(preset.values)}
+                    className={cn(
+                      "rounded-lg border px-3 py-2 text-left transition-colors",
+                      selected
+                        ? "border-primary/40 bg-primary/10"
+                        : "border-border bg-background/40 hover:border-primary/30",
+                    )}
+                  >
+                    <span className="block text-xs font-semibold">
+                      {preset.label}
+                    </span>
+                    <span className="mt-0.5 block text-[10px] text-muted-foreground">
+                      {preset.description}
+                    </span>
+                  </button>
+                );
+              })}
             </div>
           </div>
 
@@ -289,19 +532,6 @@ export function CreateServerForm({
           </div>
 
           <div className="flex flex-col gap-2">
-            <Label htmlFor="create-seed">Seed</Label>
-            <Input
-              id="create-seed"
-              type="number"
-              min={0}
-              max={4294967295}
-              value={seed}
-              onChange={(event) => setSeed(event.target.value)}
-              placeholder="aléatoire"
-            />
-          </div>
-
-          <div className="flex flex-col gap-2">
             <Label htmlFor="create-service">Type de Service</Label>
             <Select
               items={SERVICE_OPTIONS}
@@ -319,6 +549,10 @@ export function CreateServerForm({
                 ))}
               </SelectContent>
             </Select>
+            <p className="text-xs text-muted-foreground">
+              ClusterIP reste interne au cluster. NodePort expose un port sur
+              chaque nœud.
+            </p>
           </div>
 
           <fieldset className="flex flex-col gap-3 rounded-lg border p-3">
@@ -383,23 +617,46 @@ export function CreateServerForm({
               </p>
             )}
           </fieldset>
+        </div>
+      )}
 
-          <div className="flex flex-col gap-2">
-            <Label htmlFor="create-password">Mot de passe de partie</Label>
-            <Input
-              id="create-password"
-              type="password"
-              value={gamePassword}
-              onChange={(event) => setGamePassword(event.target.value)}
-              placeholder="Optionnel"
-            />
-          </div>
-
+      <div className="flex items-center justify-between gap-3 border-t border-border pt-4">
+        <Button
+          type="button"
+          variant="ghost"
+          onClick={goBack}
+          disabled={step === 1 || creating}
+        >
+          <ChevronLeft className="size-4" />
+          Retour
+        </Button>
+        {step < STEP_LABELS.length ? (
+          <Button type="button" onClick={goNext}>
+            Continuer
+            <ChevronRight className="size-4" />
+          </Button>
+        ) : (
           <Button type="submit" disabled={creating}>
             {creating ? "Création…" : "Créer le serveur"}
           </Button>
-        </form>
-      </CardContent>
+        )}
+      </div>
+    </form>
+  );
+
+  if (embedded) {
+    return form;
+  }
+
+  return (
+    <Card className="h-fit">
+      <CardHeader>
+        <CardTitle>Nouveau serveur</CardTitle>
+        <CardDescription>
+          La ressource est créée dans le namespace configuré sur l&apos;API.
+        </CardDescription>
+      </CardHeader>
+      <CardContent>{form}</CardContent>
     </Card>
   );
 }

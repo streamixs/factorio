@@ -1,26 +1,26 @@
 "use client";
 
-import {
-  findCondition,
-  type FactorioServer,
-  type ServerConnection,
-  type ServerOperation,
-  type ServerUsage,
+import type {
+  FactorioServer,
+  ServerConnection,
+  ServerOperation,
+  ServerUsage,
 } from "@factorio/shared";
+import { ArrowRight, Copy, Loader2, Play, Square } from "lucide-react";
 import Link from "next/link";
-import { useState } from "react";
+import { toast } from "sonner";
+import { cn } from "cn";
 
 import { Badge } from "@/components/ui/badge";
-import { Button } from "@/components/ui/button";
+import { Button, buttonVariants } from "@/components/ui/button";
 import {
   Card,
   CardContent,
-  CardDescription,
   CardFooter,
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
-import { Separator } from "@/components/ui/separator";
+import { formatDate } from "@/lib/format";
 import { operationLabel } from "@/lib/operations";
 import {
   formatBytes,
@@ -28,9 +28,11 @@ import {
   gameAddressIsInternal,
   primaryGameAddress,
 } from "@/lib/server-connection";
-import { serverStatusBadge } from "@/lib/server-status";
-
-import { DeleteServerConfirmation } from "./delete-server-confirmation";
+import { serverStatusBadge, type ServerStatusTone } from "@/lib/server-status";
+import {
+  parseCpu,
+  parseMemory,
+} from "@/lib/resource-quantities";
 
 export interface ServerDetails {
   connection: ServerConnection | null;
@@ -38,136 +40,259 @@ export interface ServerDetails {
   operation?: ServerOperation;
 }
 
+const DOT_CLASS: Record<ServerStatusTone, string> = {
+  emerald: "bg-emerald-500 shadow-[0_0_0_3px_rgba(16,185,129,0.12)]",
+  amber: "bg-amber-500 shadow-[0_0_0_3px_rgba(245,158,11,0.12)]",
+  red: "bg-red-500 shadow-[0_0_0_3px_rgba(239,68,68,0.12)]",
+  zinc: "bg-zinc-400 shadow-[0_0_0_3px_rgba(161,161,170,0.12)]",
+};
+
+function clampPercent(value: number): number {
+  return Math.min(100, Math.max(0, value));
+}
+
+function Metric({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="min-w-0">
+      <span className="block text-[9px] uppercase tracking-wide text-muted-foreground">
+        {label}
+      </span>
+      <span className="mt-0.5 block truncate text-xs font-semibold">
+        {value}
+      </span>
+    </div>
+  );
+}
+
+function UsageBar({
+  label,
+  value,
+  percent,
+}: {
+  label: string;
+  value: string;
+  percent?: number;
+}) {
+  return (
+    <div className="flex items-center gap-2">
+      <span className="w-7 shrink-0 text-[9px] font-medium text-muted-foreground">
+        {label}
+      </span>
+      <span className="h-1 min-w-0 flex-1 overflow-hidden rounded-full bg-muted">
+        {percent !== undefined && (
+          <span
+            className={cn(
+              "block h-full rounded-full",
+              label === "CPU" ? "bg-primary" : "bg-chart-2",
+            )}
+            style={{ width: `${clampPercent(percent)}%` }}
+          />
+        )}
+      </span>
+      <span className="w-12 shrink-0 text-right font-mono text-[9px] text-muted-foreground">
+        {value}
+      </span>
+    </div>
+  );
+}
+
 export function ServerCard({
   server,
   details,
   pending,
   onToggle,
-  onDelete,
 }: {
   server: FactorioServer;
   details?: ServerDetails;
   pending: boolean;
   onToggle: (server: FactorioServer) => void;
-  onDelete: (name: string, keepStorage: boolean) => void;
 }) {
-  const [confirmingDelete, setConfirmingDelete] = useState(false);
-  const badge = serverStatusBadge(server);
+  const status = serverStatusBadge(server);
   const suspended = server.spec.suspended === true;
-  const degraded = findCondition(server, "Degraded");
-  const storage = server.spec.storage?.size ?? "10Gi";
-  const service = server.spec.service?.type ?? "ClusterIP";
-  const players = server.spec.server?.access?.maxPlayers ?? 0;
-  const display =
-    server.spec.server?.identity?.name ?? server.metadata.name;
-  const address = primaryGameAddress(details?.connection);
-  const internal = gameAddressIsInternal(details?.connection);
   const operation = details?.operation;
   const operationActive = operation !== undefined;
   const usage = details?.usage;
-  const usageText = suspended
-    ? "Arrêté"
-    : usage?.available === true
-      ? `${formatCpu(usage.cpuMillicores)} · ${formatBytes(usage.memoryBytes)}`
-      : "—";
+  const usageAvailable = usage?.available === true;
+
+  const display =
+    server.spec.server?.identity?.name ?? server.metadata.name;
+  const maxPlayers = server.spec.server?.access?.maxPlayers ?? 0;
+  const service = server.spec.service?.type ?? "ClusterIP";
+  const address = primaryGameAddress(details?.connection);
+  const internal = gameAddressIsInternal(details?.connection);
+
+  const cpuLimit = server.spec.resources?.cpuLimit
+    ? parseCpu(server.spec.resources.cpuLimit)
+    : undefined;
+  const memoryLimit = server.spec.resources?.memoryLimit
+    ? parseMemory(server.spec.resources.memoryLimit)
+    : undefined;
+  const cpuPercent =
+    usageAvailable && usage !== undefined && cpuLimit !== undefined
+      ? (usage.cpuMillicores / cpuLimit) * 100
+      : undefined;
+  const memoryPercent =
+    usageAvailable && usage !== undefined && memoryLimit !== undefined
+      ? (usage.memoryBytes / memoryLimit) * 100
+      : undefined;
+
+  async function copyAddress() {
+    if (address === undefined) {
+      return;
+    }
+    try {
+      await navigator.clipboard.writeText(address);
+      toast.success("Adresse copiée");
+    } catch {
+      toast.error("Impossible de copier l'adresse");
+    }
+  }
 
   return (
-    <Card>
-      <CardHeader>
+    <Card className="group gap-0 transition-all hover:ring-primary/25">
+      <CardHeader className="gap-3 pb-3">
         <div className="flex items-start justify-between gap-3">
           <div className="min-w-0">
-            <CardTitle className="truncate font-mono text-base">
-              <Link
-                href={`/servers/${encodeURIComponent(server.metadata.name)}`}
-                className="hover:underline"
+            <div className="flex min-w-0 items-center gap-2">
+              <span
+                className={cn("size-2 shrink-0 rounded-full", DOT_CLASS[status.tone])}
+                aria-hidden
+              />
+              <CardTitle className="truncate font-mono text-base">
+                <Link
+                  href={`/servers/view?name=${encodeURIComponent(server.metadata.name)}`}
+                  className="transition-colors hover:text-primary"
+                >
+                  {server.metadata.name}
+                </Link>
+              </CardTitle>
+              <Badge
+                variant="outline"
+                className={cn("shrink-0", status.className)}
               >
-                {server.metadata.name}
-              </Link>
-            </CardTitle>
-            <CardDescription className="truncate">
-              {display} · v{server.spec.version ?? "unknown"}
-            </CardDescription>
-          </div>
-          <div className="flex flex-col items-end gap-1">
-            <Badge variant="outline" className={badge.className}>
-              {badge.label}
-            </Badge>
-            {operation !== undefined && (
-              <Badge variant="secondary" title={operationLabel(operation)}>
-                opération
+                {status.label}
               </Badge>
-            )}
+            </div>
+            <p className="mt-1 truncate text-xs text-muted-foreground">
+              {display} · namespace {server.metadata.namespace ?? "default"} · v
+              {server.spec.version ?? "inconnue"}
+            </p>
           </div>
+
+          {operation !== undefined && (
+            <Badge
+              variant="secondary"
+              className="max-w-[130px] shrink-0 gap-1"
+              title={operationLabel(operation)}
+            >
+              {operationActive && (
+                <Loader2 className="size-3 animate-spin" aria-hidden />
+              )}
+              <span className="truncate">
+                {operation.type === "Import" ? "Import" : "Restauration"}
+              </span>
+            </Badge>
+          )}
         </div>
       </CardHeader>
-      <CardContent className="grid grid-cols-2 gap-x-4 gap-y-2 text-sm">
-        <span className="text-muted-foreground">Joueurs max</span>
-        <span>{players === 0 ? "Illimité" : players}</span>
-        <span className="text-muted-foreground">Stockage</span>
-        <span>{storage}</span>
-        <span className="text-muted-foreground">Service</span>
-        <span>{service}</span>
-        <span className="text-muted-foreground">Créé</span>
-        <span>
-          {server.metadata.creationTimestamp === undefined
-            ? "—"
-            : new Date(server.metadata.creationTimestamp).toLocaleDateString()}
-        </span>
-        <Separator className="col-span-2" />
-        <div className="col-span-2 flex items-center justify-between gap-3 pt-1">
-          <span className="text-xs text-muted-foreground">Connexion</span>
-          <span className="text-right font-mono text-xs break-all">
-            {address === undefined
-              ? "—"
-              : `${address} · UDP${internal ? " (interne)" : ""}`}
-          </span>
+
+      <CardContent className="space-y-3 pb-3">
+        <div className="grid grid-cols-4 gap-2">
+          <Metric
+            label="Joueurs"
+            value={maxPlayers === 0 ? "∞" : String(maxPlayers)}
+          />
+          <Metric
+            label="CPU"
+            value={usageAvailable ? formatCpu(usage.cpuMillicores) : "—"}
+          />
+          <Metric
+            label="RAM"
+            value={usageAvailable ? formatBytes(usage.memoryBytes) : "—"}
+          />
+          <Metric label="Service" value={service} />
         </div>
-        <div className="col-span-2 flex items-center justify-between gap-3">
-          <span className="text-xs text-muted-foreground">Charge</span>
-          <span className="text-xs">{usageText}</span>
-        </div>
-        {degraded?.status === "True" && degraded.message !== undefined && (
-          <>
-            <Separator className="col-span-2" />
-            <p className="col-span-2 text-xs text-destructive">
-              {degraded.message}
-            </p>
-          </>
-        )}
-      </CardContent>
-      {confirmingDelete ? (
-        <div className="px-6 pb-6">
-          <DeleteServerConfirmation
-            name={server.metadata.name}
-            pending={pending}
-            onConfirm={(keepStorage) =>
-              onDelete(server.metadata.name, keepStorage)
+
+        <div className="space-y-1.5">
+          <UsageBar
+            label="CPU"
+            value={
+              usageAvailable && usage !== undefined
+                ? formatCpu(usage.cpuMillicores)
+                : "—"
             }
-            onCancel={() => setConfirmingDelete(false)}
+            percent={cpuPercent}
+          />
+          <UsageBar
+            label="RAM"
+            value={
+              usageAvailable && usage !== undefined
+                ? formatBytes(usage.memoryBytes)
+                : "—"
+            }
+            percent={memoryPercent}
           />
         </div>
-      ) : (
-        <CardFooter className="justify-end gap-2">
+
+        <div className="flex min-w-0 items-center gap-1.5 rounded-lg border bg-muted/40 px-2.5 py-1.5">
+          <span className="min-w-0 flex-1 truncate font-mono text-[11px]">
+            {address ?? "—"}
+          </span>
+          {address !== undefined && (
+            <Button
+              type="button"
+              variant="ghost"
+              size="icon-xs"
+              onClick={() => void copyAddress()}
+              aria-label={`Copier l'adresse de ${server.metadata.name}`}
+            >
+              <Copy className="size-3" />
+            </Button>
+          )}
+          <Badge variant="outline" className="shrink-0">
+            {service}
+          </Badge>
+          {internal && (
+            <Badge variant="secondary" className="shrink-0">
+              Interne
+            </Badge>
+          )}
+        </div>
+      </CardContent>
+
+      <CardFooter className="justify-between gap-2 border-t bg-muted/30 px-4 py-2.5">
+        <span className="hidden text-[10px] text-muted-foreground sm:inline">
+          Créé le {formatDate(server.metadata.creationTimestamp)}
+        </span>
+        <div className="ml-auto flex items-center gap-1">
           <Button
             type="button"
-            variant="outline"
+            variant="ghost"
             size="sm"
             onClick={() => onToggle(server)}
             disabled={pending || operationActive}
           >
+            {pending ? (
+              <Loader2 className="size-3.5 animate-spin" aria-hidden />
+            ) : suspended ? (
+              <Play className="size-3.5" aria-hidden />
+            ) : (
+              <Square className="size-3.5" aria-hidden />
+            )}
             {suspended ? "Démarrer" : "Arrêter"}
           </Button>
-          <Button
-            type="button"
-            variant="destructive"
-            size="sm"
-            onClick={() => setConfirmingDelete(true)}
-            disabled={pending || operationActive}
+          <Link
+            href={`/servers/view?name=${encodeURIComponent(server.metadata.name)}`}
+            className={cn(
+              buttonVariants({ variant: "ghost", size: "sm" }),
+              "gap-1",
+            )}
           >
-            Supprimer
-          </Button>
-        </CardFooter>
-      )}
+            Ouvrir
+            <ArrowRight className="size-3.5" aria-hidden />
+          </Link>
+        </div>
+      </CardFooter>
     </Card>
   );
 }

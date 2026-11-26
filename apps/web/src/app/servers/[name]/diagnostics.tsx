@@ -25,6 +25,7 @@ import { Separator } from "@/components/ui/separator";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Switch } from "@/components/ui/switch";
 import { getServerEvents, getServerLogs } from "@/lib/api";
+import { formatDateTime } from "@/lib/format";
 
 const TAIL_OPTIONS = [100, 200, 500, 1000].map((value) => ({
   value: String(value),
@@ -115,7 +116,7 @@ export function LogsPanel({ name }: { name: string }) {
           </label>
           <label className="flex items-center gap-2 text-sm">
             <Switch checked={live} onCheckedChange={setLive} />
-            Live (5 s)
+            Temps réel (5 s)
           </label>
           <Button
             type="button"
@@ -190,7 +191,7 @@ export function EventsPanel({ name }: { name: string }) {
     <Card>
       <CardHeader>
         <CardTitle className="flex flex-wrap items-center gap-2">
-          Events
+          Événements
           <Badge variant="secondary">{events.length}</Badge>
         </CardTitle>
       </CardHeader>
@@ -198,7 +199,7 @@ export function EventsPanel({ name }: { name: string }) {
         <div className="flex flex-wrap items-center gap-4">
           <label className="flex items-center gap-2 text-sm">
             <Switch checked={live} onCheckedChange={setLive} />
-            Live (10 s)
+            Temps réel (10 s)
           </label>
           <Button
             type="button"
@@ -250,7 +251,7 @@ export function EventsPanel({ name }: { name: string }) {
                       </span>
                     )}
                     <span className="ml-auto text-muted-foreground">
-                      {formatTimestamp(event.lastTimestamp)}
+                      {formatDateTime(event.lastTimestamp)}
                     </span>
                   </div>
                   <p className="text-sm whitespace-pre-wrap">{event.message}</p>
@@ -262,13 +263,4 @@ export function EventsPanel({ name }: { name: string }) {
       </CardContent>
     </Card>
   );
-}
-
-function formatTimestamp(value: string): string {
-  if (value === "") {
-    return "";
-  }
-
-  const date = new Date(value);
-  return Number.isNaN(date.getTime()) ? value : date.toLocaleString();
 }

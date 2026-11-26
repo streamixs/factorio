@@ -30,6 +30,25 @@ export async function proxy(request: NextRequest) {
     });
   }
 
+  const segments = request.nextUrl.pathname.split('/').filter(Boolean);
+  if (
+    segments[0] === 'servers' &&
+    segments[1] !== undefined &&
+    segments[1] !== 'new' &&
+    segments[1] !== 'view'
+  ) {
+    let name = segments[1];
+    try {
+      name = decodeURIComponent(name);
+    } catch {
+      // Keep the raw segment; the API will reject invalid server names.
+    }
+    const target = request.nextUrl.clone();
+    target.pathname = '/servers/view';
+    target.search = `?name=${encodeURIComponent(name)}`;
+    return NextResponse.redirect(target);
+  }
+
   return NextResponse.next();
 }
 

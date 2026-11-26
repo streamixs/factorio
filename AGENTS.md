@@ -149,6 +149,12 @@ and pushes. The tag workflow publishes GHCR images and the GitHub Release. See
   reference the `ghcr-pull` secret; create it in `factorio-system` and
   `agent-system`, or make the GHCR packages public. A missing secret only logs
   a warning and does not block local `:dev` images.
+- The web root layout stays minimal; each page composes `AppShell`.
+  `/servers/<name>` is redirected by `apps/web/src/proxy.ts` to the static
+  `/servers/view?name=<name>` detail. Do not reintroduce a client shell/footer
+  in the root layout or a `useParams`/server-params detail page without
+  validating a production build; both left the app in its loading shell under
+  Cache Components.
 - A failed operation must not be resumed by a later retention reconcile.
 
 ## Definition of done
