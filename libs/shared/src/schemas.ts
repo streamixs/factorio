@@ -198,6 +198,15 @@ export const rconCommandSchema = z.strictObject({
   command: z.string().trim().min(1).max(1000),
 });
 
+export const kickPlayerSchema = z.strictObject({
+  player: z
+    .string()
+    .trim()
+    .min(1)
+    .max(64)
+    .regex(/^[^\r\n]*$/, "must not contain a newline"),
+});
+
 export const credentialsSchema = z.strictObject({
   gamePassword: z.string().max(256).nullable().optional(),
   password: z.string().max(256).nullable().optional(),

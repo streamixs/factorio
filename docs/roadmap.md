@@ -22,7 +22,29 @@ the project board; decisions live in [`decisions.md`](decisions.md).
 - Do not add a task list to this file. When a theme becomes actionable, create
   an epic and its sub-issues.
 
-## Now — v0.4.0 Reliable operations
+## Now — v0.4.0 Server experience
+
+### Current increment: players and live metrics
+
+| Theme | Outcome |
+|---|---|
+| Players | Online players are visible on the dashboard and the server detail, and an operator can kick a connected player. |
+| Runtime metrics | Uptime, CPU and memory are visible in the load card, even when metrics-server is unavailable. |
+| Dashboard | Server cards and the summary show the online player count. |
+
+**Exit criteria:** an operator can see who is online, kick a player, and read
+uptime and load from the UI, without `kubectl`.
+
+### Follow-up increments
+
+| Theme | Outcome |
+|---|---|
+| Mods | Search, install, update and configure mods from the Mod Portal, with compatibility warnings. |
+| Scheduled operations | Restarts, backups, save cleanup and Factorio version upgrades on a schedule. |
+| Notifications | Discord, webhook or email notifications for server and operation events. |
+| Metrics and templates | UPS, research and evolution in the UI; server templates and cloning. |
+
+## Next — v0.5.0 Reliable operations
 
 | Theme | Outcome |
 |---|---|
@@ -35,20 +57,6 @@ the project board; decisions live in [`decisions.md`](decisions.md).
 **Exit criteria:** a save has been restored end-to-end from the off-site copy;
 the UI and API are reachable over TLS; the API manages a dedicated namespace
 with scoped RBAC; CI covers security scans and the critical user journeys.
-
-## Next — v0.5.0 Server experience
-
-| Theme | Outcome |
-|---|---|
-| Mods | Search, install, update and configure mods from the Mod Portal, with compatibility warnings. |
-| Players | Online players, whitelist, ban and admin lists, kick/ban actions and RCON command history. |
-| Scheduled operations | Restarts, backups, save cleanup and Factorio version upgrades on a schedule. |
-| Notifications | Discord, webhook or email notifications for server and operation events. |
-| Metrics and templates | UPS, players, research and evolution in the UI; server templates and cloning. |
-| Identity | OIDC and roles if they were not delivered with the access-security theme. |
-
-**Exit criteria:** an operator can run the full server lifecycle from the UI,
-without `kubectl`, and can be notified of failures.
 
 ## Later — v1.0.0 Platform
 

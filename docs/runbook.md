@@ -119,6 +119,17 @@ curl -H "Authorization: Bearer $TOKEN" \
 - **Events** : onglet Events, ou
   `kubectl -n default get events --sort-by=.lastTimestamp`.
 - **Console RCON** : onglet Console. Le serveur doit être démarré.
+- **Joueurs en ligne** : carte « Joueurs en ligne » de la vue d’ensemble, ou
+  `GET /api/servers/<name>/players`. L’API interroge RCON `/players online`
+  toutes les 10 secondes côté UI.
+- **Expulsion** : bouton « Expulser » puis confirmation. L’API vérifie que le
+  joueur est dans la liste en ligne avant d’envoyer `/kick <joueur>` ; un nom
+  absent est refusé.
+- **Uptime** : carte Charge, calculé depuis la création du pod courant.
+  L’uptime reste affiché si metrics-server est indisponible ; le CPU et la
+  mémoire affichent alors « — ».
+- **Audit** : l’expulsion est tracée comme une commande RCON dans les logs de
+  l’API, avec le nom du serveur et la commande normalisée.
 - Les commandes RCON sont auditées dans les logs de l’API, avec le nom du
   serveur et la commande normalisée/tronquée. Les mots de passe et la sortie
   ne sont jamais journalisés.

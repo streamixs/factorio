@@ -20,6 +20,7 @@ import {
 import { Separator } from "@/components/ui/separator";
 import { Skeleton } from "@/components/ui/skeleton";
 import { getServerConnection, getServerUsage } from "@/lib/api";
+import { formatUptime } from "@/lib/format";
 import {
   formatBytes,
   formatCpu,
@@ -219,15 +220,34 @@ export function ConnectionPanel({
           </CardTitle>
         </CardHeader>
         <CardContent className="flex flex-col gap-4">
-          {usage?.available === true ? (
+          {usage === null ? (
+            loading ? (
+              <Skeleton className="h-32 w-full" />
+            ) : (
+              <Alert>
+                <AlertDescription>
+                  Métriques indisponibles : le serveur est arrêté ou l&apos;API
+                  ne répond pas.
+                </AlertDescription>
+              </Alert>
+            )
+          ) : (
             <>
-              <div className="grid grid-cols-2 gap-4">
+              <div className="grid grid-cols-2 gap-4 sm:grid-cols-3">
+                <div className="rounded-lg border p-4">
+                  <p className="text-xs text-muted-foreground uppercase">
+                    En ligne depuis
+                  </p>
+                  <p className="mt-1 text-2xl font-semibold">
+                    {formatUptime(usage.uptimeSeconds)}
+                  </p>
+                </div>
                 <div className="rounded-lg border p-4">
                   <p className="text-xs text-muted-foreground uppercase">
                     CPU
                   </p>
                   <p className="mt-1 text-2xl font-semibold">
-                    {formatCpu(usage.cpuMillicores)}
+                    {usage.available ? formatCpu(usage.cpuMillicores) : "—"}
                   </p>
                 </div>
                 <div className="rounded-lg border p-4">
@@ -235,37 +255,44 @@ export function ConnectionPanel({
                     Mémoire
                   </p>
                   <p className="mt-1 text-2xl font-semibold">
-                    {formatBytes(usage.memoryBytes)}
+                    {usage.available ? formatBytes(usage.memoryBytes) : "—"}
                   </p>
                 </div>
               </div>
 
-              <div className="flex flex-col">
-                {usage.containers.map((container, index) => (
-                  <div key={container.name}>
-                    {index > 0 && <Separator />}
-                    <div className="flex items-center justify-between gap-4 py-2 text-sm">
-                      <span className="font-mono text-xs">{container.name}</span>
-                      <span className="text-muted-foreground">
-                        {formatCpu(container.cpuMillicores)} ·{" "}
-                        {formatBytes(container.memoryBytes)}
-                      </span>
-                    </div>
+              {usage.available ? (
+                <>
+                  <div className="flex flex-col">
+                    {usage.containers.map((container, index) => (
+                      <div key={container.name}>
+                        {index > 0 && <Separator />}
+                        <div className="flex items-center justify-between gap-4 py-2 text-sm">
+                          <span className="font-mono text-xs">
+                            {container.name}
+                          </span>
+                          <span className="text-muted-foreground">
+                            {formatCpu(container.cpuMillicores)} ·{" "}
+                            {formatBytes(container.memoryBytes)}
+                          </span>
+                        </div>
+                      </div>
+                    ))}
                   </div>
-                ))}
-              </div>
 
-              <p className="text-xs text-muted-foreground">
-                Rafraîchi toutes les 10 secondes via metrics-server.
-              </p>
+                  <p className="text-xs text-muted-foreground">
+                    Rafraîchi toutes les 10 secondes via metrics-server.
+                  </p>
+                </>
+              ) : (
+                <Alert>
+                  <AlertDescription>
+                    Métriques indisponibles : le serveur est arrêté ou
+                    metrics-server n&apos;est pas installé. L&apos;uptime reste
+                    affiché tant que le pod existe.
+                  </AlertDescription>
+                </Alert>
+              )}
             </>
-          ) : (
-            <Alert>
-              <AlertDescription>
-                Métriques indisponibles : le pod est arrêté ou metrics-server
-                n&apos;est pas installé dans le cluster.
-              </AlertDescription>
-            </Alert>
           )}
         </CardContent>
       </Card>

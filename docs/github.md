@@ -111,8 +111,8 @@ Milestones are release windows, not themes.
 
 | Milestone | Scope |
 |---|---|
-| **v0.4.0 — Reliable operations** | Off-site backups and tested restores, TLS and rate limiting, namespace/RBAC, audit log, observability, supply chain, E2E. |
-| **v0.5.0 — Server experience** | Mods, players, scheduled operations, notifications, metrics, templates. |
+| **v0.4.0 — Server experience** | Players and live metrics first, then mods, scheduled operations, notifications and templates. |
+| **v0.5.0 — Reliable operations** | Off-site backups and tested restores, TLS and rate limiting, namespace/RBAC, audit log, observability, supply chain, E2E. |
 | **v1.0.0 — Platform** | OIDC/multi-user, HA, GitOps, DR, performance, accessibility, i18n. |
 
 No due date is set until a release is actually planned. The milestone

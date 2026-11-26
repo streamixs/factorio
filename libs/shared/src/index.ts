@@ -236,6 +236,10 @@ export interface RconCommandInput {
   command: string;
 }
 
+export interface KickPlayerInput {
+  player: string;
+}
+
 export interface UpdateFactorioServerInput {
   spec: FactorioServerSpec;
   credentials?: CredentialsInput;
@@ -337,6 +341,17 @@ export interface ServerUsage {
   cpuMillicores: number;
   memoryBytes: number;
   containers: ContainerUsage[];
+  /** Pod start time, ISO-8601. Absent when the server is stopped. */
+  startedAt?: string;
+  /** Seconds since the current pod started. Absent when stopped. */
+  uptimeSeconds?: number;
+}
+
+export interface ServerPlayers {
+  /** False when the server is stopped or the RCON interface is unavailable. */
+  available: boolean;
+  players: string[];
+  fetchedAt: string;
 }
 
 export interface EffectiveSettings {

@@ -4,6 +4,7 @@ import type {
   FactorioServer,
   ServerConnection,
   ServerOperation,
+  ServerPlayers,
   ServerUsage,
 } from "@factorio/shared";
 import { ArrowRight, Copy, Loader2, Play, Square } from "lucide-react";
@@ -37,6 +38,7 @@ import {
 export interface ServerDetails {
   connection: ServerConnection | null;
   usage: ServerUsage | null;
+  players?: ServerPlayers | null;
   operation?: ServerOperation;
 }
 
@@ -113,6 +115,10 @@ export function ServerCard({
   const operationActive = operation !== undefined;
   const usage = details?.usage;
   const usageAvailable = usage?.available === true;
+  const onlinePlayers =
+    details?.players?.available === true
+      ? details.players.players.length
+      : undefined;
 
   const display =
     server.spec.server?.identity?.name ?? server.metadata.name;
@@ -200,7 +206,13 @@ export function ServerCard({
         <div className="grid grid-cols-4 gap-2">
           <Metric
             label="Joueurs"
-            value={maxPlayers === 0 ? "∞" : String(maxPlayers)}
+            value={
+              onlinePlayers === undefined
+                ? "—"
+                : maxPlayers === 0
+                  ? String(onlinePlayers)
+                  : `${onlinePlayers}/${maxPlayers}`
+            }
           />
           <Metric
             label="CPU"

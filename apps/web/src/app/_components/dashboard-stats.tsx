@@ -79,6 +79,16 @@ export function DashboardStats({
   const cpu = usages.reduce((sum, usage) => sum + usage.cpuMillicores, 0);
   const memory = usages.reduce((sum, usage) => sum + usage.memoryBytes, 0);
 
+  const onlinePlayers = Object.values(details).reduce(
+    (sum, entry) =>
+      sum +
+      (entry.players?.available === true ? entry.players.players.length : 0),
+    0,
+  );
+  const playersAvailable = Object.values(details).some(
+    (entry) => entry.players?.available === true,
+  );
+
   return (
     <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
       <StatCard
@@ -90,10 +100,14 @@ export function DashboardStats({
       />
       <StatCard
         icon={Users}
-        label="Places"
-        value={String(places)}
-        unit="places joueurs"
-        detail={`${servers.length} serveur${servers.length > 1 ? "s" : ""} configuré${servers.length > 1 ? "s" : ""}`}
+        label="Joueurs"
+        value={playersAvailable ? String(onlinePlayers) : "—"}
+        unit={playersAvailable ? "en ligne" : undefined}
+        detail={
+          places > 0
+            ? `${places} place${places > 1 ? "s" : ""} configurée${places > 1 ? "s" : ""}`
+            : `${servers.length} serveur${servers.length > 1 ? "s" : ""}`
+        }
       />
       <StatCard
         icon={Activity}

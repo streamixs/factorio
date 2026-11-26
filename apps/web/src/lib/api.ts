@@ -7,6 +7,7 @@ import type {
   ServerEvent,
   ServerLogs,
   ServerOperation,
+  ServerPlayers,
   ServerSettingsJson,
   ServerUsage,
   UpdateFactorioServerInput,
@@ -154,6 +155,23 @@ export function getServerConnection(name: string): Promise<ServerConnection> {
 
 export function getServerUsage(name: string): Promise<ServerUsage> {
   return request<ServerUsage>(`/${encodeURIComponent(name)}/usage`);
+}
+
+export function getServerPlayers(name: string): Promise<ServerPlayers> {
+  return request<ServerPlayers>(`/${encodeURIComponent(name)}/players`);
+}
+
+export function kickServerPlayer(
+  name: string,
+  player: string,
+): Promise<{ output: string }> {
+  return request<{ output: string }>(
+    `/${encodeURIComponent(name)}/players/kick`,
+    {
+      method: "POST",
+      body: JSON.stringify({ player }),
+    },
+  );
 }
 
 export function getServerSettingsJson(

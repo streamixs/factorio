@@ -18,12 +18,14 @@ import { cn } from "cn";
 import {
   getServerConnection,
   getServerOperations,
+  getServerPlayers,
   getServerUsage,
   listServers,
   startServer,
   stopServer,
 } from "@/lib/api";
 import { activeOperation } from "@/lib/operations";
+import { serverIsOnline } from "@/lib/server-status";
 
 import { ClusterHealth, RecentOperations } from "./dashboard-activity";
 import { DashboardStats } from "./dashboard-stats";
@@ -112,21 +114,31 @@ export function HomeDashboard() {
 
       const entries = await Promise.all(
         list.map(async (server) => {
-          const [connection, usage, serverOperations] = await Promise.all([
+          const [connection, usage, players, serverOperations] = await Promise.all([
             getServerConnection(server.metadata.name).catch(() => null),
             getServerUsage(server.metadata.name).catch(() => null),
+            serverIsOnline(server)
+              ? getServerPlayers(server.metadata.name).catch(() => null)
+              : Promise.resolve(null),
             getServerOperations(server.metadata.name).catch(() => []),
           ]);
-          return { server, connection, usage, serverOperations };
+          return { server, connection, usage, players, serverOperations };
         }),
       );
 
       setDetails(
         Object.fromEntries(
-          entries.map(({ server, connection, usage, serverOperations }) => [
-            server.metadata.name,
-            { connection, usage, operation: activeOperation(serverOperations) },
-          ]),
+          entries.map(
+            ({ server, connection, usage, players, serverOperations }) => [
+              server.metadata.name,
+              {
+                connection,
+                usage,
+                players,
+                operation: activeOperation(serverOperations),
+              },
+            ],
+          ),
         ),
       );
       setOperations(

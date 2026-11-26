@@ -49,6 +49,7 @@ import { BackupsPanel } from "../servers/[name]/backups";
 import { ConnectionPanel } from "../servers/[name]/connection";
 import { ConsolePanel } from "../servers/[name]/console";
 import { EventsPanel, LogsPanel } from "../servers/[name]/diagnostics";
+import { PlayersPanel } from "../servers/[name]/players";
 import { SettingsForm } from "../servers/[name]/settings-form";
 
 const VIEWS = [
@@ -430,49 +431,55 @@ function ServerDetail({ name }: { name: string }) {
                 name={server.metadata.name}
                 suspended={suspended}
               />
-              <Card>
-                <CardHeader>
-                  <CardTitle className="text-sm">Accès rapide</CardTitle>
-                </CardHeader>
-                <CardContent className="grid gap-2">
-                  <Button
-                    type="button"
-                    variant="outline"
-                    className="justify-start gap-2"
-                    onClick={() => setView("console")}
-                  >
-                    <Terminal className="size-4" aria-hidden />
-                    Console
-                  </Button>
-                  <Button
-                    type="button"
-                    variant="outline"
-                    className="justify-start gap-2"
-                    onClick={() => setView("logs")}
-                  >
-                    <ScrollText className="size-4" aria-hidden />
-                    Logs
-                  </Button>
-                  <Button
-                    type="button"
-                    variant="outline"
-                    className="justify-start gap-2"
-                    onClick={() => setView("backups")}
-                  >
-                    <Save className="size-4" aria-hidden />
-                    Sauvegardes
-                  </Button>
-                  <Button
-                    type="button"
-                    variant="outline"
-                    className="justify-start gap-2"
-                    onClick={() => setView("config")}
-                  >
-                    <SlidersHorizontal className="size-4" aria-hidden />
-                    Configuration
-                  </Button>
-                </CardContent>
-              </Card>
+              <div className="flex min-w-0 flex-col gap-4">
+                <PlayersPanel
+                  name={server.metadata.name}
+                  suspended={suspended}
+                />
+                <Card>
+                  <CardHeader>
+                    <CardTitle className="text-sm">Accès rapide</CardTitle>
+                  </CardHeader>
+                  <CardContent className="grid gap-2">
+                    <Button
+                      type="button"
+                      variant="outline"
+                      className="justify-start gap-2"
+                      onClick={() => setView("console")}
+                    >
+                      <Terminal className="size-4" aria-hidden />
+                      Console
+                    </Button>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      className="justify-start gap-2"
+                      onClick={() => setView("logs")}
+                    >
+                      <ScrollText className="size-4" aria-hidden />
+                      Logs
+                    </Button>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      className="justify-start gap-2"
+                      onClick={() => setView("backups")}
+                    >
+                      <Save className="size-4" aria-hidden />
+                      Sauvegardes
+                    </Button>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      className="justify-start gap-2"
+                      onClick={() => setView("config")}
+                    >
+                      <SlidersHorizontal className="size-4" aria-hidden />
+                      Configuration
+                    </Button>
+                  </CardContent>
+                </Card>
+              </div>
             </div>
           </TabsContent>
 
