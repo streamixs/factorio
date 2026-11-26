@@ -87,6 +87,9 @@ Do not move this logic into the API.
 - The Dockerfile builds on `BUILDPLATFORM` and cross-compiles to
   `TARGETARCH`. Do not remove the platform override: building the Go toolchain
   under target emulation makes multi-arch releases extremely slow.
+- The manager Deployment references the `ghcr-pull` secret. Create it in
+  `agent-system` when the release image is private; local `:dev` images still
+  work without it.
 
 ## Documentation
 

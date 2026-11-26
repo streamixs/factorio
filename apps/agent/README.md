@@ -35,7 +35,9 @@ make manifests generate              # après modification des types/markers
 
 L’image doit être accessible au cluster. OrbStack partage les images locales ;
 pour un autre cluster, poussez l’image dans un registry et passez son nom
-complet à `IMG`.
+complet à `IMG`. Pour des images GHCR privées, créez le secret `ghcr-pull`
+dans `agent-system` (voir
+[`docs/release.md`](../../docs/release.md#ghcr-visibility)).
 
 Les tests utilisent envtest et téléchargent les binaires Kubernetes via
 `make setup-envtest`. Les tests e2e Kind ne font pas partie de la CI.
