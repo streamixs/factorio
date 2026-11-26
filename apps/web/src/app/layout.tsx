@@ -29,6 +29,8 @@ export const metadata: Metadata = {
   description: "Gère des serveurs Factorio exécutés dans Kubernetes",
 };
 
+const appVersion = process.env.NEXT_PUBLIC_APP_VERSION || "dev";
+
 export default function RootLayout({ children }: LayoutProps<"/">) {
   return (
     <html
@@ -44,6 +46,9 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
           disableTransitionOnChange
         >
           {children}
+          <footer className="border-t px-4 py-3 text-center text-xs text-muted-foreground">
+            Factorio Platform {appVersion}
+          </footer>
           <Toaster position="bottom-right" />
         </ThemeProvider>
       </body>

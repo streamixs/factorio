@@ -30,6 +30,7 @@ make lint
 make build
 make docker             # build local :dev images
 make fmt                # API Prettier + agent gofmt
+make version            # print VERSION
 ```
 
 Per component:

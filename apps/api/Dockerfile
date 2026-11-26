@@ -1,5 +1,7 @@
 # syntax=docker/dockerfile:1
 
+ARG APP_VERSION=dev
+
 FROM node:24-alpine AS builder
 
 WORKDIR /app
@@ -22,9 +24,16 @@ RUN pnpm --filter @factorio/shared build \
 
 FROM node:24-alpine AS runner
 
+ARG APP_VERSION=dev
+
 WORKDIR /app
 
 ENV NODE_ENV=production
+ENV APP_VERSION=${APP_VERSION}
+
+LABEL org.opencontainers.image.title="Factorio API" \
+      org.opencontainers.image.version="${APP_VERSION}" \
+      org.opencontainers.image.source="https://github.com/streamixs/factorio"
 
 COPY --from=builder --chown=node:node /prod/api ./
 

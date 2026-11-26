@@ -19,6 +19,7 @@ package main
 import (
 	"crypto/tls"
 	"flag"
+	"fmt"
 	"os"
 
 	// Import all Kubernetes client auth plugins (e.g. Azure, GCP, OIDC, etc.)
@@ -38,6 +39,7 @@ import (
 
 	gamesv1alpha1 "github.com/streamixs/factorio/apps/agent/api/v1alpha1"
 	"github.com/streamixs/factorio/apps/agent/internal/controller"
+	"github.com/streamixs/factorio/apps/agent/internal/version"
 	// +kubebuilder:scaffold:imports
 )
 
@@ -70,6 +72,7 @@ func main() {
 	var probeAddr string
 	var secureMetrics bool
 	var enableHTTP2 bool
+	var showVersion bool
 	var tlsOpts []func(*tls.Config)
 	flag.StringVar(&metricsAddr, "metrics-bind-address", "0", "The address the metrics endpoint binds to. "+
 		"Use :8443 for HTTPS or :8080 for HTTP, or leave as 0 to disable the metrics service.")
@@ -90,11 +93,18 @@ func main() {
 	flag.StringVar(&metricsCertKey, "metrics-cert-key", "tls.key", "The name of the metrics server key file.")
 	flag.BoolVar(&enableHTTP2, "enable-http2", false,
 		"If set, HTTP/2 will be enabled for the metrics and webhook servers")
+	flag.BoolVar(&showVersion, "version", false,
+		"Print the platform version and exit.")
 	opts := zap.Options{
 		Development: true,
 	}
 	opts.BindFlags(flag.CommandLine)
 	flag.Parse()
+
+	if showVersion {
+		fmt.Println(version.Version)
+		return
+	}
 
 	ctrl.SetLogger(zap.New(zap.UseFlagOptions(&opts)))
 
@@ -219,7 +229,7 @@ func main() {
 		os.Exit(1)
 	}
 
-	setupLog.Info("Starting manager")
+	setupLog.Info("Starting manager", "version", version.Version)
 	if err := mgr.Start(ctrl.SetupSignalHandler()); err != nil {
 		setupLog.Error(err, "Failed to run manager")
 		os.Exit(1)
