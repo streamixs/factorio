@@ -6,7 +6,8 @@
   "scripts": {
     "build": "pnpm --filter @factorio/shared build && pnpm --filter @factorio/api build && pnpm --filter @factorio/web build",
     "dev": "pnpm --filter @factorio/shared build && pnpm --parallel --filter @factorio/api --filter @factorio/web dev",
-    "lint": "pnpm --recursive --if-present lint"
+    "lint": "pnpm --recursive --if-present lint",
+    "test": "pnpm --recursive --if-present test"
   },
   "keywords": [],
   "author": "",
