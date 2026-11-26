@@ -176,8 +176,16 @@ make deploy TAG=v0.4.0       # image d’une release
 Le script `scripts/deploy-ghcr.sh` résout les trois images
 `ghcr.io/<owner>/factorio-{api,web,agent}:<tag>`, vérifie leur accès, puis
 déploie l’agent avant l’API et le web. Il refuse de continuer si une image ou
-le Secret `factorio-auth` manque. Les packages GHCR doivent être publics, ou
-le Secret `ghcr-pull` doit exister dans les deux namespaces.
+le Secret `factorio-auth` manque. Si les packages sont privés (l’organisation
+peut interdire les packages publics), crée le Secret `ghcr-pull` dans les deux
+namespaces avec un PAT classique `read:packages` :
+
+```sh
+read -rs GHCR_TOKEN
+export GHCR_TOKEN
+GHCR_USERNAME=<utilisateur-github> make ghcr-secret
+unset GHCR_TOKEN
+```
 
 ### Build local
 

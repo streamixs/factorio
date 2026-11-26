@@ -29,8 +29,17 @@ immutable `vX.Y.Z` image used by releases.
 
 The GHCR packages must be public, or the `ghcr-pull` secret must exist in
 `factorio-system` and `agent-system`. Repository visibility does not change
-package visibility; see
-[`../docs/release.md`](../docs/release.md#ghcr-visibility).
+package visibility, and organization administrators may disable public
+packages. In that case, create a classic PAT with `read:packages` and run:
+
+```sh
+read -rs GHCR_TOKEN
+export GHCR_TOKEN
+GHCR_USERNAME=<github-user> make ghcr-secret
+unset GHCR_TOKEN
+```
+
+See [`../docs/release.md`](../docs/release.md#ghcr-visibility).
 
 ### Local development images
 

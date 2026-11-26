@@ -3,7 +3,7 @@ SHELL := /usr/bin/env bash
 
 TAG ?= main-$(shell git rev-parse --short=7 HEAD)
 
-.PHONY: help install lint lint-api lint-web lint-agent test test-api test-web test-agent build build-shared build-api build-web build-agent check audit fmt docker deploy deploy-local version version-check release
+.PHONY: help install lint lint-api lint-web lint-agent test test-api test-web test-agent build build-shared build-api build-web build-agent check audit fmt docker deploy deploy-local ghcr-secret version version-check release
 
 help: ## Display this help.
 	@awk 'BEGIN {FS = ":.*##"; printf "\nUsage:\n  make \033[36m<target>\033[0m\n"} /^[a-zA-Z_0-9-]+:.*?##/ { printf "  \033[36m%-18s\033[0m %s\n", $$1, $$2 } /^##@/ { printf "\n\033[1m%s\033[0m\n", substr($$0, 5) } ' $(MAKEFILE_LIST)
@@ -82,6 +82,9 @@ deploy-local: ## Build and deploy local :dev images.
 	$(MAKE) docker
 	$(MAKE) -C apps/agent deploy IMG=factorio-agent:dev
 	$(MAKE) -C deploy deploy TAG=dev API_IMG=factorio-api:dev WEB_IMG=factorio-web:dev
+
+ghcr-secret: ## Create ghcr-pull in both namespaces from GHCR_USERNAME and GHCR_TOKEN.
+	./scripts/create-ghcr-secret.sh
 
 ##@ Release
 

@@ -14,16 +14,8 @@ REGISTRY="ghcr.io/$OWNER"
 TMP_DIR="$(mktemp -d)"
 trap 'rm -rf "$TMP_DIR"' EXIT
 
-for image in api web agent; do
-  reference="$REGISTRY/factorio-$image:$TAG"
-  if ! docker manifest inspect "$reference" >/dev/null 2>&1; then
-    echo "Missing or inaccessible image: $reference" >&2
-    echo "Build and publish it first, make the GHCR packages public, or run 'docker login ghcr.io'." >&2
-    exit 1
-  fi
-done
-
-# The cluster needs the ghcr-pull secret when the packages are private.
+# Public packages can be verified anonymously. Private packages need the
+# ghcr-pull secret on the cluster, and may or may not have a local docker login.
 public=true
 for image in api web agent; do
   reference="$REGISTRY/factorio-$image:$TAG"
@@ -36,9 +28,19 @@ done
 if [[ "$public" != "true" ]]; then
   for namespace in factorio-system agent-system; do
     if ! kubectl -n "$namespace" get secret ghcr-pull >/dev/null 2>&1; then
-      echo "The images are private and secret ghcr-pull is missing in $namespace." >&2
-      echo "Make the three GHCR packages public, or create the pull secret." >&2
+      echo "The GHCR images are private (or the tag does not exist) and secret ghcr-pull is missing in $namespace." >&2
+      echo "If the organization disables public packages, create a classic PAT with read:packages and run:" >&2
+      echo "  GHCR_USERNAME=<user> GHCR_TOKEN=<pat> make ghcr-secret" >&2
       exit 1
+    fi
+  done
+
+  # A local docker login is optional: the cluster pulls with ghcr-pull.
+  for image in api web agent; do
+    reference="$REGISTRY/factorio-$image:$TAG"
+    if ! docker manifest inspect "$reference" >/dev/null 2>&1; then
+      echo "Note: could not verify $reference locally; the cluster will pull it with ghcr-pull." >&2
+      break
     fi
   done
 fi

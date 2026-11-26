@@ -108,15 +108,26 @@ Choose one:
 - make the three GHCR packages public; or
 - keep them private and create the `ghcr-pull` image pull secret.
 
+Organization administrators may disable the **Public** and **Internal**
+visibility options. In that case, use the pull secret path.
+
 To make a package public: open the organization or user **Packages** page,
 select the package, open **Package settings**, then **Danger Zone → Change
 visibility → Public**. Repeat for `factorio-api`, `factorio-web` and
 `factorio-agent`.
 
-`make deploy` verifies anonymous access first. If the packages are private it
-requires `ghcr-pull` in both namespaces. The API, web and agent Deployments
-reference that secret; a missing secret only logs a warning and does not block
-local `:dev` images. For private packages, create it in both namespaces:
+To use a pull secret, create a classic PAT with the `read:packages` scope and
+run:
+
+```sh
+read -rs GHCR_TOKEN
+export GHCR_TOKEN
+GHCR_USERNAME=<github-user> make ghcr-secret
+unset GHCR_TOKEN
+```
+
+`make ghcr-secret` updates `ghcr-pull` in `factorio-system` and `agent-system`
+without printing the token. The manual equivalent is:
 
 ```sh
 kubectl -n factorio-system create secret docker-registry ghcr-pull \
@@ -128,6 +139,11 @@ kubectl -n agent-system create secret docker-registry ghcr-pull \
   --docker-username=<user> \
   --docker-password=<PAT-with-read:packages>
 ```
+
+`make deploy` verifies anonymous access first. If the packages are private it
+requires `ghcr-pull` in both namespaces. The API, web and agent Deployments
+reference that secret; a missing secret only logs a warning and does not block
+local `:dev` images.
 
 ## Rollback
 

@@ -94,8 +94,18 @@ OrbStack, Docker Desktop et Kind conviennent pour le développement local.
 
    Le script résout les images
    `ghcr.io/<owner>/factorio-{api,web,agent}:<tag>`, vérifie leur accès, puis
-   déploie l’agent, l’API et le web. Les packages GHCR doivent être publics,
-   ou le Secret `ghcr-pull` doit exister dans `factorio-system` et
+   déploie l’agent, l’API et le web. Si les packages GHCR sont privés — ou si
+   l’organisation interdit les packages publics — crée un PAT classique avec
+   `read:packages` puis :
+
+   ```sh
+   read -rs GHCR_TOKEN
+   export GHCR_TOKEN
+   GHCR_USERNAME=<utilisateur-github> make ghcr-secret
+   unset GHCR_TOKEN
+   ```
+
+   Le secret `ghcr-pull` est alors créé dans `factorio-system` et
    `agent-system`.
 
 3. **Ou construire les images localement**

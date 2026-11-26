@@ -130,9 +130,10 @@ a deliberate choice. Add a new section when a durable behavior changes.
   manual image references from the deployment command. Immutable tags make a
   rollback reproducible.
 - **Consequences:** the GHCR packages must be public, or `ghcr-pull` must exist
-  in both namespaces. `main-<short-sha>` images are development builds and can
-  be replaced by a release rebuild of the same commit; release tags are the
-  authoritative artifacts.
+  in both namespaces. Organization policy can disable public packages, so the
+  pull-secret path must remain supported. `main-<short-sha>` images are
+  development builds and can be replaced by a release rebuild of the same
+  commit; release tags are the authoritative artifacts.
 
 ## Web shell and server detail route
 
