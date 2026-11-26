@@ -119,7 +119,9 @@ a deliberate choice. Add a new section when a durable behavior changes.
 
 - **Status:** accepted.
 - **Decision:** local development uses local `:dev` images and `make deploy`
-  forces a rollout. Releases use immutable GHCR tags built from Git tags.
+  forces a rollout. Releases use immutable GHCR tags built from Git tags. The
+  agent image builds on `BUILDPLATFORM` and cross-compiles to `TARGETARCH` so
+  multi-arch releases do not run the Go toolchain under emulation.
 - **Why:** rebuilding the same `:dev` tag does not otherwise restart pods, and
   releases must be reproducible.
 - **Consequences:** production deploys should pass explicit `IMG`/`TAG`

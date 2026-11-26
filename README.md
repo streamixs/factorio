@@ -205,10 +205,15 @@ dépannage sont dans [`docs/runbook.md`](docs/runbook.md).
 
 Les PR exécutent :
 
+- `PR title` : titre conventionnel (le titre devient le commit squash) ;
+- `Workflows` : validation des fichiers GitHub Actions avec actionlint ;
 - `Agent lint` et `Agent test` ;
 - `API` : format, lint, tests et build ;
 - `Web` : lint, tests, typecheck et build ;
 - `Docker (api)`, `Docker (web)`, `Docker (agent)` : validation des images.
+
+Dependabot ouvre des mises à jour groupées chaque semaine pour pnpm, Go,
+GitHub Actions et les images Docker.
 
 Les merges se font en **squash**. Les checks obligatoires ne peuvent pas être
 activés sur ce dépôt privé sans GitHub Pro ; les noms de jobs sont stables
