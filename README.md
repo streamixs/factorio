@@ -19,6 +19,13 @@ Factorio sur Kubernetes.
 - Authentification Basic pour l’UI, token bearer interne pour l’API,
   NetworkPolicies et audit des commandes RCON.
 
+## Version
+
+La version de la plateforme est consignée dans `VERSION` (actuellement
+`0.1.0`), affichée dans le pied de page et exposée par `GET /health`.
+`make version` l’affiche. La version d’API Kubernetes des CRDs (`v1alpha1`) est
+distincte de cette version de plateforme.
+
 ## Architecture
 
 ```text

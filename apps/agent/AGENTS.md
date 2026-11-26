@@ -73,6 +73,8 @@ Do not move this logic into the API.
 
 ## Known pitfalls
 
+- The agent logs its platform version from `internal/version`, injected with
+  `-ldflags` at build time. Do not hardcode a release version.
 - The operation Job runs as user 845; the data volume is owned by the Factorio
   user.
 - The saves sidecar writes `index.txt` and `usage.txt`; it must handle SIGTERM

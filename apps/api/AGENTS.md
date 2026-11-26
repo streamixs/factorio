@@ -33,6 +33,8 @@ Run `pnpm --filter @factorio/shared build` first when shared types changed.
 
 - `ApiTokenGuard` is a global guard. New routes are private by default. Use
   `@Public()` only for health and the signed import download.
+- The public health endpoint reports the platform version from `APP_VERSION`
+  (defaults to `dev`). Do not hardcode a release version.
 - Never return the API token or a Kubernetes Secret value in a response.
 - Validate all input with a Zod schema from `@factorio/shared` (or a local
   schema when the value never leaves the API). Use `zodErrorMessage`.

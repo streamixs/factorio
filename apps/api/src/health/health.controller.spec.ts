@@ -10,6 +10,7 @@ describe('HealthController', () => {
 
   beforeEach(async () => {
     vi.clearAllMocks();
+    vi.stubEnv('APP_VERSION', 'dev');
 
     const module: TestingModule = await Test.createTestingModule({
       controllers: [HealthController],
@@ -24,6 +25,10 @@ describe('HealthController', () => {
     controller = module.get<HealthController>(HealthController);
   });
 
+  afterEach(() => {
+    vi.unstubAllEnvs();
+  });
+
   it('should be defined', () => {
     expect(controller).toBeDefined();
   });
@@ -32,7 +37,23 @@ describe('HealthController', () => {
     expect(controller.check()).toMatchObject({
       status: 'ok',
       service: 'factorio-api',
+      version: 'dev',
     });
+  });
+
+  it('reports the configured application version', () => {
+    vi.stubEnv('APP_VERSION', 'v1.2.3');
+
+    expect(controller.check()).toMatchObject({
+      status: 'ok',
+      version: 'v1.2.3',
+    });
+  });
+
+  it('falls back to dev when APP_VERSION is empty', () => {
+    vi.stubEnv('APP_VERSION', '');
+
+    expect(controller.check()).toMatchObject({ version: 'dev' });
   });
 
   it('reports ready when Kubernetes is reachable', async () => {

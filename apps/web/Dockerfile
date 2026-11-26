@@ -1,6 +1,11 @@
 # syntax=docker/dockerfile:1
 
+ARG APP_VERSION=dev
+
 FROM node:24-alpine AS builder
+
+ARG APP_VERSION
+ENV NEXT_PUBLIC_APP_VERSION=${APP_VERSION}
 
 WORKDIR /app
 
@@ -21,11 +26,18 @@ RUN pnpm --filter @factorio/shared build \
 
 FROM node:24-alpine AS runner
 
+ARG APP_VERSION=dev
+
 WORKDIR /app
 
 ENV NODE_ENV=production
 ENV PORT=3000
 ENV HOSTNAME=0.0.0.0
+ENV NEXT_PUBLIC_APP_VERSION=${APP_VERSION}
+
+LABEL org.opencontainers.image.title="Factorio Web" \
+      org.opencontainers.image.version="${APP_VERSION}" \
+      org.opencontainers.image.source="https://github.com/streamixs/factorio"
 
 COPY --from=builder --chown=node:node /app/apps/web/.next/standalone ./
 COPY --from=builder --chown=node:node /app/apps/web/.next/static ./apps/web/.next/static

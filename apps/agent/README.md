@@ -30,6 +30,7 @@ make deploy IMG=factorio-agent:dev    # installe et redémarre l’agent
 make run                             # exécution locale avec le kubeconfig courant
 make fmt lint test                   # vérifications
 make manifests generate              # après modification des types/markers
+./bin/manager --version              # version injectée au build
 ```
 
 L’image doit être accessible au cluster. OrbStack partage les images locales ;

@@ -13,6 +13,7 @@ export class HealthController {
     return {
       status: 'ok',
       service: 'factorio-api',
+      version: this.version(),
       timestamp: new Date().toISOString(),
     };
   }
@@ -26,7 +27,12 @@ export class HealthController {
     return {
       status: 'ok',
       service: 'factorio-api',
+      version: this.version(),
       timestamp: new Date().toISOString(),
     };
+  }
+
+  private version(): string {
+    return process.env.APP_VERSION || 'dev';
   }
 }
