@@ -224,10 +224,27 @@ pour pouvoir les activer plus tard.
 échoue sur toute vulnérabilité npm de sévérité haute ou toute vulnérabilité Go
 atteignable. Le template de PR rappelle les vérifications minimales.
 
+## Organisation du travail
+
+Le dépôt sépare la direction (roadmap), les décisions durables (ADR), les
+epics et les tâches. Une issue = une branche = un worktree = une PR. Les
+agents suivent [`docs/working-agreements.md`](docs/working-agreements.md) ; un
+humain valide les merges et les releases. Les idées non prêtes restent dans le
+backlog du Project, et un élément parqué garde une raison et une condition de
+reprise.
+
 ## Documentation
 
 - [`AGENTS.md`](AGENTS.md) — guide des agents IA : commandes, conventions,
   recettes de tâches et pièges.
+- [`CONTRIBUTING.md`](CONTRIBUTING.md) — démarrage, checks et attentes de PR.
+- [`SECURITY.md`](SECURITY.md) — modèle de sécurité et divulgation privée.
+- [`docs/roadmap.md`](docs/roadmap.md) — thèmes, horizons Now/Next/Later et
+  non-goals.
+- [`docs/working-agreements.md`](docs/working-agreements.md) — cycle de vie,
+  Definition of Ready/Done, branches, agents et rituels.
+- [`docs/github.md`](docs/github.md) — labels, milestones, champs et vues du
+  Project.
 - [`docs/decisions.md`](docs/decisions.md) — décisions d’architecture.
 - [`deploy/README.md`](deploy/README.md) — déploiement, auth, RBAC,
   NetworkPolicies, imports, metrics et ingress.

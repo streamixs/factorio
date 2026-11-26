@@ -73,4 +73,6 @@ status labels, date formatting or another pure function.
 - The sidebar shows `NEXT_PUBLIC_APP_VERSION`, baked at build time. Local builds
   fall back to `dev`; release images receive the Git tag.
 
-See the root [`AGENTS.md`](../../AGENTS.md) for cross-component recipes.
+See the root [`AGENTS.md`](../../AGENTS.md) for cross-component recipes and
+[`docs/working-agreements.md`](../../docs/working-agreements.md) for the work
+organization.

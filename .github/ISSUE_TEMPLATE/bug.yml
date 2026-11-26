@@ -1,0 +1,85 @@
+name: Bug
+description: Report broken or unsafe behavior.
+title: "fix: "
+labels: ["kind/bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Do not use this template for a security vulnerability. Use the
+        [private advisory flow](https://github.com/streamixs/factorio/security/advisories/new)
+        instead.
+  - type: textarea
+    id: summary
+    attributes:
+      label: Summary
+      description: What is broken?
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Reproduction steps
+      description: Numbered steps, including the URL or RCON command when relevant.
+      placeholder: |
+        1. ...
+        2. ...
+        3. ...
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected behavior
+    validations:
+      required: true
+  - type: textarea
+    id: actual
+    attributes:
+      label: Actual behavior
+    validations:
+      required: true
+  - type: dropdown
+    id: impact
+    attributes:
+      label: Impact
+      options:
+        - Server unavailable
+        - Data loss or corruption
+        - Operation stuck or inconsistent
+        - UI or console broken
+        - Cosmetic
+    validations:
+      required: true
+  - type: input
+    id: environment
+    attributes:
+      label: Environment
+      description: Platform version, cluster, browser and Factorio version.
+      placeholder: v0.3.0, OrbStack, Chrome 142, Factorio 2.1.25
+    validations:
+      required: true
+  - type: textarea
+    id: logs
+    attributes:
+      label: Logs and events
+      description: Relevant API, agent, web or Factorio logs. Remove secrets and tokens.
+      render: text
+  - type: dropdown
+    id: area
+    attributes:
+      label: Suspected area
+      multiple: true
+      options:
+        - Agent
+        - API
+        - Web
+        - Deploy
+        - CI
+        - Docs
+        - Unknown
+  - type: textarea
+    id: workaround
+    attributes:
+      label: Workaround
+      description: Is there a temporary workaround or a rollback?

@@ -1,0 +1,73 @@
+name: Reliability or operations
+description: Backups, recovery, observability or operational hardening.
+title: "reliability: "
+labels: ["kind/reliability"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Use this template for work that reduces the risk of data loss, downtime
+        or silent failure. State the failure mode and how success is measured.
+  - type: textarea
+    id: risk
+    attributes:
+      label: Risk and impact
+      description: What can fail, who is affected, and what is the current gap?
+      placeholder: If the PVC is lost, ...
+    validations:
+      required: true
+  - type: textarea
+    id: current
+    attributes:
+      label: Current behavior
+      description: How does the system behave today? Include alerts, backups or runbook gaps.
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed change
+      description: Describe the smallest change that closes the gap.
+    validations:
+      required: true
+  - type: textarea
+    id: acceptance
+    attributes:
+      label: Acceptance criteria
+      description: Include a failure injection or restore test when relevant.
+      placeholder: |
+        - [ ] ...
+        - [ ] ...
+    validations:
+      required: true
+  - type: textarea
+    id: observability
+    attributes:
+      label: Observability and runbook
+      description: What metric, alert, log or runbook entry proves it works?
+  - type: textarea
+    id: rollback
+    attributes:
+      label: Rollback and recovery
+      description: How do we revert or recover if the change makes things worse?
+    validations:
+      required: true
+  - type: dropdown
+    id: area
+    attributes:
+      label: Affected area
+      multiple: true
+      options:
+        - Agent
+        - API
+        - Web
+        - Deploy
+        - CI
+        - Cross-cutting
+    validations:
+      required: true
+  - type: textarea
+    id: dependencies
+    attributes:
+      label: Dependencies
+      description: Related ADRs, issues or external services. Use "Blocked by #..." when relevant.

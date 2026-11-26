@@ -166,3 +166,20 @@ a deliberate choice. Add a new section when a durable behavior changes.
   `pnpm-workspace.yaml` carries temporary overrides for patched transitive
   dependencies; remove each override once its parent package requires the
   fixed version.
+
+## Work organization
+
+- **Status:** accepted.
+- **Decision:** the repository uses one GitHub Project with dedicated views,
+  epics as parent issues, sub-issues for atomic work, milestones for release
+  windows, labels for taxonomy and the project status for execution. Durable
+  decisions live in this file, and the roadmap lists outcomes rather than
+  tasks. One issue maps to one branch, one worktree and one pull request.
+  Agents follow `docs/working-agreements.md`; a human approves merges and
+  releases.
+- **Why:** multiple backlogs, status labels and chat-only context make work
+  hard to resume and unsafe to parallelize across agents.
+- **Consequences:** do not duplicate project status in labels. A parked item
+  must carry a reason and a revisit condition. CRD, shared-type and API
+  contracts land before parallel implementation. Creating the project board
+  requires the `project` GitHub scope or a manual setup.
