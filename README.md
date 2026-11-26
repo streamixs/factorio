@@ -75,17 +75,7 @@ OrbStack, Docker Desktop et Kind conviennent pour le développement local.
 
 ## Démarrage rapide
 
-1. **Installer l’agent et ses CRDs**
-
-   ```sh
-   make -C apps/agent docker-build IMG=factorio-agent:dev
-   make -C apps/agent deploy IMG=factorio-agent:dev
-   ```
-
-   Pour un autre cluster, poussez l’image dans un registry et passez son nom
-   complet à `IMG`.
-
-2. **Créer le namespace et le Secret d’authentification**
+1. **Créer le namespace et le Secret d’authentification**
 
    ```sh
    kubectl apply -f deploy/namespace.yaml
@@ -95,15 +85,37 @@ OrbStack, Docker Desktop et Kind conviennent pour le développement local.
    La commande affiche l’utilisateur et le mot de passe Basic générés. Le
    token API est stocké dans le même Secret, sous la clé `api-token`.
 
-3. **Construire et déployer l’API et le web**
+2. **Déployer les images publiées (recommandé)**
 
    ```sh
-   make -C deploy build
-   make -C deploy deploy
+   make deploy                  # image main-<sha> du commit courant
+   make deploy TAG=v0.4.0       # image d’une release
    ```
 
-   `make deploy` force un rollout : une image `:dev` reconstruite est bien
-   chargée par les pods.
+   Le script résout les images
+   `ghcr.io/<owner>/factorio-{api,web,agent}:<tag>`, vérifie leur accès, puis
+   déploie l’agent, l’API et le web. Si les packages GHCR sont privés — ou si
+   l’organisation interdit les packages publics — crée un PAT classique avec
+   `read:packages` puis :
+
+   ```sh
+   read -rs GHCR_TOKEN
+   export GHCR_TOKEN
+   GHCR_USERNAME=<utilisateur-github> make ghcr-secret
+   unset GHCR_TOKEN
+   ```
+
+   Le secret `ghcr-pull` est alors créé dans `factorio-system` et
+   `agent-system`.
+
+3. **Ou construire les images localement**
+
+   ```sh
+   make deploy-local
+   ```
+
+   Cette commande construit `factorio-{api,web,agent}:dev` et les déploie.
+   Utile pour tester une modification locale avant qu’elle ne soit publiée.
 
 4. **Ouvrir l’interface**
 
@@ -112,7 +124,7 @@ OrbStack, Docker Desktop et Kind conviennent pour le développement local.
    ```
 
    Ouvrez <http://localhost:3000> et connectez-vous avec les identifiants
-   affichés à l’étape 2.
+   affichés à l’étape 1.
 
 Le détail du déploiement, du RBAC, des NetworkPolicies, des imports et de
 l’ingress se trouve dans [`deploy/README.md`](deploy/README.md).

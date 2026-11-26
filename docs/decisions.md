@@ -118,14 +118,22 @@ a deliberate choice. Add a new section when a durable behavior changes.
 ## Development and release images
 
 - **Status:** accepted.
-- **Decision:** local development uses local `:dev` images and `make deploy`
-  forces a rollout. Releases use immutable GHCR tags built from Git tags. The
-  agent image builds on `BUILDPLATFORM` and cross-compiles to `TARGETARCH` so
-  multi-arch releases do not run the Go toolchain under emulation.
-- **Why:** rebuilding the same `:dev` tag does not otherwise restart pods, and
-  releases must be reproducible.
-- **Consequences:** production deploys should pass explicit `IMG`/`TAG`
-  values, not rely on local images.
+- **Decision:** local development uses local `:dev` images and
+  `make deploy-local`. Every push to `main` publishes
+  `ghcr.io/<owner>/factorio-{api,web,agent}:main` and `:main-<short-sha>`.
+  Releases use immutable GHCR `vX.Y.Z` tags. `make deploy` resolves the
+  published images for a tag and deploys the agent, API and web; it defaults to
+  `main-<short-sha>`. The agent image builds on `BUILDPLATFORM` and
+  cross-compiles to `TARGETARCH` so multi-arch releases do not run the Go
+  toolchain under emulation.
+- **Why:** deploying CI-built images avoids local drift and removes the
+  manual image references from the deployment command. Immutable tags make a
+  rollback reproducible.
+- **Consequences:** the GHCR packages must be public, or `ghcr-pull` must exist
+  in both namespaces. Organization policy can disable public packages, so the
+  pull-secret path must remain supported. `main-<short-sha>` images are
+  development builds and can be replaced by a release rebuild of the same
+  commit; release tags are the authoritative artifacts.
 
 ## Web shell and server detail route
 

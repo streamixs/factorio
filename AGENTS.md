@@ -33,6 +33,9 @@ make test-agent
 make lint
 make build
 make docker             # build local :dev images
+make deploy             # deploy published GHCR images (TAG defaults to main-<sha>)
+make deploy-local       # build and deploy local :dev images
+make ghcr-secret        # create ghcr-pull from GHCR_USERNAME and GHCR_TOKEN
 make fmt                # API Prettier + agent gofmt
 make version            # print VERSION
 make version-check      # VERSION, package versions and tag consistency
@@ -144,8 +147,9 @@ and pushes. The tag workflow publishes GHCR images and the GitHub Release. See
 
 ## Known pitfalls
 
-- `make -C deploy deploy` and agent `make deploy` force a rollout. A rebuilt
-  `:dev` image is not loaded without it.
+- `make deploy` uses the published GHCR images (`main-<sha>` by default, or
+  `TAG=vX.Y.Z`). `make deploy-local` builds the local `:dev` images and forces
+  a rollout; a rebuilt `:dev` image is not loaded without it.
 - Settings updates use `metadata.generation`, not `resourceVersion` (status
   updates bump `resourceVersion`). A stale generation must produce 409.
 - Operations suspend the server, run a Job and resume it. Terminal operations
@@ -164,8 +168,11 @@ and pushes. The tag workflow publishes GHCR images and the GitHub Release. See
   restart it after a 502.
 - Release images are private by default. The API, web and agent Deployments
   reference the `ghcr-pull` secret; create it in `factorio-system` and
-  `agent-system`, or make the GHCR packages public. A missing secret only logs
-  a warning and does not block local `:dev` images.
+  `agent-system`, or make the GHCR packages public. A public repository does
+  not make packages public, and organization policy may disable public
+  packages; use `make ghcr-secret` with a classic PAT that has
+  `read:packages`. A missing secret only logs a warning and does not block
+  local `:dev` images.
 - The web root layout stays minimal; each page composes `AppShell`.
   `/servers/<name>` is redirected by `apps/web/src/proxy.ts` to the static
   `/servers/view?name=<name>` detail. Do not reintroduce a client shell/footer
