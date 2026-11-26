@@ -3,6 +3,9 @@
 Runs the API and the web UI inside Kubernetes. The agent and its CRDs must
 already be installed (`apps/agent: make install && make deploy`).
 
+Vue d’ensemble : [`../README.md`](../README.md). Exploitation et dépannage :
+[`../docs/runbook.md`](../docs/runbook.md).
+
 ## Build and deploy
 
 From this directory:
