@@ -168,6 +168,9 @@ même tag `:dev` est donc bien pris en compte. Un changement du template des
 pods Factorio (script du sidecar, réglages) déclenche un rollout des serveurs
 existants.
 
+Pour une release versionnée, suivre [`release.md`](release.md) et déployer les
+images `vX.Y.Z` avec `IMG`, `TAG`, `API_IMG` et `WEB_IMG`.
+
 ## Vérification après déploiement
 
 ```sh

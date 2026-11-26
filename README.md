@@ -26,6 +26,9 @@ La version de la plateforme est consignée dans `VERSION` (actuellement
 `make version` l’affiche. La version d’API Kubernetes des CRDs (`v1alpha1`) est
 distincte de cette version de plateforme.
 
+Les releases utilisent des tags Git `vX.Y.Z` et publient des images GHCR
+multi-arch. Voir [`docs/release.md`](docs/release.md).
+
 ## Architecture
 
 ```text
@@ -222,4 +225,6 @@ rappelle les vérifications minimales.
 - [`deploy/README.md`](deploy/README.md) — déploiement, auth, RBAC,
   NetworkPolicies, imports, metrics et ingress.
 - [`docs/runbook.md`](docs/runbook.md) — exploitation et dépannage.
+- [`docs/release.md`](docs/release.md) — versions, tags, GHCR et déploiement
+  d’une release.
 - [`apps/agent/README.md`](apps/agent/README.md) — opérateur et CRDs.
