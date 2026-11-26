@@ -54,7 +54,8 @@ cluster and may restart running Factorio servers.
 - **User-facing UI text and API error messages surfaced by the UI are in
   French** (the API itself currently returns English messages).
 - Conventional commits: `feat(scope): ...`, `fix(scope): ...`,
-  `docs(scope): ...`, `test(scope): ...`, `ci: ...`, `chore: ...`.
+  `docs(scope): ...`, `test(scope): ...`, `build(scope): ...`, `ci: ...`,
+  `chore: ...`, `refactor(scope): ...`, `perf(scope): ...`, `revert: ...`.
   Merges are squash merges; the PR title becomes the commit.
 - TypeScript is strict. Define shared types/schemas in `libs/shared` first.
 - Go code must pass `go fmt` and `golangci-lint`.

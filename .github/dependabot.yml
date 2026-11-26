@@ -10,6 +10,11 @@ updates:
       pnpm-minor:
         patterns: ["*"]
         update-types: ["minor", "patch"]
+    # Nest CLI needs the TypeScript compiler API, which TS 7 does not expose
+    # until 7.1. Revisit when the toolchain supports it.
+    ignore:
+      - dependency-name: "typescript"
+        update-types: ["version-update:semver-major"]
 
   - package-ecosystem: gomod
     directory: /apps/agent
