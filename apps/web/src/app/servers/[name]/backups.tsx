@@ -90,13 +90,12 @@ export function BackupsPanel({
 
   const operationActive =
     operation !== null && ACTIVE_OPERATION_PHASES.has(operation.phase);
-  const volumeUsed =
-    data?.storage !== undefined
-      ? data.storage.totalBytes - data.storage.freeBytes
-      : 0;
+  const volumeUsed = data?.storage?.usedBytes ?? 0;
+  const volumeTotal = data?.storage?.totalBytes;
+  const volumeFree = data?.storage?.freeBytes;
   const volumePercent =
-    data?.storage !== undefined && data.storage.totalBytes > 0
-      ? Math.min(100, Math.max(0, (volumeUsed / data.storage.totalBytes) * 100))
+    volumeTotal !== undefined && volumeTotal > 0
+      ? Math.min(100, Math.max(0, (volumeUsed / volumeTotal) * 100))
       : 0;
 
   useEffect(() => {
@@ -260,20 +259,24 @@ export function BackupsPanel({
               <span className="text-muted-foreground">Sauvegardes</span>
               <span>{formatBytes(data.storage.savesBytes)}</span>
             </div>
-            <div className="mt-1 flex flex-wrap items-center justify-between gap-2 text-xs text-muted-foreground">
-              <span>Volume</span>
-              <span>
-                {formatBytes(volumeUsed)} utilisés /{" "}
-                {formatBytes(data.storage.totalBytes)} ·{" "}
-                {formatBytes(data.storage.freeBytes)} libres
-              </span>
-            </div>
-            <div className="mt-2 h-2 overflow-hidden rounded-full bg-muted">
-              <div
-                className="h-full rounded-full bg-primary"
-                style={{ width: `${volumePercent}%` }}
-              />
-            </div>
+            {volumeTotal !== undefined && volumeFree !== undefined && (
+              <>
+                <div className="mt-1 flex flex-wrap items-center justify-between gap-2 text-xs text-muted-foreground">
+                  <span>Volume</span>
+                  <span>
+                    {formatBytes(volumeUsed)} utilisés /{" "}
+                    {formatBytes(volumeTotal)} · {formatBytes(volumeFree)}{" "}
+                    libres
+                  </span>
+                </div>
+                <div className="mt-2 h-2 overflow-hidden rounded-full bg-muted">
+                  <div
+                    className="h-full rounded-full bg-primary"
+                    style={{ width: `${volumePercent}%` }}
+                  />
+                </div>
+              </>
+            )}
           </div>
         )}
 

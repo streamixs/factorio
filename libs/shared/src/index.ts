@@ -271,10 +271,12 @@ export interface ServerBackup {
 export interface ServerStorage {
   /** Bytes used by the saves directory. */
   savesBytes: number;
-  /** Total size of the data volume. */
-  totalBytes: number;
-  /** Free bytes on the data volume. */
-  freeBytes: number;
+  /** Bytes used by the whole data directory on the PVC. */
+  usedBytes: number;
+  /** Capacity of the data PVC, when known. */
+  totalBytes?: number;
+  /** Free bytes on the data PVC, when the capacity is known. */
+  freeBytes?: number;
 }
 
 export interface ServerBackups {

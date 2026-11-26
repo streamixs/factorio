@@ -755,7 +755,7 @@ describe('ServersService', () => {
         if (url.endsWith('/usage.txt')) {
           return Promise.resolve({
             ok: true,
-            text: async () => '1048576 524288 524288\n524288\n',
+            text: async () => '524288\n600000\n',
           });
         }
         return Promise.resolve({
@@ -764,6 +764,11 @@ describe('ServersService', () => {
         });
       }),
     );
+    readNamespacedPersistentVolumeClaim.mockResolvedValue({
+      metadata: { name: 'my-server-data' },
+      spec: {},
+      status: { capacity: { storage: '10Gi' } },
+    });
 
     const backups = await service.backups('my-server');
 
@@ -777,8 +782,46 @@ describe('ServersService', () => {
     ]);
     expect(backups.storage).toEqual({
       savesBytes: 524288 * 1024,
-      totalBytes: 1048576 * 1024,
-      freeBytes: 524288 * 1024,
+      usedBytes: 600000 * 1024,
+      totalBytes: 10 * 1024 ** 3,
+      freeBytes: 10 * 1024 ** 3 - 600000 * 1024,
+    });
+  });
+
+  it('keeps the backup list when the PVC capacity is unknown', async () => {
+    listNamespacedPod.mockResolvedValue({
+      items: [
+        {
+          metadata: { name: 'pod' },
+          status: { podIP: '10.0.0.1', containerStatuses: [{ ready: true }] },
+        },
+      ],
+    });
+    readNamespacedPersistentVolumeClaim.mockRejectedValue(
+      new ApiException(404, 'Not Found', undefined, {}),
+    );
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockImplementation((url: string) => {
+        if (url.endsWith('/usage.txt')) {
+          return Promise.resolve({
+            ok: true,
+            text: async () => '524288\n600000\n',
+          });
+        }
+        return Promise.resolve({
+          ok: true,
+          text: async () => '_autosave1.zip 100 1767225600\n',
+        });
+      }),
+    );
+
+    const backups = await service.backups('my-server');
+
+    expect(backups.available).toBe(true);
+    expect(backups.storage).toEqual({
+      savesBytes: 524288 * 1024,
+      usedBytes: 600000 * 1024,
     });
   });
 

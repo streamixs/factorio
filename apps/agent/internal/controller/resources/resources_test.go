@@ -785,8 +785,8 @@ func TestSavesSidecarHandlesSigterm(t *testing.T) {
 		"httpd_supervisor_pid",
 		"wait $!",
 		"usage.txt",
-		"df -kP",
-		"du -sk",
+		"du -sk /factorio/saves",
+		"du -sk /factorio",
 	} {
 		if !strings.Contains(script, expected) {
 			t.Errorf("saves script does not contain %q", expected)

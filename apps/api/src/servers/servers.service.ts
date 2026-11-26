@@ -685,9 +685,15 @@ export class ServersService {
     }
 
     try {
-      const [indexResponse, usageResponse] = await Promise.all([
+      const [indexResponse, usageResponse, pvc] = await Promise.all([
         this.fetchFromPod(podIP, '/index.txt'),
         this.fetchFromPod(podIP, '/usage.txt').catch(() => null),
+        this.kubernetes.core
+          .readNamespacedPersistentVolumeClaim({
+            name: `${name}-data`,
+            namespace: this.kubernetes.namespace,
+          })
+          .catch(() => null),
       ]);
 
       if (!indexResponse.ok) {
@@ -706,7 +712,22 @@ export class ServersService {
       let storage: ServerStorage | undefined;
       if (usageResponse !== null && usageResponse.ok) {
         try {
-          storage = parseStorageUsage(await usageResponse.text());
+          const usage = parseStorageUsage(await usageResponse.text());
+          if (usage !== undefined) {
+            const capacity = parseQuantityBytes(
+              pvc?.status?.capacity?.['storage'] ??
+                pvc?.spec?.resources?.requests?.['storage'],
+            );
+            storage = {
+              ...usage,
+              ...(capacity === undefined
+                ? {}
+                : {
+                    totalBytes: capacity,
+                    freeBytes: Math.max(capacity - usage.usedBytes, 0),
+                  }),
+            };
+          }
         } catch {
           storage = undefined;
         }
@@ -1816,24 +1837,63 @@ function parseBackupLine(line: string): ServerBackup | undefined {
   };
 }
 
-function parseStorageUsage(text: string): ServerStorage | undefined {
+function parseStorageUsage(
+  text: string,
+): { savesBytes: number; usedBytes: number } | undefined {
   const lines = text.trim().split('\n');
   if (lines.length < 2) {
     return undefined;
   }
 
-  const [totalKb, usedKb, freeKb] = lines[0].trim().split(/\s+/).map(Number);
-  const savesKb = Number(lines[1].trim().split(/\s+/)[0]);
-  const values = [totalKb, usedKb, freeKb, savesKb];
-  if (values.some((value) => !Number.isFinite(value) || value < 0)) {
+  const savesKb = Number(lines[0].trim().split(/\s+/)[0]);
+  const usedKb = Number(lines[1].trim().split(/\s+/)[0]);
+  if (
+    !Number.isFinite(savesKb) ||
+    !Number.isFinite(usedKb) ||
+    savesKb < 0 ||
+    usedKb < 0
+  ) {
     return undefined;
   }
 
   return {
     savesBytes: savesKb * 1024,
-    totalBytes: totalKb * 1024,
-    freeBytes: freeKb * 1024,
+    usedBytes: usedKb * 1024,
   };
+}
+
+function parseQuantityBytes(value: string | undefined): number | undefined {
+  if (value === undefined) {
+    return undefined;
+  }
+
+  const match = /^([0-9.]+)(Ki|Mi|Gi|Ti|Pi|Ei|K|M|G|T|P|E)?$/.exec(
+    value.trim(),
+  );
+  if (match === null) {
+    return undefined;
+  }
+
+  const amount = Number(match[1]);
+  if (!Number.isFinite(amount)) {
+    return undefined;
+  }
+
+  const units: Record<string, number> = {
+    Ki: 1024,
+    Mi: 1024 ** 2,
+    Gi: 1024 ** 3,
+    Ti: 1024 ** 4,
+    Pi: 1024 ** 5,
+    Ei: 1024 ** 6,
+    K: 1e3,
+    M: 1e6,
+    G: 1e9,
+    T: 1e12,
+    P: 1e15,
+    E: 1e18,
+  };
+  return match[2] === undefined ? amount : amount * (units[match[2]] ?? 1);
 }
 
 function parseCpuMillicores(value: string): number {
