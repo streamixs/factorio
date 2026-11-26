@@ -145,6 +145,10 @@ and pushes. The tag workflow publishes GHCR images and the GitHub Release. See
   network tests.
 - A port-forward to the web Service becomes stale after an API/web rollout;
   restart it after a 502.
+- Release images are private by default. The API, web and agent Deployments
+  reference the `ghcr-pull` secret; create it in `factorio-system` and
+  `agent-system`, or make the GHCR packages public. A missing secret only logs
+  a warning and does not block local `:dev` images.
 - A failed operation must not be resumed by a later retention reconcile.
 
 ## Definition of done

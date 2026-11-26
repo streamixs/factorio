@@ -18,6 +18,8 @@ spec:
         app: factorio-api
     spec:
       serviceAccountName: factorio-api
+      imagePullSecrets:
+        - name: ghcr-pull
       securityContext:
         runAsNonRoot: true
         runAsUser: 1000

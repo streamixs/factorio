@@ -92,9 +92,11 @@ The workflow pushes to GHCR. Depending on the repository/package settings, the
 packages may be private. Choose one:
 
 - make the three GHCR packages public in their GitHub package settings; or
-- create an image pull secret and add it to the agent, API and web workloads.
+- keep them private and create the `ghcr-pull` image pull secret.
 
-Example secret:
+The API, web and agent Deployments reference `ghcr-pull`. A missing secret only
+logs a warning and does not block local `:dev` images. For private packages,
+create it in both namespaces:
 
 ```sh
 kubectl -n factorio-system create secret docker-registry ghcr-pull \
@@ -106,9 +108,6 @@ kubectl -n agent-system create secret docker-registry ghcr-pull \
   --docker-username=<user> \
   --docker-password=<PAT-with-read:packages>
 ```
-
-The current Kustomize manifests do not declare `imagePullSecrets`. Add them to
-the API/web/agent ServiceAccounts or Deployments before using private packages.
 
 ## Rollback
 

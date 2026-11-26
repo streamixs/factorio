@@ -20,6 +20,9 @@ Images are built locally (`factorio-api:dev`, `factorio-web:dev`) and are
 available to OrbStack's Kubernetes. For another cluster, push them to a
 registry and pass `TAG`/`API_IMG`/`WEB_IMG` to `make deploy`.
 
+For private GHCR images, create the `ghcr-pull` secret in `factorio-system`
+first; see [`../docs/release.md`](../docs/release.md#ghcr-visibility).
+
 Open the UI:
 
 ```sh
