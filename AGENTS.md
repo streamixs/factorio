@@ -22,6 +22,7 @@ From the repository root:
 
 ```sh
 make check              # lint + test + build (the reference before declaring done)
+make audit              # npm and Go vulnerability scans
 make test               # API + web + agent tests
 make test-api
 make test-web
@@ -160,6 +161,7 @@ and pushes. The tag workflow publishes GHCR images and the GitHub Release. See
 ## Definition of done
 
 - `make check` passes for the touched components.
+- `make audit` passes; a new reachable vulnerability blocks the PR.
 - New pure logic has a unit test.
 - Shared types and docs are updated when behavior changes.
 - The PR template validation/deployment sections are filled.

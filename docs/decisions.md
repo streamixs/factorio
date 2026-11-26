@@ -144,3 +144,25 @@ a deliberate choice. Add a new section when a durable behavior changes.
   the dynamic route (or if Cache Components is disabled). Do not reintroduce
   the app footer in the root layout or `useParams` on the detail without
   validating a production build.
+
+## Workload hardening and vulnerability gates
+
+- **Status:** accepted.
+- **Decision:** the Factorio container and the saves sidecar run with a
+  read-only root filesystem, no privilege escalation, all capabilities dropped
+  and the `RuntimeDefault` seccomp profile. The Factorio container gets a
+  256 MiB `emptyDir` at `/tmp` and a 1 MiB `emptyDir` shadowing
+  `/opt/factorio/config`, where the image entrypoint rewrites `config.ini`.
+  The pod uses `fsGroup: 845`. `prepare-data` is the only root container and
+  keeps just `CHOWN`, `DAC_OVERRIDE` and `FOWNER` to initialize the data volume
+  and the base config. CI runs `pnpm audit --audit-level high` and
+  `govulncheck` on every push and pull request.
+- **Why:** a compromised game server or sidecar must not be able to modify its
+  image, escalate privileges or fill node storage. Reachable dependency
+  vulnerabilities must block a merge instead of being discovered at release
+  time.
+- **Consequences:** the Go toolchain stays on the patched 1.26 line because
+  golangci-lint 2.13.1 cannot read Go 1.27 export data; bump both together.
+  `pnpm-workspace.yaml` carries temporary overrides for patched transitive
+  dependencies; remove each override once its parent package requires the
+  fixed version.

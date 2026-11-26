@@ -11,6 +11,7 @@ import (
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/equality"
+	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
 	gamesv1alpha1 "github.com/streamixs/factorio/apps/agent/api/v1alpha1"
@@ -26,15 +27,24 @@ const (
 	prepareImage   = "busybox:1.36"
 	serverUserID   = 845
 
+	allCapabilities corev1.Capability = "ALL"
+
 	terminationGracePeriodSeconds = int64(120)
 
 	dataVolume           = "data"
+	tmpVolume            = "tmp"
+	tmpDir               = "/tmp"
+	baseConfigVolume     = "base-config"
+	baseConfigSeedDir    = "/seed"
+	factorioConfigDir    = "/opt/factorio/config"
 	serverSettingsVolume = "server-settings"
 	mapGenSettingsVolume = "map-gen-settings"
 	mapSettingsVolume    = "map-settings"
 
 	prepareDataCommand = "mkdir -p /factorio/config /factorio/saves /factorio/mods && " +
-		"chown -R 845:845 /factorio"
+		"printf '[path]\\nread-data=__PATH__executable__/../../data\\nwrite-data=/factorio\\n' > " +
+		baseConfigSeedDir + "/config.ini && " +
+		"chown -R 845:845 /factorio " + baseConfigSeedDir
 	healthcheckPath = "/docker-healthcheck.sh"
 )
 
@@ -61,14 +71,21 @@ func BuildDeployment(
 	}
 	labels := labelsFor(server)
 	volumes, mounts := configVolumes(server, files)
-	volumes = append(volumes, dataVolumeFor(server), rconVolumeFor(server))
+	volumes = append(volumes, dataVolumeFor(server), rconVolumeFor(server), tmpVolumeFor(), baseConfigVolumeFor())
 	mounts = append(mounts, corev1.VolumeMount{
 		Name:      dataVolume,
 		MountPath: dataDir,
-	}, rconMount())
+	}, rconMount(), corev1.VolumeMount{
+		Name:      tmpVolume,
+		MountPath: tmpDir,
+	}, corev1.VolumeMount{
+		Name:      baseConfigVolume,
+		MountPath: factorioConfigDir,
+	})
 
 	initMounts := []corev1.VolumeMount{
 		{Name: dataVolume, MountPath: dataDir},
+		{Name: baseConfigVolume, MountPath: baseConfigSeedDir},
 	}
 
 	version := server.Spec.Version
@@ -79,6 +96,10 @@ func BuildDeployment(
 	runAsUser := int64(serverUserID)
 	runAsGroup := int64(serverUserID)
 	runAsNonRoot := true
+	runAsRoot := int64(0)
+	readOnlyRoot := true
+	allowPrivilegeEscalation := false
+	fsGroupChangePolicy := corev1.FSGroupChangeOnRootMismatch
 	terminationGrace := terminationGracePeriodSeconds
 
 	containers := []corev1.Container{
@@ -107,9 +128,14 @@ func BuildDeployment(
 			// init container owns that step, so the server runs as the
 			// factorio user and skips it.
 			SecurityContext: &corev1.SecurityContext{
-				RunAsUser:    &runAsUser,
-				RunAsGroup:   &runAsGroup,
-				RunAsNonRoot: &runAsNonRoot,
+				RunAsUser:                &runAsUser,
+				RunAsGroup:               &runAsGroup,
+				RunAsNonRoot:             &runAsNonRoot,
+				ReadOnlyRootFilesystem:   &readOnlyRoot,
+				AllowPrivilegeEscalation: &allowPrivilegeEscalation,
+				Capabilities: &corev1.Capabilities{
+					Drop: []corev1.Capability{allCapabilities},
+				},
 			},
 			StartupProbe:   healthProbe(10, 60),
 			ReadinessProbe: healthProbe(30, 3),
@@ -127,12 +153,37 @@ func BuildDeployment(
 		},
 		Spec: corev1.PodSpec{
 			AutomountServiceAccountToken: new(false),
+			SecurityContext: &corev1.PodSecurityContext{
+				FSGroup:             &runAsGroup,
+				FSGroupChangePolicy: &fsGroupChangePolicy,
+				SeccompProfile: &corev1.SeccompProfile{
+					Type: corev1.SeccompProfileTypeRuntimeDefault,
+				},
+			},
 			InitContainers: []corev1.Container{
 				{
 					Name:         "prepare-data",
 					Image:        prepareImage,
 					Command:      []string{"sh", "-c", prepareDataCommand},
 					VolumeMounts: initMounts,
+					// The image owns /factorio as 845, so the one-time
+					// preparation needs root. Keep only the capabilities
+					// required to create directories and change ownership.
+					SecurityContext: &corev1.SecurityContext{
+						RunAsUser:                &runAsRoot,
+						RunAsGroup:               &runAsRoot,
+						RunAsNonRoot:             new(false),
+						ReadOnlyRootFilesystem:   &readOnlyRoot,
+						AllowPrivilegeEscalation: &allowPrivilegeEscalation,
+						Capabilities: &corev1.Capabilities{
+							Drop: []corev1.Capability{allCapabilities},
+							Add: []corev1.Capability{
+								"CHOWN",
+								"DAC_OVERRIDE",
+								"FOWNER",
+							},
+						},
+					},
 				},
 			},
 			Volumes:    volumes,
@@ -191,6 +242,34 @@ func dataVolumeFor(server *gamesv1alpha1.FactorioServer) corev1.Volume {
 			PersistentVolumeClaim: &corev1.PersistentVolumeClaimVolumeSource{
 				ClaimName: PersistentVolumeClaimName(server),
 			},
+		},
+	}
+}
+
+// tmpVolumeFor provides the writable scratch space Factorio expects while the
+// container root filesystem stays read-only. The limit prevents a runaway
+// process from filling the node's ephemeral storage.
+func tmpVolumeFor() corev1.Volume {
+	sizeLimit := resource.MustParse("256Mi")
+
+	return corev1.Volume{
+		Name: tmpVolume,
+		VolumeSource: corev1.VolumeSource{
+			EmptyDir: &corev1.EmptyDirVolumeSource{SizeLimit: &sizeLimit},
+		},
+	}
+}
+
+// baseConfigVolumeFor shadows the image's /opt/factorio/config directory,
+// where the entrypoint rewrites config.ini on every start. The prepare-data
+// init container seeds a minimal config.ini with the correct write-data path.
+func baseConfigVolumeFor() corev1.Volume {
+	sizeLimit := resource.MustParse("1Mi")
+
+	return corev1.Volume{
+		Name: baseConfigVolume,
+		VolumeSource: corev1.VolumeSource{
+			EmptyDir: &corev1.EmptyDirVolumeSource{SizeLimit: &sizeLimit},
 		},
 	}
 }
@@ -300,6 +379,7 @@ func NeedsUpdate(existing, desired *appsv1.Deployment) bool {
 func UpdateDeployment(existing, desired *appsv1.Deployment) {
 	existing.Spec.Replicas = desired.Spec.Replicas
 	existing.Spec.Strategy = desired.Spec.Strategy
+	existing.Spec.Template.Spec.SecurityContext = desired.Spec.Template.Spec.SecurityContext
 	existing.Spec.Template.Spec.InitContainers = desired.Spec.Template.Spec.InitContainers
 	existing.Spec.Template.Spec.Containers = desired.Spec.Template.Spec.Containers
 	existing.Spec.Template.Spec.Volumes = desired.Spec.Template.Spec.Volumes

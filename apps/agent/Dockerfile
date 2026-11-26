@@ -1,5 +1,6 @@
 # Build the manager binary
-# Override BASE_IMAGE to build from another registry, e.g. docker.io/library/golang:1.26
+# Override BASE_IMAGE to build from another registry, e.g. docker.io/library/golang:1.26.
+# The minor tag follows the latest patch release, which carries Go security fixes.
 ARG BASE_IMAGE=golang:1.26
 ARG VERSION=dev
 FROM --platform=${BUILDPLATFORM} ${BASE_IMAGE} AS builder

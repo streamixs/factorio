@@ -161,6 +161,7 @@ dans le namespace cible.
 
 ```sh
 make check                         # référence : lint + tests + builds
+make audit                         # audits npm et Go (govulncheck)
 make test                          # API + web + agent
 make test-api
 make test-web
@@ -174,7 +175,7 @@ Les commandes détaillées par composant restent disponibles dans leurs
 
 ## Utilisation
 
-- **Créer un serveur** depuis le formulaire de la page d’accueil.
+- **Créer un serveur** depuis la page « Nouveau serveur ».
 - **Réglages** : onglet Configuration. Un conflit 409 signifie que la
   configuration a changé ailleurs ; rechargez les valeurs à jour.
 - **Console** : commandes RCON. Les commandes sont auditées dans les logs de
@@ -219,8 +220,9 @@ Les merges se font en **squash**. Les checks obligatoires ne peuvent pas être
 activés sur ce dépôt privé sans GitHub Pro ; les noms de jobs sont stables
 pour pouvoir les activer plus tard.
 
-`make check` est la vérification de référence avant une PR. Le template de PR
-rappelle les vérifications minimales.
+`make check` est la vérification de référence avant une PR ; `make audit`
+échoue sur toute vulnérabilité npm de sévérité haute ou toute vulnérabilité Go
+atteignable. Le template de PR rappelle les vérifications minimales.
 
 ## Documentation
 

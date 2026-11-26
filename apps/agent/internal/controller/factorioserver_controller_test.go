@@ -249,9 +249,9 @@ var _ = Describe("FactorioServer Controller", func() {
 		Expect(deployment.Spec.Strategy.Type).To(
 			Equal(appsv1.RecreateDeploymentStrategyType))
 		Expect(deployment.Spec.Template.Spec.InitContainers).To(HaveLen(1))
-		Expect(deployment.Spec.Template.Spec.Volumes).To(HaveLen(5))
+		Expect(deployment.Spec.Template.Spec.Volumes).To(HaveLen(7))
 		Expect(deployment.Spec.Template.Spec.Containers).To(HaveLen(2))
-		Expect(deployment.Spec.Template.Spec.Containers[0].VolumeMounts).To(HaveLen(5))
+		Expect(deployment.Spec.Template.Spec.Containers[0].VolumeMounts).To(HaveLen(7))
 		Expect(deployment.Spec.Template.Spec.Containers[1].Name).To(Equal("saves"))
 		Expect(deployment.Spec.Template.Annotations).To(
 			HaveKey(factorioresources.RconPasswordHashAnnotation))
