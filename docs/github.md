@@ -27,28 +27,30 @@ field unless a real need appears.
 
 | View | Purpose |
 |---|---|
-| **Now** | Ready, in progress and in review items for the current wave. |
-| **Next** | Items planned for the following wave. |
-| **Later / Parking** | Deferred items, sorted by the revisit date. |
+| **All items** | Everything in the project, for search and cleanup. |
+| **Now** | Items for the current wave (`horizon:Now`). |
+| **Next** | Items planned for the following wave (`horizon:Next`). |
+| **Later** | Deferred but not parked (`horizon:Later`). |
+| **Parked** | Deferred items with a revisit condition (`status:Parked`). |
 | **Agent queue** | Ready items with `agent-ready` and no assignee. |
-| **Roadmap** | Grouped by milestone, with target dates. |
-| **Release v0.4** | Items for the current release milestone. |
+| **Roadmap** | Active items, grouped by milestone for release planning. |
 | **Blocked** | Items with `blocked` or an open dependency. |
 | **Recently done** | Recently completed items, for the weekly review. |
 
 ### Project setup
 
-The `gh` token used for the initial setup did not have the `project` scope, so
-the project board is created manually (or after `gh auth refresh -s project`).
-In GitHub:
+The project is created at
+<https://github.com/orgs/streamixs/projects/1> and linked to the repository.
+Its fields, status options and views are configured. The remaining UI-only
+settings are:
 
-1. **Projects → New project → Board**, name it `Factorio Platform`.
-2. Add the fields and rename the built-in statuses as described above.
-3. Create the views.
-4. Enable the built-in workflows: auto-add issues and pull requests, set
+1. In the **Roadmap** view, group by **Milestone** and use the milestone target
+   dates.
+2. In **Agent queue**, sort by priority; in **Recently done**, sort by the
+   last update.
+3. Enable the built-in workflows: auto-add issues and pull requests, set
    **Done** when an item closes, and set **In review** when a pull request is
    linked.
-5. Add the project to the repository sidebar.
 
 ## Labels
 
