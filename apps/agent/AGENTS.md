@@ -84,6 +84,9 @@ Do not move this logic into the API.
 - A `FactorioOperation` conflict must be resolved deterministically; pending
   operations use their name as a tie-break.
 - The default Kind CNI does not enforce NetworkPolicies.
+- The Dockerfile builds on `BUILDPLATFORM` and cross-compiles to
+  `TARGETARCH`. Do not remove the platform override: building the Go toolchain
+  under target emulation makes multi-arch releases extremely slow.
 
 ## Documentation
 

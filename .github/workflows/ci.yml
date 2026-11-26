@@ -15,6 +15,40 @@ concurrency:
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
+  pr-title:
+    name: PR title
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Check conventional commit title
+        env:
+          TITLE: ${{ github.event.pull_request.title }}
+        run: |
+          pattern='^(feat|fix|docs|test|ci|chore|refactor|perf)(\([a-z0-9._-]+\))?: .+$'
+          if [[ ! "$TITLE" =~ $pattern ]]; then
+            echo "::error::PR title must follow Conventional Commits, e.g. 'feat(api): add endpoint'."
+            exit 1
+          fi
+
+  workflows:
+    name: Workflows
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+
+      - name: Set up Go
+        uses: actions/setup-go@v6.3.0
+        with:
+          go-version-file: apps/agent/go.mod
+          cache-dependency-path: apps/agent/go.sum
+
+      - name: Lint workflows
+        working-directory: apps/agent
+        run: go run github.com/rhysd/actionlint/cmd/actionlint@v1.7.7 -color ../../.github/workflows/*.yml
+
   agent-lint:
     name: Agent lint
     runs-on: ubuntu-latest
