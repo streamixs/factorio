@@ -31,6 +31,8 @@ make build
 make docker             # build local :dev images
 make fmt                # API Prettier + agent gofmt
 make version            # print VERSION
+make version-check      # VERSION, package versions and tag consistency
+make release VERSION=x.y.z
 ```
 
 Per component:
@@ -111,8 +113,16 @@ cluster and may restart running Factorio servers.
 ### Release
 
 The platform uses one SemVer version and Git tags `vX.Y.Z`. The CRD API version
-`v1alpha1` is separate from the platform version. Do not bump versions by hand;
-use the release procedure documented in `docs/release.md` once it is present.
+`v1alpha1` is separate from the platform version. Do not bump versions or create
+tags by hand:
+
+```sh
+make release VERSION=0.1.0
+```
+
+The script runs `make check`, updates `VERSION`/package versions, commits, tags
+and pushes. The tag workflow publishes GHCR images and the GitHub Release. See
+[`docs/release.md`](docs/release.md).
 
 ## Known pitfalls
 

@@ -1,7 +1,7 @@
 SHELL := /usr/bin/env bash
 .DEFAULT_GOAL := help
 
-.PHONY: help install lint lint-api lint-web lint-agent test test-api test-web test-agent build build-shared build-api build-web build-agent check fmt docker version
+.PHONY: help install lint lint-api lint-web lint-agent test test-api test-web test-agent build build-shared build-api build-web build-agent check fmt docker version version-check release
 
 help: ## Display this help.
 	@awk 'BEGIN {FS = ":.*##"; printf "\nUsage:\n  make \033[36m<target>\033[0m\n"} /^[a-zA-Z_0-9-]+:.*?##/ { printf "  \033[36m%-18s\033[0m %s\n", $$1, $$2 } /^##@/ { printf "\n\033[1m%s\033[0m\n", substr($$0, 5) } ' $(MAKEFILE_LIST)
@@ -57,7 +57,7 @@ build-web: build-shared ## Build the web app.
 build-agent: ## Build the Go agent.
 	$(MAKE) -C apps/agent build
 
-check: lint test build ## Reference check: lint, tests and builds.
+check: version-check lint test build ## Reference check: versions, lint, tests and builds.
 
 fmt: ## Format the API and the agent.
 	pnpm --filter @factorio/api format
@@ -73,3 +73,10 @@ docker: ## Build the local :dev API, web and agent images.
 
 version: ## Print the platform version.
 	@cat VERSION
+
+version-check: ## Verify VERSION, package versions and the Git tag are consistent.
+	node scripts/check-version.mjs
+
+release: ## Release a SemVer version: make release VERSION=0.1.0.
+	@test -n "$(VERSION)" || { echo "Usage: make release VERSION=x.y.z"; exit 1; }
+	./scripts/release.sh $(VERSION)
