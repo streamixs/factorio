@@ -17,7 +17,7 @@ const (
 	operationContainer      = "operation"
 	operationImage          = "busybox:1.36"
 	operationUserID         = 845
-	targetSaveName          = "_autosave1.zip"
+	targetSaveName          = mainSaveFile
 	maxJobNameLength        = 63
 	operationDeadline       = int64(900)
 	retainedOperationCopies = 3

@@ -33,6 +33,7 @@ import {
   restoreBackup,
 } from "@/lib/api";
 import { ACTIVE_OPERATION_PHASES, operationLabel } from "@/lib/operations";
+import { backupLabel } from "@/lib/backups";
 import { formatDateTime } from "@/lib/format";
 import { formatBytes } from "@/lib/server-connection";
 
@@ -120,7 +121,7 @@ export function BackupsPanel({
   async function handleRestore(backup: ServerBackup) {
     if (
       !window.confirm(
-        `Restaurer ${backup.name} ? Le serveur sera arrêté, la save principale (_autosave1.zip) copiée avant restauration, puis le serveur redémarré.`,
+        `Restaurer ${backup.name} ? Le serveur sera arrêté, la sauvegarde principale (world.zip) copiée avant restauration, puis le serveur redémarré.`,
       )
     ) {
       return;
@@ -222,11 +223,13 @@ export function BackupsPanel({
             {importing ? "Importation…" : "Importer une save"}
           </Button>
           <p className="text-sm text-muted-foreground">
-            Autosaves écrites par Factorio dans /factorio/saves, ou import
-            d&apos;un fichier .zip (1 Go maximum). L&apos;intervalle et le
-            nombre de slots se règlent dans l&apos;onglet Sauvegarde
-            automatique. Les 3 dernières copies de sécurité (avant
-            restauration ou import) sont conservées.
+            La sauvegarde principale est <code>world.zip</code>. Factorio
+            écrit les autosaves <code>_autosave1..N</code> dans
+            /factorio/saves ; elles ne tournent pas quand le serveur est en
+            pause (aucun joueur). L&apos;intervalle et le nombre de slots se
+            règlent dans l&apos;onglet Sauvegarde automatique. Les 3 dernières
+            copies de sécurité (avant restauration ou import) sont
+            conservées.
           </p>
         </div>
 
@@ -297,8 +300,9 @@ export function BackupsPanel({
           )
         ) : data.backups.length === 0 ? (
           <p className="text-sm text-muted-foreground">
-            Aucune autosave pour l&apos;instant. Factorio en crée une à chaque
-            intervalle de sauvegarde automatique.
+            Aucune sauvegarde pour l&apos;instant. Factorio crée{" "}
+            <code>world.zip</code> au premier démarrage et des autosaves à
+            chaque intervalle.
           </p>
         ) : (
           <div className="flex flex-col">
@@ -350,14 +354,4 @@ export function BackupsPanel({
       </CardContent>
     </Card>
   );
-}
-
-function backupLabel(name: string): string | undefined {
-  if (name.startsWith("pre-restore-")) {
-    return "avant restauration";
-  }
-  if (name.startsWith("pre-import-")) {
-    return "avant import";
-  }
-  return undefined;
 }

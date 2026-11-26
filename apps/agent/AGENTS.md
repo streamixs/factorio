@@ -78,6 +78,10 @@ Do not move this logic into the API.
   `-ldflags` at build time. Do not hardcode a release version.
 - The operation Job runs as user 845; the data volume is owned by the Factorio
   user.
+- The main save is `world.zip`; autosaves are `_autosave1..N`. `prepare-data`
+  migrates the newest `_autosave*.zip` (or non-safety save) to `world.zip` when
+  it is missing. Do not name the main save `_autosave1`: it collides with the
+  first autosave slot.
 - The saves sidecar writes `index.txt` and `usage.txt`; it must handle SIGTERM
   immediately or pod deletion waits for the grace period.
 - Storage usage uses `du` and the PVC capacity, not `df` (local-path reports

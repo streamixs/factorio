@@ -88,11 +88,21 @@ kubectl -n default delete pvc <name>-data
 
 ## Sauvegardes, restauration et import
 
-- Factorio écrit ses autosaves dans `/factorio/saves` sur le PVC.
-- Avant une restauration ou un import, l’agent copie la sauvegarde courante
-  en `pre-restore-*` ou `pre-import-*`.
-- Les **3 dernières copies de sécurité** de chaque type sont conservées. Les
-  plus anciennes sont purgées par le Job.
+- La sauvegarde principale est **`world.zip`**. Un arrêt propre réécrit
+  `world.zip`, sans toucher aux autosaves.
+- Factorio écrit les autosaves `_autosave1.zip` … `_autosaveN.zip` dans
+  `/factorio/saves` sur le PVC. Le nombre de slots est réglé par
+  `autosave_slots` (5 par défaut).
+- Les autosaves ne tournent pas quand le serveur est en pause. Le réglage
+  « Pause quand aucun joueur » est activé par défaut : désactive-le si tu veux
+  des autosaves sur un serveur vide.
+- Au premier démarrage après la mise à jour, l’init `prepare-data` copie la
+  plus récente `_autosave*.zip` (ou la sauvegarde non-sécurité la plus récente)
+  vers `world.zip` si ce fichier n’existe pas encore. Les anciens fichiers
+  restent sur le volume.
+- Avant une restauration ou un import, l’agent copie `world.zip` en
+  `pre-restore-*` ou `pre-import-*`. L’opération installe ensuite la save
+  choisie sous le nom `world.zip`, que le serveur recharge au démarrage.
 - Les opérations terminées sont conservées **7 jours** dans l’historique,
   puis supprimées.
 - Un import est limité à **1 GiB**. L’API vérifie aussi l’espace libre du

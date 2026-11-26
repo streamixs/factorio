@@ -131,6 +131,11 @@ func TestBuildDeploymentUsesRecreateAndPreparesData(t *testing.T) {
 		!strings.Contains(initContainers[0].Command[2], "write-data=/factorio") {
 		t.Error("init container does not seed the base config")
 	}
+
+	if !strings.Contains(initContainers[0].Command[2], mainSaveFile) ||
+		!strings.Contains(initContainers[0].Command[2], "_autosave") {
+		t.Error("init container does not migrate the main save to world.zip")
+	}
 }
 
 func TestBuildDeploymentConfiguresHealthProbes(t *testing.T) {
@@ -366,6 +371,10 @@ func TestBuildDeploymentWithoutSettings(t *testing.T) {
 
 	if env["SAVE_NAME"] != saveName {
 		t.Errorf("SAVE_NAME is %q, want %q", env["SAVE_NAME"], saveName)
+	}
+
+	if env["LOAD_LATEST_SAVE"] != "false" {
+		t.Errorf("LOAD_LATEST_SAVE is %q, want false", env["LOAD_LATEST_SAVE"])
 	}
 
 	if env["PORT"] != "34197" {
@@ -771,11 +780,11 @@ func TestBuildOperationJobImport(t *testing.T) {
 func TestPruneSavesKeepsNewestCopies(t *testing.T) {
 	dir := t.TempDir()
 	names := []string{
-		"pre-restore-20260101T000000Z-_autosave1.zip",
-		"pre-restore-20260102T000000Z-_autosave1.zip",
-		"pre-restore-20260103T000000Z-_autosave1.zip",
-		"pre-restore-20260104T000000Z-_autosave1.zip",
-		"pre-restore-20260105T000000Z-_autosave1.zip",
+		"pre-restore-20260101T000000Z-world.zip",
+		"pre-restore-20260102T000000Z-world.zip",
+		"pre-restore-20260103T000000Z-world.zip",
+		"pre-restore-20260104T000000Z-world.zip",
+		"pre-restore-20260105T000000Z-world.zip",
 	}
 	base := time.Now().Add(-time.Hour)
 	for index, name := range names {

@@ -197,8 +197,11 @@ Les commandes détaillées par composant restent disponibles dans leurs
   connecté avant d’envoyer `/kick`.
 - **Charge** : uptime du pod courant, CPU et mémoire. L’uptime reste visible
   si metrics-server est indisponible.
-- **Sauvegardes** : autosaves Factorio, copies de sécurité, restauration et
-  import. Un import est limité à 1 GiB et à l’espace libre du volume.
+- **Sauvegardes** : `world.zip` est la sauvegarde principale ; les autosaves
+  `_autosave1..N` tournent pendant que le serveur joue, mais pas quand il est
+  en pause. Copies de sécurité, restauration et import sont disponibles dans
+  l’onglet Sauvegardes. Un import est limité à 1 GiB et à l’espace libre du
+  volume.
 - **Suppression** : l’option « Conserver les données » détache le PVC. Un
   serveur recréé avec le même nom le réadopte.
 - **Opérations** : une restauration ou un import verrouille les actions

@@ -123,6 +123,8 @@ export const SETTINGS_SECTIONS: SettingsSection[] = [
     id: "autosave",
     title: "Sauvegarde automatique",
     badge: "Redémarre le serveur",
+    description:
+      "La sauvegarde principale est world.zip. Factorio écrit les autosaves _autosave1..N ; elles ne tournent pas quand le serveur est en pause (aucun joueur).",
     groups: [
       {
         fields: [
@@ -136,7 +138,7 @@ export const SETTINGS_SECTIONS: SettingsSection[] = [
             path: "spec.server.autoSave.slots",
             label: "Nombre de slots",
             kind: "number",
-            help: "Défaut : 5. Fichiers conservés en rotation.",
+            help: "Défaut : 5. Fichiers _autosave1..N conservés en rotation.",
           },
           {
             path: "spec.server.autoSave.nonBlockingSaving",
@@ -194,6 +196,7 @@ export const SETTINGS_SECTIONS: SettingsSection[] = [
             path: "spec.server.playerManagement.autoPauseWhenNoPlayers",
             label: "Pause quand aucun joueur",
             kind: "switch",
+            help: "Une pause suspend aussi les autosaves.",
           },
           {
             path: "spec.server.playerManagement.onlyAdminsCanPause",
