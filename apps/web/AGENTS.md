@@ -40,9 +40,11 @@ pnpm --filter @factorio/web exec tsc --noEmit
 pnpm --filter @factorio/web build
 ```
 
-Tests are Vitest tests for pure helpers in `src/lib/*.test.ts`. Add a test when
-you add or change address formatting, operation labels, resource validation,
-status labels, date formatting or another pure function.
+Tests are Vitest tests for pure helpers (`src/lib/*.test.ts`) and React Testing
+Library component tests (`src/app/**/*.test.tsx`, jsdom via the file docblock).
+Add a test when you add or change address formatting, operation labels,
+resource validation, status labels, date formatting, form navigation or
+another user-visible flow.
 
 ## Rules and pitfalls
 
@@ -78,6 +80,11 @@ status labels, date formatting or another pure function.
   dashboard only polls online servers. Kick actions go through the API, which
   checks the player against the live RCON list; never send `/kick` from the
   browser.
+- The create-server form has **no submit button**. The form submit handler only
+  advances the first two steps; only the explicit **Créer le serveur** button
+  (with the 300 ms step guard) calls the API. The form is reset with
+  `flushSync` before navigation. Keep
+  `src/app/_components/create-server-form.test.tsx` passing.
 
 See the root [`AGENTS.md`](../../AGENTS.md) for cross-component recipes and
 [`docs/working-agreements.md`](../../docs/working-agreements.md) for the work

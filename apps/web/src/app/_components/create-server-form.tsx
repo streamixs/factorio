@@ -6,7 +6,8 @@ import type {
   ServiceType,
 } from "@factorio/shared";
 import { Check, ChevronLeft, ChevronRight } from "lucide-react";
-import { useState, type FormEvent, type KeyboardEvent } from "react";
+import { useEffect, useRef, useState, type FormEvent } from "react";
+import { flushSync } from "react-dom";
 import { cn } from "cn";
 
 import { Button } from "@/components/ui/button";
@@ -27,7 +28,6 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { createServer } from "@/lib/api";
-import { shouldBlockCreateSubmit } from "@/lib/create-form";
 import {
   validateResourceQuantities,
   type ResourceField,
@@ -92,6 +92,13 @@ const RESOURCE_PRESETS: ResourcePreset[] = [
   },
 ];
 
+const DEFAULT_RESOURCES: ResourcesSettings = {
+  cpuRequest: "500m",
+  cpuLimit: "2",
+  memoryRequest: "1Gi",
+  memoryLimit: "4Gi",
+};
+
 function trimmed(value: string | undefined): string | undefined {
   const result = value?.trim() ?? "";
   return result === "" ? undefined : result;
@@ -155,6 +162,7 @@ export function CreateServerForm({
   embedded?: boolean;
 }) {
   const [step, setStep] = useState(1);
+  const [stepReady, setStepReady] = useState(false);
   const [stepError, setStepError] = useState<string | null>(null);
   const [name, setName] = useState("");
   const [displayName, setDisplayName] = useState("");
@@ -166,15 +174,21 @@ export function CreateServerForm({
   const [serviceType, setServiceType] = useState<ServiceType>("ClusterIP");
   const [gamePassword, setGamePassword] = useState("");
   const [resources, setResources] = useState<ResourcesSettings>({
-    cpuRequest: "500m",
-    cpuLimit: "2",
-    memoryRequest: "1Gi",
-    memoryLimit: "4Gi",
+    ...DEFAULT_RESOURCES,
   });
   const [resourceError, setResourceError] = useState<ResourceIssue | null>(
     null,
   );
   const [creating, setCreating] = useState(false);
+  const readyTimer = useRef<number | undefined>(undefined);
+
+  useEffect(() => {
+    return () => {
+      if (readyTimer.current !== undefined) {
+        window.clearTimeout(readyTimer.current);
+      }
+    };
+  }, []);
 
   const versionValue =
     version !== "" ? version : versions[0] ?? DEFAULT_VERSION;
@@ -219,6 +233,41 @@ export function CreateServerForm({
     return null;
   }
 
+  function clearReadyTimer() {
+    if (readyTimer.current !== undefined) {
+      window.clearTimeout(readyTimer.current);
+      readyTimer.current = undefined;
+    }
+  }
+
+  function armStepReady() {
+    clearReadyTimer();
+    setStepReady(false);
+    readyTimer.current = window.setTimeout(() => {
+      readyTimer.current = undefined;
+      setStepReady(true);
+    }, 300);
+  }
+
+  function resetForm() {
+    clearReadyTimer();
+    setStep(1);
+    setStepReady(false);
+    setStepError(null);
+    setName("");
+    setDisplayName("");
+    setVersion("");
+    setMaxPlayers("8");
+    setSeed("");
+    setStorageSize("10Gi");
+    setStorageClass("");
+    setServiceType("ClusterIP");
+    setGamePassword("");
+    setResources({ ...DEFAULT_RESOURCES });
+    setResourceError(null);
+    setCreating(false);
+  }
+
   function goNext() {
     if (step === 1) {
       const problem = identityError();
@@ -230,45 +279,40 @@ export function CreateServerForm({
     }
 
     setStepError(null);
-    setStep((current) => Math.min(STEP_LABELS.length, current + 1));
+    const next = Math.min(STEP_LABELS.length, step + 1);
+    setStep(next);
+    if (next === STEP_LABELS.length) {
+      armStepReady();
+    } else {
+      clearReadyTimer();
+      setStepReady(false);
+    }
   }
 
   function goBack() {
+    clearReadyTimer();
+    setStepReady(false);
     setStepError(null);
     setStep((current) => Math.max(1, current - 1));
   }
 
-  /**
-   * Enter advances the two first steps, but must not create the server from
-   * the resources step. Operators often press Enter after filling a field;
-   * only the explicit "Créer le serveur" button should submit the form.
-   */
-  function handleKeyDown(event: KeyboardEvent<HTMLFormElement>) {
-    const tagName =
-      event.target instanceof HTMLElement ? event.target.tagName : "";
-    if (
-      shouldBlockCreateSubmit(
-        step,
-        STEP_LABELS.length,
-        event.key,
-        tagName,
-      )
-    ) {
-      event.preventDefault();
+  function handleFormSubmit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (step < STEP_LABELS.length) {
+      goNext();
     }
   }
 
-  async function handleCreate(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-
-    if (step < STEP_LABELS.length) {
-      goNext();
+  async function submitCreate() {
+    if (creating || !stepReady) {
       return;
     }
 
     const problem = identityError();
     if (problem !== null) {
+      clearReadyTimer();
       setStep(1);
+      setStepReady(false);
       setStepError(problem);
       return;
     }
@@ -317,6 +361,11 @@ export function CreateServerForm({
         credentials:
           gamePassword === "" ? undefined : { gamePassword },
       });
+      // Commit the reset before navigating, so a cached creation page does not
+      // restore the values of the server that was just created.
+      flushSync(() => {
+        resetForm();
+      });
       onCreated(created);
     } catch (err) {
       onError(
@@ -329,8 +378,7 @@ export function CreateServerForm({
 
   const form = (
     <form
-      onSubmit={(event) => void handleCreate(event)}
-      onKeyDown={handleKeyDown}
+      onSubmit={handleFormSubmit}
       className="flex flex-col gap-5"
       noValidate
     >
@@ -658,7 +706,11 @@ export function CreateServerForm({
             <ChevronRight className="size-4" />
           </Button>
         ) : (
-          <Button type="submit" disabled={creating}>
+          <Button
+            type="button"
+            onClick={() => void submitCreate()}
+            disabled={creating || !stepReady}
+          >
             {creating ? "Création…" : "Créer le serveur"}
           </Button>
         )}
